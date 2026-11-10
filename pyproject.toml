@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kb7tools"
+dynamic = ["version"]
+description = "Reverse-engineering toolkit for the Turtle Beach Command Series KB7"
+readme = "README.md"
+license = "GPL-2.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+kb7cap = "kb7tools.cli:main"
+
+[tool.setuptools]
+packages = ["kb7tools"]
+
+[tool.setuptools.dynamic]
+version = { attr = "kb7tools.__version__" }

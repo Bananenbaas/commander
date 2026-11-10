@@ -1,0 +1,12 @@
+# Raw USB captures can contain everything typed on the keyboard. Never commit them.
+captures/**
+!captures/README.md
+*.pcap
+*.pcapng
+
+__pycache__/
+*.egg-info/
+build/
+dist/
+.venv/
+.env
