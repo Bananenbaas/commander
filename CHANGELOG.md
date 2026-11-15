@@ -65,6 +65,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
   about 4.9 s after plug-in. Report `0x33` carries the button's position on
   the page, confirmed by prediction on two more buttons, and the mute loop
   identifies the mute byte of the volume frame and the mute-state frame.
+- Background image upload: `a5` frames on interface 1 carry a 480 x 800 RGB565
+  image in 4096-byte blocks, every frame acknowledged by the device, at about
+  23 KiB/s. The screen resolution and pixel format follow from it.
+- Profile switching: the keyboard steps through its five slots itself when the
+  profile name on the screen is tapped, announces each switch with notification
+  `03 00 01 <slot>`, and Swarm II only follows by resuming its streams.
 - Screen buttons and profiles: report `0x29` is the page's button table —
   binding and label per position, with the same checksum as the lighting
   block — and configuration blocks carry one of five profile slots in byte

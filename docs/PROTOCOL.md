@@ -172,7 +172,7 @@ take 2   03 00 31 20 c9 da 00 00
 | Byte 4 | **varies between otherwise identical runs** (`0xd1` / `0xc9`) — treat as noise, not payload | observed |
 | Byte 5 | `0xda`, identical in both takes | observed |
 | Bytes 6–7 | `00 00` in both takes | observed |
-| What byte 4 means | unclear. With byte 5 as a little-endian pair it reads `0xdad1` / `0xdac9`, eight apart — could be a tick counter, a sensor reading or a checksum | hypothesis |
+| What byte 4 means | unclear. With byte 5 as a little-endian pair it reads `0xdad1` / `0xdac9`, eight apart. The same event appears after profile switches and screen changes with bytes 4–6 different every time, but not as a steadily rising counter (see "Device notifications") | unknown |
 
 Comparing the two takes also confirms the report map itself is **stable**: all 45
 report-descriptor entries are byte-identical between the captures, so the map in
@@ -423,6 +423,7 @@ Bytes 4–5 distinguish frame types. Seen so far:
 |---|---|---|---|
 | `00 0d` | `<vol> 00 <unmuted> 00 <vol> 00` | system volume. Byte 8 is `01` while sound is on and `00` while muted | observed (`09-volume-50-1`, `05-touch-tap-volumeicon-1`) |
 | `03 0e` | `00 64 64 00 64 64 00` | per-application volume. The volume page on the screen shows the system level plus two applications, both at 100%, which matches two pairs of `0x64` | hypothesis |
+| `06 0e` | `00 64 64 00 64 64 00` | same body as `03 0e`; sent next to it after every profile switch. Possibly the second application, with `03 0e` the first | hypothesis (`08-profile-switch-desktop-sc-1`) |
 | `01 02 02` | `<muted>` then zeros | mute state: byte 6 is `01` while muted and `00` otherwise. Sent at startup with `00` | observed (`02-swarm-start-1`, `05-touch-tap-volumeicon-1`) |
 | `01 02 04` | `00 00 02 00 00 0c` | unknown | unknown |
 
@@ -486,7 +487,22 @@ varies.
 This is the channel the device uses to tell the host something happened. It
 fires once per dial click, alongside the Consumer report described below, so it
 is a general "something was operated" notification rather than anything
-volume-specific. Worth watching during the touch scenarios.
+volume-specific.
+
+Byte 2 selects the kind of event. Seen so far:
+
+| Byte 2 | Body | Meaning | Status |
+|---|---|---|---|
+| `01` | `03 00 01 <slot> 00 00 00 00` | the active profile changed to `<slot>` | observed (`08-profile-switch-desktop-sc-1`) |
+| `31` | `03 00 31 <view> <b4> <b5> <b6> 00` | the screen has drawn a new view and wants live values: after every profile switch, about 4.9 s after plug-in, and on entering and leaving the on-screen settings. Swarm II answers each one by re-sending the mute state and volume frames. `<view>` is `20` for a profile's main page and `04` for the settings view seen so far | observed / hypothesis for the meaning |
+| `cc` | `03 00 cc 01 00 00 00 00` | the volume dial was turned | observed (`10-dial-volume-up-1`) |
+| `06` | `03 00 06 <down> 00 <usage> 00 06` | a screen button bound to a modifier on its own | observed (`15-screen-assign-break-1`) |
+
+Bytes 4–6 of the `31` event vary every time, and they are not a simple counter:
+across five profile switches they happened to rise (`11 1b 83` … `b9 30 87`),
+but in `06-screen-background-ff0000-1` they went from `0c 1e 01` to `3a f4 00`.
+Their meaning is unknown, and so is that of the "noise" byte in the plug-in
+section, which belongs to the same event.
 
 **Caveat on all of the above**: `02-swarm-start` has only **one** take so far.
 The capture guide asks for two, so the varying bytes have not been separated from
@@ -652,8 +668,49 @@ While the binding was being changed, the keyboard also sent a burst of 23
 notifications of another kind within a tenth of a second. Their purpose is
 unknown.
 
-### Touchscreen: image upload
-unknown. Pixel format, chunk size, addressing, checksum.
+### Touchscreen: image upload — `a5` frames
+
+Swarm II only lets a custom image be used as the **background**, not as a
+button icon, and the keyboard holds **one** such image. Setting it is two steps:
+the image is uploaded from Swarm II, and then chosen on the keyboard's own
+screen.
+
+`06-screen-background-ff0000-1` uploads the solid red test image
+`docs/test-images/solid-ff0000.png`. The upload is a third opcode on interface
+1, next to `a1` and `a3`, and the device answers every frame on `0x85`:
+
+```
+host -> device (0x0d)          device -> host (0x85)
+a5 00                          a5 00            start of an image
+a5 f1                          a5 f1            start of a 4096-byte block
+a5 3e <62 bytes>   x66         ff ff ff ...     data; byte 1 is the payload length
+a5 04 <4 bytes>                ff ff ff ...     the block's last 4 bytes
+a5 f2                          a5 f2            end of the block
+... next block ...
+a5 ff                                           end of the image
+```
+
+| Finding | Status |
+|---|---|
+| **The screen is 480 x 800 pixels, portrait.** The first upload is exactly 768,000 bytes, i.e. 384,000 pixels at two bytes each | observed |
+| **Pixels are RGB565, little-endian**: the red image arrives as `00 f8` throughout, i.e. `0xF800` | observed |
+| Data moves in blocks of 4096 bytes (66 frames of 62 bytes plus one of 4); the final block is shorter (2048 bytes for the background) | observed |
+| Byte 1 of a data frame is its payload length (`3e` = 62); `00`, `f1`, `f2`, `ff` and `40` are control values | observed |
+| The device acknowledges every data frame with a frame of `ff`, and the host waits for it: one data frame every 2.0 ms | observed |
+| No checksum is visible anywhere in the upload | observed |
+| Pixel order (row by row from the top left, or otherwise) | unknown — a solid colour cannot show it; `split-red-blue.png` would |
+
+**Throughput is about 23 KiB/s**: the full-screen image took 32 seconds. Live
+full-screen video over this channel is out of the question, which is consistent
+with how the volume page works — the host sends values and the device draws.
+
+**A second, smaller upload follows.** After the background, Swarm II sends
+another image opened with `a5 40` instead of `a5 00`: 63,048 bytes, which as
+RGB565 is 21,016 red pixels followed by 10,508 white ones. It may be a preview or
+thumbnail of the background; its size and purpose are unknown.
+
+Choosing the image on the screen afterwards sends no image data. It produces
+only notification events, after each of which Swarm II re-sends the live values.
 
 ### The volume dial: a complete round trip
 
@@ -816,7 +873,13 @@ data or leftover content, as in the `ALT\0K` button label, is unknown.
 |---|---|
 | Five profile slots, with their names in report `0x16` | observed (`02-swarm-start-1`) |
 | The lighting differs per slot; the screen button table is the same in all five | observed |
-| Which slot is active, and how the keyboard switches between them | unknown — scenario 08 |
+| The keyboard switches profiles **itself**: tapping the profile name on the screen steps through the five slots in order and wraps around | observed (`08-profile-switch-desktop-sc-1`) |
+| Each switch is announced with notification `03 00 01 <slot>`, followed by the `03 00 31 20 …` "profile loaded" event | observed |
+| Swarm II writes and reads nothing on a switch. It only follows: the `a1` lighting stream changes to the new profile's colours, and it re-sends the mute state, both application volumes and the system volume | observed |
+
+So the slots are complete profiles held on the device, and the host's only job
+on a switch is to resume streaming for the new one. Whether Swarm II can switch
+the active profile from the PC side has not been seen.
 
 ## Do-not-send list
 
@@ -831,8 +894,11 @@ _None identified yet._
    stored on the device? (captures 06, 07) Two pieces of evidence for onboard
    rendering: the keyboard draws a boot screen with its firmware version before
    any PC software is involved, and the volume page is drawn from a numeric
-   percentage rather than a pushed image. Whether raw frames are *also* accepted
-   is what scenario 06 has to settle.
+   percentage rather than a pushed image. **Largely answered by
+   `06-screen-background-ff0000-1`**: the screen renders on its own, and raw
+   pixels are accepted only as a stored background image, 480 x 800 in RGB565,
+   at about 23 KiB/s. Whether button icons or other regions can be uploaded the
+   same way is still open — Swarm II offers no way to do it.
 2. ~~Are live PC stats pushed as rendered images, as numbers, or not at all?~~
    **Answered for volume**: as numbers. An `a3` frame carries a plain percentage
    and the device renders the page itself (`09-volume-50-1`). Whether the
