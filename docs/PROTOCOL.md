@@ -228,6 +228,13 @@ and the same block-of-48 layout, just without the 10-byte header:
  24 = trailing bytes, purpose unknown
 ```
 
+**Reassemble before interpreting.** The six banks carry 60 bytes each, while the
+LED blocks are 48, so the two grids do not line up: only banks 1 and 5 begin on
+a block boundary (payload offsets 0 and 240, both multiples of 48). An LED's
+three bytes can therefore straddle two banks. Always concatenate all six banks
+into the 360-byte payload first and index into that; reading LED positions
+straight out of a single bank only works by accident.
+
 **The values are scaled down by one.** `floor(v x 255/256)`:
 
 | Configured | On the wire |
@@ -288,6 +295,7 @@ whichever frame arrived last, roughly twenty-eight times a second.
 | A frame is 64 bytes: `a1 <bank 01–06> <len-lo> <len-hi>` plus 60 payload bytes, with the length only on bank 1 | **confirmed** |
 | Writing goes to the interface 1 collection as a 65-byte `WriteFile`, exactly like the `a3` volume frame | **confirmed** |
 | The device renders the most recent frame; there is no arbitration between writers | observed |
+| Neither writer loses frames under contention: all 1188 of ours and all 3734 of Swarm II's appear in the capture | observed (`13-replay-led-stream-green-1`) |
 
 **The architectural consequence.** Lighting cannot be shared. Whoever streams
 last owns the LEDs, so taking over the keyboard means Swarm II has to stop
