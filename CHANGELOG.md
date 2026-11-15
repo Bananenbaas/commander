@@ -6,6 +6,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- USBPcap control transfers lost their payload. USBPcap 1.5.4 attaches the data
+  of a control transfer to the COMPLETE stage and emits no DATA stage at all, so
+  every control transfer in a real capture was parsed as empty and no device or
+  configuration descriptor was ever recognised. `tests/synth.py` can now build
+  both layouts, and the device-inventory test runs against each.
+
 ### Added
 - `kb7cap` capture toolkit (stdlib only): pcap/pcapng reader, USBPcap and
   Linux usbmon transfer pairing, device/configuration/string/HID report
@@ -20,3 +27,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Issue forms for bug reports, protocol findings, capture contributions and
   open questions, plus a pull request template. All of them refuse raw
   captures.
+- First real protocol notes: KB7 device identity (`10f5:5038`, bcdDevice
+  `0x0139`, integrated hub `10f5:503d`) and the full interface/endpoint map —
+  four HID interfaces, three of them with an OUT endpoint.
+- Capture guide: the `00-descriptors` shortcut for pulling device and
+  configuration descriptors without a full plug-in capture.

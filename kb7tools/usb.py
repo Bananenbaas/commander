@@ -192,6 +192,12 @@ def _handle_usbpcap(pkt: RawPacket, pending: dict, order: list) -> None:
                 p.chunks.append(payload[8:])
         elif stage == USBPCAP_STAGE_DATA and payload:
             p.chunks.append(payload)
+        elif stage == USBPCAP_STAGE_COMPLETE and payload and not p.chunks:
+            # USBPcap 1.5.4 emits no DATA stage for a control transfer: the data
+            # is attached to the COMPLETE stage instead. Only take it when no
+            # earlier stage supplied any, so a capture that has both layouts
+            # does not count the same bytes twice.
+            p.chunks.append(payload)
         if is_completion and stage in (USBPCAP_STAGE_STATUS, USBPCAP_STAGE_COMPLETE):
             t.status = status
             t.complete = True

@@ -58,13 +58,21 @@ pip install -e .                            # then: kb7cap summary <capture>
 
 ## Known gaps and pitfalls
 
-- **The USBPcap control-transfer layout is unverified against a real capture.**
-  The parser accepts OUT data both appended to the SETUP-stage packet and in a
-  separate DATA-stage packet, and closes a control transfer on the STATUS or
-  COMPLETE stage. The tests only cover our own synthetic layout. Check the
-  first real KB7 capture with `kb7cap dump --standard` against Wireshark's view
-  and record the outcome here.
+- **USBPcap control-transfer layout — checked, and it bit us once.** USBPcap
+  1.5.4 emits no DATA-stage packet for a control transfer: the payload is
+  attached to the **COMPLETE** stage. The parser originally closed the transfer
+  on COMPLETE without reading that payload, so every control transfer in a real
+  capture came out empty and no device descriptor was ever found. Fixed, with
+  `tests/synth.py` now able to build both layouts
+  (`control_in(..., data_on_complete=True)`). When adding a stage, keep the
+  "only if no earlier stage supplied data" guard, or a capture containing both
+  layouts will count the same bytes twice.
+- `--inject-descriptors` gives device and configuration descriptors only. HID
+  report descriptors and string descriptors appear solely in a real enumeration,
+  so `01-plug-in` cannot be skipped.
 - The `license = "GPL-2.0-or-later"` SPDX string in `pyproject.toml` requires
   setuptools ≥ 77.
-- The KB7 is not attached to the machine the toolkit is developed on; all
-  captures come from a Windows machine running Swarm II.
+- Captures come from a Windows machine running Swarm II, with the KB7 attached
+  there. The keyboard sits behind its own integrated hub (`10f5:503d`), so a
+  USBPcap selection has to include that hub as well as the keyboard, or the
+  enumeration is missed.

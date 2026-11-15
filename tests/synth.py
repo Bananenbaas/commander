@@ -70,11 +70,20 @@ class UsbPcapBuilder:
         self.irp += 8
         return self.irp
 
-    def control_in(self, setup: bytes, data: bytes) -> None:
+    def control_in(self, setup: bytes, data: bytes, data_on_complete: bool = False) -> None:
+        """Emit a control IN transfer in one of the two layouts seen in the wild.
+
+        With ``data_on_complete`` the data rides on the COMPLETE stage and there
+        is no DATA-stage packet at all. That is what USBPcap 1.5.4 produces on
+        Windows; the other layout keeps a separate DATA stage followed by STATUS.
+        """
         irp = self._next_irp()
         self._pkt(irp, 0, 0x80, 2, setup, stage=0)
-        self._pkt(irp, 1, 0x80, 2, data, stage=1)
-        self._pkt(irp, 1, 0x80, 2, b"", stage=2)
+        if data_on_complete:
+            self._pkt(irp, 1, 0x80, 2, data, stage=3)
+        else:
+            self._pkt(irp, 1, 0x80, 2, data, stage=1)
+            self._pkt(irp, 1, 0x80, 2, b"", stage=2)
 
     def control_out(self, setup: bytes, data: bytes, data_in_setup_packet: bool) -> None:
         irp = self._next_irp()
@@ -95,13 +104,16 @@ class UsbPcapBuilder:
         self._pkt(irp, 0, ep, 1, b"")
         self._pkt(irp, 1, ep, 1, data)
 
-    def enumerate(self) -> None:
-        self.control_in(setup_bytes(0x80, 6, 0x0100, 0, 18), DEVICE_DESC)
-        self.control_in(setup_bytes(0x80, 6, 0x0200, 0, 9), CONFIG_DESC[:9])
-        self.control_in(setup_bytes(0x80, 6, 0x0200, 0, len(CONFIG_DESC)), CONFIG_DESC)
-        self.control_in(setup_bytes(0x80, 6, 0x0301, 0x0409, 255), string_desc("Example Corp"))
-        self.control_in(setup_bytes(0x80, 6, 0x0302, 0x0409, 255), string_desc("Test Keyboard"))
-        self.control_in(setup_bytes(0x81, 6, 0x2200, 1, len(HID_REPORT_DESC)), HID_REPORT_DESC)
+    def enumerate(self, data_on_complete: bool = False) -> None:
+        def get(setup: bytes, data: bytes) -> None:
+            self.control_in(setup, data, data_on_complete=data_on_complete)
+
+        get(setup_bytes(0x80, 6, 0x0100, 0, 18), DEVICE_DESC)
+        get(setup_bytes(0x80, 6, 0x0200, 0, 9), CONFIG_DESC[:9])
+        get(setup_bytes(0x80, 6, 0x0200, 0, len(CONFIG_DESC)), CONFIG_DESC)
+        get(setup_bytes(0x80, 6, 0x0301, 0x0409, 255), string_desc("Example Corp"))
+        get(setup_bytes(0x80, 6, 0x0302, 0x0409, 255), string_desc("Test Keyboard"))
+        get(setup_bytes(0x81, 6, 0x2200, 1, len(HID_REPORT_DESC)), HID_REPORT_DESC)
 
 
 def write_pcapng(path: str, linktype: int, packets: list[tuple[float, bytes]], nanosecond: bool = False) -> None:

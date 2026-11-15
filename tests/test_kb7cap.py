@@ -17,9 +17,10 @@ FEATURE = bytes([0x05]) + bytes(range(1, 64))
 KEYSTROKE = bytes([0, 0, 0x04, 0, 0, 0, 0, 0])  # 'a' pressed
 
 
-def build_session(colour: int, *, split_control: bool = False) -> synth.UsbPcapBuilder:
+def build_session(colour: int, *, split_control: bool = False,
+                  data_on_complete: bool = False) -> synth.UsbPcapBuilder:
     b = synth.UsbPcapBuilder()
-    b.enumerate()
+    b.enumerate(data_on_complete=data_on_complete)
     b.control_out(synth.setup_bytes(0x21, 0x09, 0x0305, 1, len(FEATURE)), FEATURE,
                   data_in_setup_packet=not split_control)
     b.interrupt_in(0x81, KEYSTROKE)
@@ -75,14 +76,39 @@ class UsbPcapTransferTests(TempDirTest):
         synth.write_pcapng(self.path("s.pcapng"), 249, build_session(0x11, **kw).packets)
         return Capture(self.path("s.pcapng"))
 
-    def test_device_inventory(self) -> None:
-        cap = self.capture()
-        dev = cap.devices["1.5"]
-        self.assertEqual(dev.descriptor.vid_pid, "1234:5678")
-        self.assertEqual(dev.name, "1234:5678 Example Corp Test Keyboard")
-        self.assertEqual([i.number for i in dev.interfaces], [0, 1])
-        self.assertEqual(dev.keyboard_endpoints(), {0x81})
-        self.assertEqual(dev.hid_reports[1], synth.HID_REPORT_DESC)
+    def test_device_inventory_both_control_in_layouts(self) -> None:
+        # data_on_complete=True is the layout real USBPcap 1.5.4 produces: the
+        # descriptor rides on the COMPLETE stage with no DATA-stage packet.
+        for on_complete in (False, True):
+            with self.subTest(data_on_complete=on_complete):
+                cap = self.capture(data_on_complete=on_complete)
+                dev = cap.devices["1.5"]
+                self.assertEqual(dev.descriptor.vid_pid, "1234:5678")
+                self.assertEqual(dev.name, "1234:5678 Example Corp Test Keyboard")
+                self.assertEqual([i.number for i in dev.interfaces], [0, 1])
+                self.assertEqual(dev.keyboard_endpoints(), {0x81})
+                self.assertEqual(dev.hid_reports[1], synth.HID_REPORT_DESC)
+
+    def test_control_in_data_is_not_lost_on_complete_stage(self) -> None:
+        cap = self.capture(data_on_complete=True)
+        standard = [t for t in cap.select(None, include_standard=True)
+                    if t.xfer_type == XFER_CONTROL and t.descriptor_type == 1]
+        self.assertEqual(len(standard), 1)
+        self.assertEqual(standard[0].data, synth.DEVICE_DESC)
+
+    def test_complete_stage_payload_is_not_counted_twice(self) -> None:
+        # A capture that has both a DATA stage and a COMPLETE stage carrying the
+        # same bytes must still yield the payload exactly once.
+        b = synth.UsbPcapBuilder()
+        setup = synth.setup_bytes(0x80, 6, 0x0100, 0, 18)
+        irp = b._next_irp()
+        b._pkt(irp, 0, 0x80, 2, setup, stage=0)
+        b._pkt(irp, 1, 0x80, 2, synth.DEVICE_DESC, stage=1)
+        b._pkt(irp, 1, 0x80, 2, synth.DEVICE_DESC, stage=3)
+        synth.write_pcapng(self.path("dup.pcapng"), 249, b.packets)
+        cap = Capture(self.path("dup.pcapng"))
+        (t,) = cap.transfers
+        self.assertEqual(t.data, synth.DEVICE_DESC)
 
     def test_set_report_payload_both_usbpcap_layouts(self) -> None:
         for split in (False, True):

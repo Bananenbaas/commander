@@ -72,6 +72,22 @@ The key open question is in 06 and 07: whether the screen accepts raw images
 from the PC or renders from assets stored on the device. The answer decides how
 live dashboards will work.
 
+### A quick descriptor snapshot
+
+`00-descriptors-<take>.pcap` is a shortcut, not a scenario: start a capture with
+`--inject-descriptors` and stop it again a few seconds later, without touching
+the device. USBPcap then writes the device and configuration descriptors of
+everything on that root hub into the file, which is enough to fill in the device
+identity and the interface/endpoint tables. From the command line:
+
+```sh
+"C:\Program Files\USBPcap\USBPcapCMD.exe" -d \\.\USBPcap<N> \
+    -o captures/00-descriptors-1.pcap -s 65535 -A --inject-descriptors
+```
+
+It does **not** replace `01-plug-in`: injection supplies no HID report
+descriptors and no string descriptors. Only a real enumeration has those.
+
 ## Linux alternative (descriptors and replay testing)
 
 If you have a Linux machine, plugging the KB7 in there is the fastest way to get
