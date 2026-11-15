@@ -88,6 +88,44 @@ identity and the interface/endpoint tables. From the command line:
 It does **not** replace `01-plug-in`: injection supplies no HID report
 descriptors and no string descriptors. Only a real enumeration has those.
 
+### Elevation, and why Wireshark cannot do this
+
+Two traps, both found the hard way:
+
+- **Wireshark cannot capture USB here at all.** As of Wireshark 4.6, USBPcap is
+  no longer integrated: `dumpcap -D` lists only network adapters even when run
+  elevated, and `dumpcap -i \\.\USBPcapN` fails with
+  `Error opening adapter ... (123)`. The Wireshark installer drops
+  `USBPcapSetup-<version>.exe` into its own program directory for you to run
+  separately, and `USBPcapCMD.exe` is then the only thing that captures.
+- **`USBPcapCMD` relaunches itself elevated.** Started from an unelevated shell
+  it spawns a second, elevated process. A UAC prompt therefore decides when the
+  capture really begins, and the elevated process cannot be terminated from the
+  unelevated side. Driving it from an unelevated script does not work: the
+  capture either starts after the intended window has passed, or cannot be
+  stopped.
+
+Run it from an **already elevated** context instead. A wrapper that is itself
+elevated can both start the capture and stop it again:
+
+```bat
+@echo off
+set "UP=C:\Program Files\USBPcap\USBPcapCMD.exe"
+start "" /b "%UP%" -d \\.\USBPcap3 -o captures\01-plug-in-1.pcap ^
+    -s 65535 -b 134217728 -A --inject-descriptors
+ping -n 181 127.0.0.1 > nul
+taskkill /F /IM USBPcapCMD.exe
+```
+
+The capture window then starts when elevation is granted, not when the wrapper
+is launched. While `USBPcapCMD` runs it holds the output file open exclusively,
+so wait for it to exit before reading the capture.
+
+Find the right control device with `USBPcapCMD.exe` and no arguments: it prints
+the device tree per root hub, so you can see which `\\.\USBPcapN` the keyboard
+hangs off. Note that the KB7 sits behind its own integrated hub, so both that hub
+and the keyboard have to be in the capture.
+
 ## Linux alternative (descriptors and replay testing)
 
 If you have a Linux machine, plugging the KB7 in there is the fastest way to get

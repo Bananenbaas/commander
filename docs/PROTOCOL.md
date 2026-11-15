@@ -131,7 +131,43 @@ Each command: direction, transport (SET_REPORT / interrupt / bulk), byte layout,
 example hex, reply, captures.
 
 ### Device info / handshake
-unknown
+
+There is no Swarm II handshake in `01-plug-in`: Swarm II was closed. What
+follows is the plain Windows enumeration, identical in structure across both
+takes.
+
+| Step | Direction | Transfer | Payload | Status |
+|---|---|---|---|---|
+| 1 | host → device | `SET_IDLE` on interfaces 0, 1, 2 and 3 | — | observed (`01-plug-in-1`, `-2`) |
+| 2 | **device → host** | report `0x03` on `0x8c` (interrupt IN, interface 2) | 8 bytes, see below | observed (`01-plug-in-1`, `-2`) |
+| 3 | host → device | `SET_REPORT` output, report `0x00`, interface 3 | `01` — boot-keyboard LED report (NumLock) | observed (`01-plug-in-1`, `-2`) |
+
+Step 2 is the only thing the device sends unprompted during enumeration, and it
+matches report `0x03` in the report map (interface 2, usage page `0xff01`, 7-byte
+input plus the report ID):
+
+```
+take 1   03 00 31 20 d1 da 00 00
+take 2   03 00 31 20 c9 da 00 00
+                     ^^
+```
+
+| Field | Reading | Status |
+|---|---|---|
+| Byte 0 | report ID `0x03` | observed |
+| Bytes 1–3 | `00 31 20`, identical in both takes | observed |
+| Byte 4 | **varies between otherwise identical runs** (`0xd1` / `0xc9`) — treat as noise, not payload | observed |
+| Byte 5 | `0xda`, identical in both takes | observed |
+| Bytes 6–7 | `00 00` in both takes | observed |
+| What byte 4 means | unclear. With byte 5 as a little-endian pair it reads `0xdad1` / `0xdac9`, eight apart — could be a tick counter, a sensor reading or a checksum | hypothesis |
+
+Comparing the two takes also confirms the report map itself is **stable**: all 45
+report-descriptor entries are byte-identical between the captures, so the map in
+this document does not depend on a single capture.
+
+Nothing else differed between the takes. Total traffic was 109 transfers in
+take 1 against 113 in take 2, with the extra ones belonging to neighbouring
+devices on the same root hub, not to the KB7.
 
 ### RGB lighting
 unknown
