@@ -65,6 +65,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
   about 4.9 s after plug-in. Report `0x33` carries the button's position on
   the page, confirmed by prediction on two more buttons, and the mute loop
   identifies the mute byte of the volume frame and the mute-state frame.
+- Default key and button functions from Turtle Beach's public support
+  article, cited as such: the action bar's buttons now have names in the LED
+  map, and the empty LED slots line up with the extra keys of the ISO and
+  Japanese layouts the KB7 is sold in.
 - Background image upload: `a5` frames on interface 1 carry a 480 x 800 RGB565
   image in 4096-byte blocks, every frame acknowledged by the device, at about
   23 KiB/s. The screen resolution and pixel format follow from it.

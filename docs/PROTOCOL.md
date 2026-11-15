@@ -1,7 +1,9 @@
 # KB7 USB protocol
 
 Working notes on the Turtle Beach Command Series KB7 USB protocol, derived from
-captures (see `CAPTURE-GUIDE.md`). Nothing here comes from Turtle Beach.
+captures (see `CAPTURE-GUIDE.md`). The protocol itself comes from observed
+traffic only. Where the user-facing behaviour of a key or button is taken from
+Turtle Beach's public support documentation, the section says so and cites it.
 
 **Status legend**
 
@@ -828,8 +830,8 @@ candidates, each in its own colour.
 | 52–53 | `;` `'` | 78–79 | Right Alt, Fn |
 | 54 | — (ISO `#` position) | 80–81 | menu key, Right Ctrl |
 | 55 | Enter | 82–84 | Left, Down, Right arrows |
-| | | 85–86 | media previous, next |
-| | | 87–90 | the four triangular top buttons, left to right |
+| | | 85–86 | Previous Track, Next Track |
+| | | 87–90 | the four triangular top buttons, left to right: Game Mode, Profile Cycle, Microphone Off, RGB on/off |
 | | | 91–95 | — |
 | | | 96–105 | wrist rest light strip, ten segments left to right |
 | | | 106–111 | — |
@@ -840,6 +842,7 @@ candidates, each in its own colour.
 |---|---|
 | The main block is laid out as rows of fourteen: 0–13, 14–27, 28–41, 42–55, 56–69, with the bottom row from 70 | **confirmed** |
 | The matrix is wired for an **ISO** layout: slots 54 and 57 sit exactly where the ISO-only `#` and `<>` keys would be, and are empty on this ANSI unit | **confirmed** for the empty slots; an ISO unit lighting them is a hypothesis |
+| The other empty main-block slots match the extra keys of the **Japanese** layout, which the KB7 is sold in: 68 where `ろ` sits between `/` and Right Shift, and 74, 76 and 77 where `無変換`, `変換` and `かな` flank the space bar. So the table is likely one superset of every layout variant | hypothesis — needs an ISO or JIS unit |
 | The up arrow sits at 70, at the start of the bottom row, apart from the other three arrows (82–84) | **confirmed** |
 | The volume dial and its play/pause button have no slot in this table | observed — they never lit in any pass |
 | The wrist rest strip is ten LEDs, 96–105, driven from the same table | **confirmed** |
@@ -849,6 +852,41 @@ device service closed, nothing streams `a1` frames, and a written `0x11` table
 appears immediately and stays. Combined with the flicker seen while Swarm II
 runs, the model is: `0x11` holds the keyboard's own lighting, and the `a1`
 stream is a live overlay that wins for as long as somebody keeps sending it.
+
+### Default functions (from vendor documentation)
+
+Taken from Turtle Beach's support article *Command Series KB7 – Layout and
+Secondary Functions* (support.roccat.com). This is what the keyboard does for
+the user, not protocol; it is listed because it tells which functions the
+keyboard handles on its own and which ones are worth capturing.
+
+The KB7 is sold in American, German, French, Japanese, UK, Swiss and Nordic
+layouts. Fn functions work without any software installed; Swarm II can
+reassign some of them.
+
+| Input | Function |
+|---|---|
+| Fn + F4 … F12 | Print Screen, Scroll Lock, Pause, Page Up, Page Down, Insert, Home, End, Delete |
+| Fn + Left / Right | previous / next RGB effect |
+| Fn + Down / Up | RGB brightness down / up |
+| Fn + Right Alt | colour cycle |
+| Fn + Menu | Copilot shortcut |
+| Dial, clockwise / counter-clockwise / push | volume up / volume down / play-pause |
+| Action bar, left to right | Previous Track, Next Track, Game Mode toggle, Profile Cycle, Microphone Off, RGB on/off |
+
+Two of these connect to what the captures show:
+
+- **Microphone Off works only while Swarm II is running**, according to the
+  article. That fits the pattern seen with a screen button bound to a modifier:
+  the keyboard reports the press, and the host software has to act on it.
+- **The LED controls are onboard.** Brightness and effect can be changed without
+  software, which makes them the natural way to pin down header bytes 6 and 7 of
+  report `0x11`.
+
+Swarm II lets keys be reassigned on three layers — Fn, Game Mode and Easy Shift
+(Fn + Caps Lock) — according to the PC Games Hardware review of the KB7. There
+are exactly three 347-byte blocks of unknown purpose, `0x21`, `0x22` and `0x23`,
+which makes one key table per layer a reasonable **hypothesis**.
 
 ### Profiles
 
