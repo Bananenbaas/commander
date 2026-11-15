@@ -117,6 +117,10 @@ endpoints `0x06` / `0x0d` / `0x0f`.
 
 Two leads worth stating as leads and nothing more:
 
+Both leads below predate `00-idle-1`, which showed the live channel is
+interface 1 rather than these feature reports. They are kept because the sizes
+still suggest what the reports are *for*, not how they are used.
+
 | Lead | Reasoning | Status |
 |---|---|---|
 | `0x08` (1043 B) and `0x2e`/`0x2f` (1027 B) carry bulk data, possibly screen images | 1027 = 1024 + 3 and 1043 = 1024 + 19: a 1 KiB payload behind a small header | hypothesis |
@@ -169,8 +173,68 @@ Nothing else differed between the takes. Total traffic was 109 transfers in
 take 1 against 113 in take 2, with the extra ones belonging to neighbouring
 devices on the same root hub, not to the KB7.
 
+### Interface 1: the Swarm II state stream
+
+With Swarm II open and **nothing being touched**, interface 1 carries a
+continuous request/response stream. This is where Swarm II actually talks to the
+device — not the `0xff03` feature reports on interface 2.
+
+From `00-idle-1`: 40 seconds of deliberate idling produced 1.4 MB, against 12 kB
+for a whole enumeration. Traffic on the KB7 was 4926 transfers out on `0x0d` and
+4926 in on `0x85`, and nothing at all on `0x81`, `0x06`, `0x8c`, `0x0f` or `0x8e`.
+
+**Frame format** — 64 bytes, fixed:
+
+| Offset | OUT on `0x0d` | IN on `0x85` | Status |
+|---|---|---|---|
+| 0 | `a1` constant | `32` constant | observed (`00-idle-1`) |
+| 1 | bank number, `01`–`06` | the **same** bank number echoed back | observed (`00-idle-1`) |
+| 2–3 | `68 01` on bank 1, `00 00` on banks 2–6 | `00 00` | observed (`00-idle-1`) |
+| 4–63 | 60 bytes of payload | 60 zero bytes | observed (`00-idle-1`) |
+
+`0x0168` = **360** = 6 banks × 60 payload bytes, so bank 1 declares the total
+payload length of the cycle. The device's reply carries no data at all: it is a
+pure acknowledgement, one per frame.
+
+**Timing**: 821 complete cycles in 41.5 s — **19.8 Hz**, with a bank-1 interval
+of 50.6 ms median (47.5 ms min, 53.5 ms max). Six frames per cycle is ~123
+frames per second in each direction.
+
+**The payload is static.** Every one of the six banks had exactly **one** unique
+payload across all 821 cycles. Swarm II resends unchanged state twenty times a
+second; it does not animate and it does not stream anything that varies.
+
+**The reassembled 360-byte payload** contains only three byte values:
+
+| Value | Count per cycle |
+|---|---|
+| `0xfe` | 289 |
+| `0x00` | 64 |
+| `0x7f` | 7 |
+
+And it has a clear stride: **every `0x7f` at offset p is matched by a `0x00` at
+offset p+16**, for all seven occurrences without exception —
+13→29, 150→166, 153→169, 196→212, 202→218, 204→220, 205→221. Beyond offset ~250
+the zeros fall in runs of five to six at roughly the same stride of 16, and the
+final 30 bytes (330–359) are all zero.
+
+| Reading | Status |
+|---|---|
+| A table with a 16-byte stride, `0xfe` meaning an empty or unassigned slot | hypothesis |
+| This is device **state** (key bindings, layout or lighting), not pixel data — 360 static bytes at 20 Hz is orders of magnitude too little for a screen image | hypothesis |
+| What the seven `0x7f`/`0x00` pairs represent | unknown |
+| Why state is resent 20 times a second instead of on change | unknown |
+
+**Correction to an earlier guess.** The feature reports on interface 2 were
+written up as the likely command surface because they are reachable with
+`SET_REPORT`. The idle capture shows the live channel is interface 1's interrupt
+endpoints instead. The interface 2 feature reports may still carry configuration;
+nothing has been seen on them yet.
+
 ### RGB lighting
-unknown
+unknown. Not seen in `00-idle-1`: the state stream on interface 1 was static
+throughout, so whatever lighting was active was not being driven from the PC
+frame by frame. Scenario 03 should show which channel a colour change uses.
 
 ### Touchscreen: button layout and pages
 unknown
@@ -196,6 +260,9 @@ _None identified yet._
 1. Does the screen accept raw frames from the PC, or does it render from assets
    stored on the device? (captures 06, 07)
 2. Are live PC stats pushed as rendered images, as numbers, or not at all?
+   Not at all while idle: `00-idle-1` shows only a static 360-byte state frame
+   repeated at 20 Hz, with no image-sized traffic anywhere. Scenario 07 has to
+   turn the PC-performance view on explicitly.
 3. Is there a checksum or sequence counter in write commands?
 4. Which interface carries keystrokes besides the boot keyboard (NKRO)?
    Interface 2 exposes a keyboard collection next to its vendor-defined ones, so
