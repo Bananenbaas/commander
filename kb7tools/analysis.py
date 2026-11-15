@@ -7,8 +7,9 @@ import difflib
 from collections import Counter
 from dataclasses import dataclass, field
 
-from .descriptors import (HID_USAGE_PAGE_KEYBOARD, DeviceDescriptor, Interface, ReportInfo,
-                          parse_configuration, parse_string, summarise_hid_report_descriptor)
+from .descriptors import (HID_USAGE_PAGE_KEYBOARD, USB_CLASS_HID, DeviceDescriptor, Interface,
+                          ReportInfo, parse_configuration, parse_string,
+                          report_descriptor_complete, summarise_hid_report_descriptor)
 from .pcap import read_packets
 from .usb import (DESC_CONFIGURATION, DESC_DEVICE, DESC_HID_REPORT, DESC_STRING, XFER_CONTROL,
                   XFER_NAMES, Transfer, iter_transfers)
@@ -47,7 +48,18 @@ class DeviceInfo:
         if not raw:
             return set()
         return {r.report_id for r in summarise_hid_report_descriptor(raw)
-                if r.usage_page == HID_USAGE_PAGE_KEYBOARD}
+                if HID_USAGE_PAGE_KEYBOARD in r.usage_pages}
+
+    def report_descriptor_unusable(self, iface: Interface) -> bool:
+        """A HID interface whose report descriptor is absent or truncated.
+
+        Without a complete descriptor nothing rules out a keyboard report, so
+        callers treat every report on such an interface as possible typing.
+        """
+        if iface.iface_class != USB_CLASS_HID:
+            return False
+        raw = self.hid_reports.get(iface.number)
+        return not raw or not report_descriptor_complete(raw)
 
     def interface_for_endpoint(self, ep_address: int) -> Interface | None:
         for iface in self.interfaces:
@@ -114,6 +126,8 @@ class Capture:
         iface = dev.interface_for_endpoint(t.endpoint)
         if iface is None:
             return False
+        if dev.report_descriptor_unusable(iface):
+            return True  # fail closed: cannot tell typing from anything else
         ids = dev.keystroke_report_ids(iface.number)
         if not ids:
             return False
@@ -122,6 +136,14 @@ class Capture:
         if 0 in ids:
             return True
         return bool(t.data) and t.data[0] in ids
+
+    def hidden_for_lack_of_descriptor(self, t: Transfer) -> bool:
+        """True when is_keystroke() is True only because the descriptor is missing."""
+        dev = self.devices.get(t.address)
+        if dev is None or t.endpoint in dev.keyboard_endpoints():
+            return False
+        iface = dev.interface_for_endpoint(t.endpoint)
+        return iface is not None and dev.report_descriptor_unusable(iface)
 
     def select(self, addresses: set[str] | None, *, include_standard: bool = False,
                include_empty: bool = False, direction: str | None = None,

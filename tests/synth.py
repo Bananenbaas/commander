@@ -118,7 +118,7 @@ class UsbPcapBuilder:
         self._pkt(irp, 0, ep, 1, b"")
         self._pkt(irp, 1, ep, 1, data)
 
-    def enumerate(self, data_on_complete: bool = False) -> None:
+    def enumerate(self, data_on_complete: bool = False, report_descriptor: bool = True) -> None:
         def get(setup: bytes, data: bytes) -> None:
             self.control_in(setup, data, data_on_complete=data_on_complete)
 
@@ -127,7 +127,8 @@ class UsbPcapBuilder:
         get(setup_bytes(0x80, 6, 0x0200, 0, len(CONFIG_DESC)), CONFIG_DESC)
         get(setup_bytes(0x80, 6, 0x0301, 0x0409, 255), string_desc("Example Corp"))
         get(setup_bytes(0x80, 6, 0x0302, 0x0409, 255), string_desc("Test Keyboard"))
-        get(setup_bytes(0x81, 6, 0x2200, 1, len(HID_REPORT_DESC)), HID_REPORT_DESC)
+        if report_descriptor:
+            get(setup_bytes(0x81, 6, 0x2200, 1, len(HID_REPORT_DESC)), HID_REPORT_DESC)
 
 
 def write_pcapng(path: str, linktype: int, packets: list[tuple[float, bytes]], nanosecond: bool = False) -> None:

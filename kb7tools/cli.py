@@ -11,6 +11,8 @@ from .analysis import Capture, diff_lines, format_transfer, hexdump, summary_lin
 from .pcap import CaptureFormatError
 
 REDACTED = "      [keystroke report hidden — use --show-keystrokes to display]"
+REDACTED_NO_DESCRIPTOR = ("      [hidden: no HID report descriptor in this capture, so typing cannot be "
+                          "ruled out — use --show-keystrokes to display]")
 
 
 def _endpoint(value: str) -> int:
@@ -80,7 +82,7 @@ def _dump(args: argparse.Namespace) -> None:
         if args.no_hex or not t.data:
             continue
         if cap.is_keystroke(t) and not args.show_keystrokes:
-            print(REDACTED)
+            print(REDACTED_NO_DESCRIPTOR if cap.hidden_for_lack_of_descriptor(t) else REDACTED)
         else:
             print("\n".join(hexdump(t.data, limit=_limit(args))))
 

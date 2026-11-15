@@ -96,17 +96,53 @@ def parse_string(raw: bytes) -> str | None:
 @dataclass
 class ReportInfo:
     report_id: int
-    usage_page: int
+    usage_page: int  # the page in effect at the report's first main item
     input_bits: int = 0
     output_bits: int = 0
     feature_bits: int = 0
+    # Every page any of the report's main items draws on. A report can mix
+    # pages, so a single page is not enough to decide what it carries.
+    usage_pages: set[int] = field(default_factory=set)
+
+
+class _Truncated(Exception):
+    pass
+
+
+def _iter_items(raw: bytes):
+    """Yield (item_type, tag, size, value) per short item; raise on truncation."""
+    pos = 0
+    while pos < len(raw):
+        prefix = raw[pos]
+        if prefix == 0xFE:  # long item: skip it, but it must fit
+            if pos + 2 >= len(raw) or pos + 3 + raw[pos + 1] > len(raw):
+                raise _Truncated
+            pos += 3 + raw[pos + 1]
+            continue
+        size = (0, 1, 2, 4)[prefix & 0x03]
+        if pos + 1 + size > len(raw):
+            raise _Truncated
+        yield (prefix >> 2) & 0x03, prefix >> 4, size, int.from_bytes(raw[pos + 1:pos + 1 + size], "little")
+        pos += 1 + size
+
+
+def report_descriptor_complete(raw: bytes) -> bool:
+    """False if the descriptor ends in the middle of an item."""
+    try:
+        for _ in _iter_items(raw):
+            pass
+    except _Truncated:
+        return False
+    return True
 
 
 def summarise_hid_report_descriptor(raw: bytes) -> list[ReportInfo]:
-    """Per report ID: usage page and payload size per report type.
+    """Per report ID: usage pages and payload size per report type.
 
     Deliberately a summary, not a full HID parser: it answers "which report IDs
-    exist, how big are they, and are they vendor-defined".
+    exist, how big are they, and which usage pages do they draw on". A truncated
+    descriptor yields whatever was parsed before the cut; use
+    report_descriptor_complete() to tell the two apart.
     """
     reports: dict[int, ReportInfo] = {}
     usage_page = 0
@@ -114,40 +150,40 @@ def summarise_hid_report_descriptor(raw: bytes) -> list[ReportInfo]:
     report_size = 0
     report_count = 0
     global_stack: list[tuple[int, int, int, int]] = []
-    pos = 0
-    while pos < len(raw):
-        prefix = raw[pos]
-        if prefix == 0xFE:  # long item
-            if pos + 1 >= len(raw):
-                break
-            pos += 3 + raw[pos + 1]
-            continue
-        size = (0, 1, 2, 4)[prefix & 0x03]
-        item_type = (prefix >> 2) & 0x03
-        tag = prefix >> 4
-        value = int.from_bytes(raw[pos + 1:pos + 1 + size], "little")
-        pos += 1 + size
-
-        if item_type == 1:  # global
-            if tag == 0x0:
-                usage_page = value
-            elif tag == 0x7:
-                report_size = value
-            elif tag == 0x8:
-                report_id = value
-            elif tag == 0x9:
-                report_count = value
-            elif tag == 0xA:
-                global_stack.append((usage_page, report_id, report_size, report_count))
-            elif tag == 0xB and global_stack:
-                usage_page, report_id, report_size, report_count = global_stack.pop()
-        elif item_type == 0 and tag in (0x8, 0x9, 0xB):  # input / output / feature
-            info = reports.setdefault(report_id, ReportInfo(report_id, usage_page))
-            bits = report_size * report_count
-            if tag == 0x8:
-                info.input_bits += bits
-            elif tag == 0x9:
-                info.output_bits += bits
-            else:
-                info.feature_bits += bits
+    local_pages: set[int] = set()  # pages named by extended (4-byte) usages
+    try:
+        for item_type, tag, size, value in _iter_items(raw):
+            if item_type == 1:  # global
+                if tag == 0x0:
+                    usage_page = value
+                elif tag == 0x7:
+                    report_size = value
+                elif tag == 0x8:
+                    report_id = value
+                elif tag == 0x9:
+                    report_count = value
+                elif tag == 0xA:
+                    global_stack.append((usage_page, report_id, report_size, report_count))
+                elif tag == 0xB and global_stack:
+                    usage_page, report_id, report_size, report_count = global_stack.pop()
+            elif item_type == 2:  # local
+                # Usage, Usage Minimum and Usage Maximum with four data bytes
+                # carry their own usage page in the high sixteen bits.
+                if tag in (0x0, 0x1, 0x2) and size == 4:
+                    local_pages.add(value >> 16)
+            elif item_type == 0:  # main
+                if tag in (0x8, 0x9, 0xB):  # input / output / feature
+                    info = reports.setdefault(report_id, ReportInfo(report_id, usage_page))
+                    info.usage_pages.add(usage_page)
+                    info.usage_pages |= local_pages
+                    bits = report_size * report_count
+                    if tag == 0x8:
+                        info.input_bits += bits
+                    elif tag == 0x9:
+                        info.output_bits += bits
+                    else:
+                        info.feature_bits += bits
+                local_pages = set()  # local items end at every main item
+    except _Truncated:
+        pass
     return [reports[k] for k in sorted(reports)]

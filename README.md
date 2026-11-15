@@ -57,11 +57,15 @@ Or install it as a command: `pip install -e .`, then `kb7cap …`.
 
 Keyboard reports are hidden by default, because they show what was typed during
 the capture (`--show-keystrokes` to override). That covers boot-keyboard
-interfaces and, per report ID, keyboard reports that sit on an otherwise
-vendor-defined interface — the KB7 has one of those. It relies on the HID report
-descriptor being present in the capture, which means a capture that does not
-include an enumeration cannot be filtered this way. Review any output before
-you share it.
+interfaces and, per report ID, any report whose descriptor draws on the
+keyboard usage page — including ones on an otherwise vendor-defined interface,
+which the KB7 has.
+
+When a capture lacks a HID interface's report descriptor — because it started
+with the device already plugged in — nothing rules out typing on that
+interface, so **all** of its reports are hidden and the output says why. A
+device whose configuration descriptor is not in the capture at all is not
+recognised as HID and is not filtered. Review any output before you share it.
 
 Tests: `python -m unittest discover -s tests -t .`
 

@@ -7,7 +7,7 @@ import unittest
 
 from kb7tools.analysis import Capture, diff_lines, summary_lines
 from kb7tools.cli import main
-from kb7tools.descriptors import summarise_hid_report_descriptor
+from kb7tools.descriptors import report_descriptor_complete, summarise_hid_report_descriptor
 from kb7tools.pcap import CaptureFormatError, read_packets
 from kb7tools.usb import XFER_CONTROL, XFER_INTERRUPT
 
@@ -153,6 +153,38 @@ class UsbPcapTransferTests(TempDirTest):
         self.assertEqual(code, 0)
         self.assertIn("04 00 00 04", shown)
 
+    def _session_without_report_descriptor(self, descriptor: bytes | None) -> Capture:
+        b = synth.UsbPcapBuilder()
+        b.enumerate(report_descriptor=False)
+        if descriptor is not None:
+            b.control_in(synth.setup_bytes(0x81, 6, 0x2200, 1, len(synth.HID_REPORT_DESC)), descriptor)
+        b.interrupt_in(0x82, bytes([0x06, 0x00, 0x01]))
+        synth.write_pcapng(self.path("nd.pcapng"), 249, b.packets)
+        return Capture(self.path("nd.pcapng"))
+
+    def test_hid_interface_without_report_descriptor_fails_closed(self) -> None:
+        # The interface is known to be HID, but the capture never saw its report
+        # descriptor, so nothing rules out a keyboard report: hide it.
+        cap = self._session_without_report_descriptor(None)
+        (t,) = [t for t in cap.transfers if t.endpoint == 0x82 and t.data]
+        self.assertTrue(cap.is_keystroke(t))
+
+    def test_truncated_report_descriptor_fails_closed(self) -> None:
+        # Cut inside the first item: the usage page lacks its second data byte.
+        cap = self._session_without_report_descriptor(synth.HID_REPORT_DESC[:2])
+        (t,) = [t for t in cap.transfers if t.endpoint == 0x82 and t.data]
+        self.assertTrue(cap.is_keystroke(t))
+
+    def test_fail_closed_output_says_why(self) -> None:
+        self._session_without_report_descriptor(None)
+        code, out = self.run_cli("dump", self.path("nd.pcapng"), "-d", "1234:5678", "-e", "0x82")
+        self.assertEqual(code, 0)
+        self.assertNotIn("06 00 01", out)
+        self.assertIn("no HID report descriptor", out)
+        code, shown = self.run_cli("dump", self.path("nd.pcapng"), "-d", "1234:5678", "-e", "0x82",
+                                   "--show-keystrokes")
+        self.assertIn("06 00 01", shown)
+
     def test_standard_requests_hidden_by_default(self) -> None:
         cap = self.capture()
         self.assertFalse(any(t.setup is not None and t.setup.is_standard for t in cap.select(None)))
@@ -185,6 +217,37 @@ class UsbmonTests(TempDirTest):
 
 
 class DescriptorTests(unittest.TestCase):
+    def test_report_with_mixed_pages_records_every_page(self) -> None:
+        # Report 7 starts on a vendor page and only later switches to the
+        # keyboard page. Recording just the first page would let it leak.
+        desc = bytes([
+            0x06, 0x00, 0xFF, 0x09, 0x01, 0xA1, 0x01,
+            0x85, 0x07, 0x75, 0x08, 0x95, 0x02, 0x09, 0x02, 0x81, 0x02,   # vendor input
+            0x05, 0x07, 0x19, 0x00, 0x29, 0xFF, 0x95, 0x06, 0x81, 0x00,   # keyboard input
+            0xC0,
+        ])
+        (r,) = summarise_hid_report_descriptor(desc)
+        self.assertEqual(r.report_id, 7)
+        self.assertEqual(r.usage_pages, {0xFF00, 0x07})
+
+    def test_extended_usage_carries_its_own_page(self) -> None:
+        # Four-byte Usage Minimum/Maximum put the page in the high 16 bits, so
+        # the keyboard page appears without any Usage Page item for it.
+        desc = bytes([
+            0x06, 0x00, 0xFF, 0x09, 0x01, 0xA1, 0x01,
+            0x85, 0x08, 0x75, 0x08, 0x95, 0x06,
+            0x1B, 0x00, 0x00, 0x07, 0x00,      # Usage Minimum 0x0007:0000
+            0x2B, 0xFF, 0x00, 0x07, 0x00,      # Usage Maximum 0x0007:00FF
+            0x81, 0x00,
+            0xC0,
+        ])
+        (r,) = summarise_hid_report_descriptor(desc)
+        self.assertIn(0x07, r.usage_pages)
+
+    def test_report_descriptor_completeness(self) -> None:
+        self.assertTrue(report_descriptor_complete(synth.HID_REPORT_DESC))
+        self.assertFalse(report_descriptor_complete(synth.HID_REPORT_DESC[:2]))
+
     def test_hid_report_summary(self) -> None:
         reports = summarise_hid_report_descriptor(synth.HID_REPORT_DESC)
         self.assertEqual([(r.report_id, r.usage_page, r.feature_bits, r.output_bits) for r in reports],

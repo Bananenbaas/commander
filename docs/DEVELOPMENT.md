@@ -70,13 +70,21 @@ pip install -e .                            # then: kb7cap summary <capture>
 - `--inject-descriptors` gives device and configuration descriptors only. HID
   report descriptors and string descriptors appear solely in a real enumeration,
   so `01-plug-in` cannot be skipped.
-- **Keystroke hiding depends on the capture containing a report descriptor.**
-  Boot-keyboard interfaces are recognised from the configuration descriptor, but
-  a keyboard report on a vendor-defined interface can only be identified from
-  the HID report descriptor, and that is fetched during enumeration. A capture
-  started while the device was already connected therefore carries no report
-  descriptor, and `is_keystroke` cannot flag those reports. Treat the filter as
-  a safety net, not a guarantee: review output before sharing it.
+- **Keystroke hiding fails closed.** A report counts as typing when its
+  descriptor draws on the keyboard usage page (`0x07`) anywhere — the summariser
+  records every page a report's main items use, including pages carried in the
+  high half of four-byte Usage / Usage Minimum / Usage Maximum items. Recording
+  only the page in effect at a report's first item, as an earlier version did,
+  let a report that starts on a vendor page and switches to the keyboard page
+  through unfiltered.
+- When a HID interface's report descriptor is **missing** from the capture, or
+  **truncated** mid-item, `is_keystroke` returns `True` for every report on it.
+  Report descriptors are only fetched during enumeration, so this hides all
+  device-to-host HID traffic in captures started with the device already
+  connected; `--show-keystrokes` reveals it, and `dump` labels the reason. A
+  device with no configuration descriptor in the capture is not recognised as
+  HID and is not filtered. Treat the filter as a safety net, not a guarantee:
+  review output before sharing it.
 - The `license = "GPL-2.0-or-later"` SPDX string in `pyproject.toml` requires
   setuptools ≥ 77.
 - Captures come from a Windows machine running Swarm II, with the KB7 attached

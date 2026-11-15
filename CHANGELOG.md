@@ -7,6 +7,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- The keystroke filter could still leak. A report was classified by the usage
+  page in effect at its first main item only, so one that starts on a vendor
+  page and switches to the keyboard page passed as vendor data, and usage pages
+  carried in four-byte usages were ignored. Every page a report uses is now
+  recorded, and when a HID interface's report descriptor is missing from the
+  capture or truncated, its reports are hidden rather than shown.
 - Keyboard reports on a vendor-defined interface were printed in full. Hiding
   only looked at boot-keyboard interfaces, but the KB7 also exposes a keyboard
   report on interface 2 alongside unrelated reports, so typed text could appear
