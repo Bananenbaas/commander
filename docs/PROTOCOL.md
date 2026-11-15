@@ -27,7 +27,7 @@ Every entry names the capture(s) it is based on.
 | Configurations | 1; `bMaxPower` 250 → 500 mA, `bmAttributes` `0xa0` (bus powered, remote wakeup) | observed (`00-descriptors`) |
 | Integrated hub | `10f5:503d`, bcdDevice `0x1720`, class `0x09` — the passthrough port, a sibling device on the same bus | observed (`00-descriptors`) |
 | Firmware version | 1.39 — `bcdDevice` `0x0139` matches the version Swarm II reports | observed (`00-descriptors`) |
-| String descriptors | indices present (`iManufacturer` 1, `iProduct` 2, `iSerialNumber` 3, `iConfiguration` 4, `iInterface` 5) but the strings themselves are not in a capture yet | unknown |
+| String descriptors | indices present (`iManufacturer` 1, `iProduct` 2, `iSerialNumber` 3, `iConfiguration` 4, `iInterface` 5). Windows fetches only index 5 (22 bytes, language 0x0409) during enumeration; 1, 2 and 3 were never requested, so the manufacturer, product and serial strings are still unseen | partly observed (`01-plug-in-1`) |
 | Swarm II version used | — | unknown |
 
 ## Interfaces and endpoints
@@ -58,17 +58,72 @@ not established**: nothing has been matched to a Swarm II action yet.
 |---|---|
 | Does interface 0 or 1 carry the touchscreen commands? | hypothesis |
 | Which interface carries RGB lighting? | unknown |
-| What are the 457 bytes of interface 2's report descriptor? | unknown — needs the descriptor itself, which `--inject-descriptors` does not fetch |
 
 ## HID reports
 
-The report descriptors themselves are not in a capture yet: USBPcap's
-`--inject-descriptors` supplies the device and configuration descriptors but not
-the HID report descriptors. Those need a real `01-plug-in` capture, where
-Windows fetches them during enumeration.
+From the report descriptors fetched during enumeration in `01-plug-in-1`.
 
-| Interface | Report ID | Type | Size | Usage page | Purpose | Status |
-|---|---|---|---|---|---|---|
+| IF | Report ID | Usage page | Direction / size | Status |
+|---|---|---|---|---|
+| 0 | `0x00` | `0xff90` vendor | in 64 B, out 64 B, feature 64 B | observed (`01-plug-in-1`) |
+| 1 | `0x00` | `0xff00` vendor | in 64 B, out 64 B | observed (`01-plug-in-1`) |
+| 2 | `0x01` | `0x000c` consumer | in 3 B | observed (`01-plug-in-1`) |
+| 2 | `0x02` | `0x0001` generic desktop | in 1 B | observed (`01-plug-in-1`) |
+| 2 | `0x03` | `0xff01` vendor | in 7 B | observed (`01-plug-in-1`) |
+| 2 | `0x04` | `0x0007` keyboard/keypad | in 20 B | observed (`01-plug-in-1`) |
+| 2 | `0x33` | `0xff02` vendor | in 11 B | observed (`01-plug-in-1`) |
+| 2 | 37 further IDs | `0xff03` vendor | **feature** only, 3–1043 B | observed (`01-plug-in-1`) |
+| 3 | `0x00` | `0x0008` LED / `0x0007` keyboard | in 8 B, out 1 B | observed (`01-plug-in-1`) |
+
+Interface 2 carries 42 reports in total. The ordinary input ones are the media
+keys (`0x01`), a system control (`0x02`) and a 20-byte keyboard report (`0x04`,
+wide enough for NKRO) alongside the 8-byte boot keyboard on interface 3.
+
+The remaining 37 IDs on usage page `0xff03` are **feature** reports — not output
+reports. A feature report is read and written with `GET_REPORT` / `SET_REPORT`
+over the control endpoint, which matches the traffic mix in `01-plug-in-1`
+(74 control IN and 11 control OUT transfers against a handful of interrupts).
+Expect Swarm II's command surface to live here rather than on the interrupt OUT
+endpoints `0x06` / `0x0d` / `0x0f`.
+
+### Feature report sizes on interface 2, usage page `0xff03`
+
+| Size | Report IDs |
+|---|---|
+| 1043 B | `0x08` |
+| 1027 B | `0x2e`, `0x2f` |
+| 687 B | `0x31` |
+| 583 B | `0x29` |
+| 519 B | `0x38` |
+| 347 B | `0x11`, `0x21`, `0x22`, `0x23` |
+| 307 B | `0x28` |
+| 263 B | `0x37` |
+| 179 B | `0x30` |
+| 175 B | `0x26`, `0x27`, `0x32` |
+| 169 B | `0xa6` |
+| 163 B | `0x25` |
+| 127 B | `0x0f` |
+| 103 B | `0x16` |
+| 91 B | `0x20`, `0x2b`, `0x2c`, `0x39` |
+| 43 B | `0x17` |
+| 19 B | `0x0d` |
+| 15 B | `0x24`, `0x2a`, `0x2d` |
+| 13 B | `0x12` |
+| 12 B | `0x09` |
+| 11 B | `0x35` |
+| 7 B | `0x36` |
+| 4 B | `0x0e` |
+| 3 B | `0x05`, `0x06`, `0xa5` |
+
+Two leads worth stating as leads and nothing more:
+
+| Lead | Reasoning | Status |
+|---|---|---|
+| `0x08` (1043 B) and `0x2e`/`0x2f` (1027 B) carry bulk data, possibly screen images | 1027 = 1024 + 3 and 1043 = 1024 + 19: a 1 KiB payload behind a small header | hypothesis |
+| `0x33` (in, 11 B, `0xff02`) carries touch events | the only vendor **input** report outside `0xff03`, so it is the one the device can push unprompted | hypothesis |
+
+Neither has been tied to a Swarm II action. That work starts at scenario 03,
+where a single deliberate change is diffed between two captures.
 
 ## Command catalogue
 
