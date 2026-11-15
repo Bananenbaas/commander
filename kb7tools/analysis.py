@@ -7,8 +7,8 @@ import difflib
 from collections import Counter
 from dataclasses import dataclass, field
 
-from .descriptors import (DeviceDescriptor, Interface, ReportInfo, parse_configuration,
-                          parse_string, summarise_hid_report_descriptor)
+from .descriptors import (HID_USAGE_PAGE_KEYBOARD, DeviceDescriptor, Interface, ReportInfo,
+                          parse_configuration, parse_string, summarise_hid_report_descriptor)
 from .pcap import read_packets
 from .usb import (DESC_CONFIGURATION, DESC_DEVICE, DESC_HID_REPORT, DESC_STRING, XFER_CONTROL,
                   XFER_NAMES, Transfer, iter_transfers)
@@ -32,7 +32,22 @@ class DeviceInfo:
         return f"{d.vid_pid} {label}".strip()
 
     def keyboard_endpoints(self) -> set[int]:
+        """Endpoints of boot-keyboard interfaces: every report on them is typing."""
         return {ep.address for i in self.interfaces if i.is_boot_keyboard for ep in i.endpoints}
+
+    def keystroke_report_ids(self, iface_no: int) -> set[int]:
+        """Report IDs on one interface that carry keyboard usages.
+
+        A keyboard report is not confined to boot-keyboard interfaces. The KB7
+        exposes one on an otherwise vendor-defined interface, mixed in with
+        unrelated reports on the same endpoint, so hiding whole endpoints would
+        hide far too much. Match on the report ID instead.
+        """
+        raw = self.hid_reports.get(iface_no)
+        if not raw:
+            return set()
+        return {r.report_id for r in summarise_hid_report_descriptor(raw)
+                if r.usage_page == HID_USAGE_PAGE_KEYBOARD}
 
     def interface_for_endpoint(self, ep_address: int) -> Interface | None:
         for iface in self.interfaces:
@@ -92,8 +107,21 @@ class Capture:
 
     def is_keystroke(self, t: Transfer) -> bool:
         dev = self.devices.get(t.address)
-        return (dev is not None and t.direction_in and t.xfer_type != XFER_CONTROL
-                and t.endpoint in dev.keyboard_endpoints())
+        if dev is None or not t.direction_in or t.xfer_type == XFER_CONTROL:
+            return False
+        if t.endpoint in dev.keyboard_endpoints():
+            return True
+        iface = dev.interface_for_endpoint(t.endpoint)
+        if iface is None:
+            return False
+        ids = dev.keystroke_report_ids(iface.number)
+        if not ids:
+            return False
+        # Report ID 0 means the reports on this interface carry no ID byte, so
+        # nothing on it can be told apart: hide the lot.
+        if 0 in ids:
+            return True
+        return bool(t.data) and t.data[0] in ids
 
     def select(self, addresses: set[str] | None, *, include_standard: bool = False,
                include_empty: bool = False, direction: str | None = None,

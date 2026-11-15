@@ -17,6 +17,11 @@ one variable only. Everything in `docs/PROTOCOL.md` is derived from these files.
   and a failed update is the main way to brick the keyboard.
 - Write down the **Swarm II version** and **KB7 firmware version** (shown in
   Swarm II) in `captures/NOTES.md`. The protocol may differ per firmware.
+- Also write down **how the keyboard is connected**: the supplied USB-A
+  connectors or its single USB-C port, and which port of the machine. The device
+  hangs behind its own hub and reports USB 2.0 over USB-A; a different cabling
+  may well enumerate differently, so captures made over different connections
+  are not directly comparable.
 
 ## Windows setup (Swarm II machine)
 

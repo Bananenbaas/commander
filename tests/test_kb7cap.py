@@ -26,6 +26,7 @@ def build_session(colour: int, *, split_control: bool = False,
     b.interrupt_in(0x81, KEYSTROKE)
     b.interrupt_out(0x03, bytes([0x06, 0x10, colour, 0x00, 0xFF]) + bytes(27))
     b.interrupt_in(0x82, bytes([0x06, 0x00, 0x01]))
+    b.interrupt_in(0x82, synth.VENDOR_KEYSTROKE)
     return b
 
 
@@ -124,9 +125,33 @@ class UsbPcapTransferTests(TempDirTest):
         cap = self.capture()
         intr = [t for t in cap.transfers if t.xfer_type == XFER_INTERRUPT]
         self.assertEqual([(t.endpoint, t.direction_in) for t in intr],
-                         [(0x81, True), (0x03, False), (0x82, True)])
+                         [(0x81, True), (0x03, False), (0x82, True), (0x82, True)])
         self.assertEqual(intr[2].data, bytes([0x06, 0x00, 0x01]))
+        self.assertEqual(intr[3].data, synth.VENDOR_KEYSTROKE)
         self.assertTrue(all(t.complete and t.status == 0 for t in cap.transfers))
+
+    def test_keyboard_report_on_a_vendor_interface_counts_as_a_keystroke(self) -> None:
+        # Interface 1 is not a boot keyboard, but its report descriptor declares
+        # a keyboard report (id 0x04). That report may not leak by default,
+        # while the other reports on the same endpoint must stay visible.
+        cap = self.capture()
+        vendor_in = [t for t in cap.transfers
+                     if t.endpoint == 0x82 and t.xfer_type == XFER_INTERRUPT and t.data]
+        by_id = {t.data[0]: t for t in vendor_in}
+        self.assertIn(0x04, by_id, "synthetic session should contain the keyboard report")
+        self.assertIn(0x06, by_id, "synthetic session should contain a vendor report")
+        self.assertTrue(cap.is_keystroke(by_id[0x04]))
+        self.assertFalse(cap.is_keystroke(by_id[0x06]))
+
+    def test_vendor_keystroke_is_not_printed_without_the_flag(self) -> None:
+        synth.write_pcapng(self.path("k.pcapng"), 249, build_session(0x11).packets)
+        code, out = self.run_cli("dump", self.path("k.pcapng"), "-d", "1234:5678")
+        self.assertEqual(code, 0)
+        self.assertNotIn("04 00 00 04", out)
+        code, shown = self.run_cli("dump", self.path("k.pcapng"), "-d", "1234:5678",
+                                   "--show-keystrokes")
+        self.assertEqual(code, 0)
+        self.assertIn("04 00 00 04", shown)
 
     def test_standard_requests_hidden_by_default(self) -> None:
         cap = self.capture()
@@ -163,7 +188,7 @@ class DescriptorTests(unittest.TestCase):
     def test_hid_report_summary(self) -> None:
         reports = summarise_hid_report_descriptor(synth.HID_REPORT_DESC)
         self.assertEqual([(r.report_id, r.usage_page, r.feature_bits, r.output_bits) for r in reports],
-                         [(5, 0xFF00, 512, 0), (6, 0xFF00, 0, 256)])
+                         [(4, 0x07, 0, 0), (5, 0xFF00, 512, 0), (6, 0xFF00, 0, 256)])
 
 
 class DiffTests(TempDirTest):

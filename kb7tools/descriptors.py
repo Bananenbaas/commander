@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 USB_CLASS_HID = 0x03
 HID_PROTOCOL_KEYBOARD = 0x01
+HID_USAGE_PAGE_KEYBOARD = 0x07  # a report on this page carries what was typed
 
 
 @dataclass(frozen=True)

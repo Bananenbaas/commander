@@ -24,7 +24,7 @@ def _add_filters(p: argparse.ArgumentParser) -> None:
     p.add_argument("--standard", action="store_true", help="include standard control requests (descriptors etc.)")
     p.add_argument("--max-bytes", type=int, default=256, help="bytes of payload to print per transfer (0 = all)")
     p.add_argument("--show-keystrokes", action="store_true",
-                   help="do not hide reports from boot-keyboard interfaces (may reveal typed text)")
+                   help="do not hide keyboard reports (may reveal typed text)")
 
 
 def build_parser() -> argparse.ArgumentParser:

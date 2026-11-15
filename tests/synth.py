@@ -35,8 +35,22 @@ HID_REPORT_DESC = bytes([
     0x95, 0x20,        # report count 32
     0x09, 0x03,
     0x91, 0x02,        # output
+    # A keyboard report on the same vendor interface. Real keyboards do this:
+    # the KB7 exposes one next to its vendor reports, so it is not enough to
+    # look only at boot-keyboard interfaces when hiding keystrokes.
+    0x05, 0x07,        # usage page 0x07 (keyboard/keypad)
+    0x85, 0x04,        # report id 4
+    0x75, 0x08,        # report size 8
+    0x95, 0x08,        # report count 8
+    0x19, 0x00,        # usage minimum 0
+    0x29, 0xFF,        # usage maximum 255
+    0x81, 0x00,        # input
     0xC0,              # end collection
 ])
+
+# Report 0x04 on the vendor interface is a keyboard report, so this must never
+# be shown unless --show-keystrokes is given.
+VENDOR_KEYSTROKE = bytes([0x04]) + bytes([0, 0, 0x04, 0, 0, 0, 0])
 
 
 def string_desc(text: str) -> bytes:

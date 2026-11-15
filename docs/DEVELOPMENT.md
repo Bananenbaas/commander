@@ -70,6 +70,13 @@ pip install -e .                            # then: kb7cap summary <capture>
 - `--inject-descriptors` gives device and configuration descriptors only. HID
   report descriptors and string descriptors appear solely in a real enumeration,
   so `01-plug-in` cannot be skipped.
+- **Keystroke hiding depends on the capture containing a report descriptor.**
+  Boot-keyboard interfaces are recognised from the configuration descriptor, but
+  a keyboard report on a vendor-defined interface can only be identified from
+  the HID report descriptor, and that is fetched during enumeration. A capture
+  started while the device was already connected therefore carries no report
+  descriptor, and `is_keystroke` cannot flag those reports. Treat the filter as
+  a safety net, not a guarantee: review output before sharing it.
 - The `license = "GPL-2.0-or-later"` SPDX string in `pyproject.toml` requires
   setuptools ≥ 77.
 - Captures come from a Windows machine running Swarm II, with the KB7 attached

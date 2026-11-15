@@ -7,6 +7,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- Keyboard reports on a vendor-defined interface were printed in full. Hiding
+  only looked at boot-keyboard interfaces, but the KB7 also exposes a keyboard
+  report on interface 2 alongside unrelated reports, so typed text could appear
+  in `dump` output without `--show-keystrokes`. Hiding is now decided per report
+  ID from the HID report descriptor, which keeps the other reports on that
+  endpoint visible.
 - USBPcap control transfers lost their payload. USBPcap 1.5.4 attaches the data
   of a control transfer to the COMPLETE stage and emits no DATA stage at all, so
   every control transfer in a real capture was parsed as empty and no device or

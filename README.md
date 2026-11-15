@@ -53,8 +53,13 @@ python -m kb7tools diff a.pcapng b.pcapng -d <vid>:<pid>  # which bytes changed
 
 Or install it as a command: `pip install -e .`, then `kb7cap …`.
 
-Reports from boot-keyboard interfaces are hidden by default, because they show
-what was typed during the capture (`--show-keystrokes` to override).
+Keyboard reports are hidden by default, because they show what was typed during
+the capture (`--show-keystrokes` to override). That covers boot-keyboard
+interfaces and, per report ID, keyboard reports that sit on an otherwise
+vendor-defined interface — the KB7 has one of those. It relies on the HID report
+descriptor being present in the capture, which means a capture that does not
+include an enumeration cannot be filtered this way. Review any output before
+you share it.
 
 Tests: `python -m unittest discover -s tests -t .`
 

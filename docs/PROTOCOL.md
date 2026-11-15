@@ -29,6 +29,7 @@ Every entry names the capture(s) it is based on.
 | Firmware version | 1.39 — `bcdDevice` `0x0139` matches the version Swarm II reports | observed (`00-descriptors`) |
 | String descriptors | indices present (`iManufacturer` 1, `iProduct` 2, `iSerialNumber` 3, `iConfiguration` 4, `iInterface` 5). Windows fetches only index 5 (22 bytes, language 0x0409) during enumeration; 1, 2 and 3 were never requested, so the manufacturer, product and serial strings are still unseen | partly observed (`01-plug-in-1`) |
 | Swarm II version used | — | unknown |
+| Physical connection | the supplied **USB-A** connectors, on an AMD xHCI root hub, behind the keyboard's own hub. The keyboard also has a single **USB-C** port, so far untested | observed (`00-descriptors`, `01-plug-in-1`, `-2`, `00-idle-1`) |
 
 ## Interfaces and endpoints
 
@@ -267,5 +268,12 @@ _None identified yet._
 4. Which interface carries keystrokes besides the boot keyboard (NKRO)?
    Interface 2 exposes a keyboard collection next to its vendor-defined ones, so
    it is the first candidate — but this has not been seen in traffic.
-5. The device presents three OUT endpoints (`0x06`, `0x0d`, `0x0f`). Does Swarm II
-   use all three, and does each one own a subsystem?
+5. The device presents three OUT endpoints (`0x06`, `0x0d`, `0x0f`). Swarm II
+   uses `0x0d` for its state stream; `0x06` and `0x0f` have not been seen in use.
+6. **Does connecting over USB-C change anything?** Every capture so far was made
+   over the supplied USB-A connectors, where the device reports `bcdUSB 0x0200`.
+   Over the keyboard's single USB-C port the speed, the product ID or the
+   interface layout could differ, which would mean the notes here apply to one
+   cabling only. Worth a `01-plug-in` pair over USB-C to compare.
+7. What are the 360 bytes of the interface 1 state stream, and what do the seven
+   `0x7f`/`0x00` pairs sixteen bytes apart represent?
