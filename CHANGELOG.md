@@ -65,6 +65,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
   about 4.9 s after plug-in. Report `0x33` carries the button's position on
   the page, confirmed by prediction on two more buttons, and the mute loop
   identifies the mute byte of the volume frame and the mute-state frame.
+- Screen buttons and profiles: report `0x29` is the page's button table —
+  binding and label per position, with the same checksum as the lighting
+  block — and configuration blocks carry one of five profile slots in byte
+  3, with all five profile names in report `0x16`. A button bound to a
+  modifier on its own reports through notification `0x03`, not as a key.
 - The complete LED map: 94 of the 112 slots identified, including the arrow
   keys, the top buttons and the ten-segment wrist rest strip, with the matrix
   shown to be wired for an ISO layout. With Swarm II closed, a written report

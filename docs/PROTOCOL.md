@@ -373,11 +373,14 @@ what ties the report map to real behaviour.
 | The selector is a **lookup table, not a formula** — the difference ranges from +123 to +164 | observed (`02-swarm-start-1`) |
 | `b4` and `b5` both return report `0x31`, `b6` and `b7` both return `0x32`: two selectors, one block shape. Likely separate slots of the same kind of block, for instance per profile or per layer | hypothesis |
 | Each selector was read five times in this capture, except `ba` once | observed (`02-swarm-start-1`) |
-| Report `0x16` (103 B, selector `ba`) begins with the ASCII text `DESKTOP`: the name of the active Swarm II profile, which the device stores itself. Not a host name, as first assumed | observed (`02-swarm-start-1`) |
+| Report `0x16` (103 B, selector `ba`) holds the names of all five profiles, see "Profiles". Not a host name, as first assumed | observed (`02-swarm-start-1`) |
+| **Byte 3 of a block is the profile slot, 0–4.** Every selector read five times returns the same block five times with byte 3 counting `00`…`04`. The lighting block `0x11` differs between slots; the screen block `0x29` is identical in all five apart from that byte | observed (`02-swarm-start-1`, reports `0x11`, `0x21`, `0x29`) |
 | Report `0x0e` is written as `0e 05 00 00 00` and `0e 05 01 00 00`, a register taking 0 and 1 — looks like enabling something before the reads | hypothesis |
 
-Writing has **not** been observed: every exchange above is a read. Nothing here
-is enough to safely write configuration back.
+Writing configuration does not go through the selector: Swarm II writes a
+block directly with `SET_REPORT`, with byte 3 set to the slot it is writing
+(`00`, the active `DESKTOP` profile, in every write seen so far). See report
+`0x11` for lighting and report `0x29` for the screen buttons.
 
 ### `a3` frames on interface 1: the PC pushes values, the device renders
 
@@ -586,8 +589,68 @@ Verified against all seven distinct `0x11` frames across `02-swarm-start-1` and
 | Bytes 3, 6 and 7 of the header | brightness and effect are guesses; a brightness capture (`04-rgb-brightness`) would settle byte 6 |
 | Whether a write needs the preceding read | Swarm II read `0x11` at startup before writing it |
 
-### Touchscreen: button layout and pages
-unknown
+### Touchscreen: button layout and pages — report `0x29`
+
+`15-screen-assign-break-1`: in Swarm II I changed one screen button, BREAK, to
+the Left Alt key. Swarm II wrote two feature reports and nothing else:
+
+```
+SET_REPORT 0x29   584 bytes   29 48 02 00 …                 the page's button table
+SET_REPORT 0x35    12 bytes   35 0c 01 05 01 00 05 00 01 00 4e 00
+```
+
+Report `0x29` is the button table of the screen page, in the same form Swarm II
+reads at startup with selector `b9`. Compared with that read, only the BREAK
+entry, the slot byte and the checksum changed. Each button is a 16-byte entry,
+**position *p* at offset 7 + 16p**:
+
+| Bytes | Meaning | Example |
+|---|---|---|
+| 0 | modifier, as a HID keyboard usage | `e2` Left Alt; `00` for a plain key |
+| 1 | key, as a HID keyboard usage | `46` Print Screen, `47` Scroll Lock, `48` Pause |
+| 2 | kind of binding: `0c` a key, `06` a modifier on its own | |
+| 3 | `00` | |
+| 4–15 | label shown on the button, ASCII, NUL-terminated | `PRINT`, `SCR LK` |
+
+The `DESKTOP` page as stored:
+
+```
+pos  0-2   all zero — the three icon buttons; their actions are not in this table
+pos  3     00 46 0c 00  PRINT
+pos  4     00 47 0c 00  SCR LK
+pos  5     00 48 0c 00  BREAK   ->   e2 00 06 00  ALT
+pos  6-11  INS, HOME, PGUP, DEL, END, PGDOWN  (usages 49-4e)
+```
+
+Swarm II overwrote the label without clearing it: the new entry reads `ALT K`,
+the `K` left over from `BREAK`. Harmless, since the label is NUL-terminated.
+
+| Finding | Status |
+|---|---|
+| Report `0x29` holds the screen page's button bindings and labels, 16 bytes per position | observed (`02-swarm-start-1`, `15-screen-assign-break-1`) |
+| Header: `29 48 02 <slot>`; offsets 199–581 hold 30 further non-zero bytes of unknown meaning | observed / unknown |
+| The trailer is the same 16-bit sum as report `0x11`: `sum(bytes[0:582]) & 0xffff`, little-endian at 582–583 | **confirmed by arithmetic** on six frames |
+| Report `0x35` follows the table write and names position `05`; what it does — apply, redraw — is unknown | hypothesis |
+| Where the three icon buttons (positions 0–2) get their actions | unknown |
+
+**A modifier button does not send a keyboard report.** Tapping the reassigned
+button produced touch report `33 01 05 05 00 00 01 01` — byte 3 now `05` — and
+nothing at all on the boot keyboard. The Alt arrives instead in the vendor
+notification report:
+
+```
+03 00 06 01 00 e2 00 06    pressed  (06 = modifier binding, e2 = Left Alt)
+03 00 06 00 00 e2 00 06    released
+```
+
+Windows ignores that report, so for such a button it is the host software that
+has to produce the Alt key. A plain key is sent by the keyboard itself; a
+modifier on its own is not. A replacement for Swarm II therefore has to read
+report `0x03` as well as report `0x33`.
+
+While the binding was being changed, the keyboard also sent a burst of 23
+notifications of another kind within a tenth of a second. Their purpose is
+unknown.
 
 ### Touchscreen: image upload
 unknown. Pixel format, chunk size, addressing, checksum.
@@ -731,9 +794,29 @@ runs, the model is: `0x11` holds the keyboard's own lighting, and the `a1`
 stream is a live overlay that wins for as long as somebody keeps sending it.
 
 ### Profiles
-Report `0x16` holds the name of the active Swarm II profile — `DESKTOP` on
-this keyboard — read at startup with selector `ba`. How profiles are switched
-is still unknown; scenario 08 should show it.
+
+**The keyboard stores five profiles.** Configuration blocks carry the profile
+slot in byte 3, and Swarm II reads every block once per slot at startup.
+
+Report `0x16` (103 bytes, selector `ba`, read once) holds all five names, in
+twenty-byte fields from offset 2:
+
+| Slot | Name |
+|---|---|
+| 0 | `DESKTOP` |
+| 1 | starts with `SC` |
+| 2 | `DEFAULT 03` |
+| 3 | `DEFAULT 04` |
+| 4 | `DEFAULT 05` |
+
+Some fields contain bytes after the name's terminating NUL; whether that is
+data or leftover content, as in the `ALT K` button label, is unknown.
+
+| Finding | Status |
+|---|---|
+| Five profile slots, with their names in report `0x16` | observed (`02-swarm-start-1`) |
+| The lighting differs per slot; the screen button table is the same in all five | observed |
+| Which slot is active, and how the keyboard switches between them | unknown — scenario 08 |
 
 ## Do-not-send list
 
