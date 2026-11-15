@@ -65,6 +65,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
   about 4.9 s after plug-in. Report `0x33` carries the button's position on
   the page, confirmed by prediction on two more buttons, and the mute loop
   identifies the mute byte of the volume frame and the mute-state frame.
+- Who handles which key: the keyboard reports Fn, its own keys and the new LED
+  brightness through notification `0x03`; Swarm II applies brightness by scaling
+  the colours it streams, the keyboard switches its LEDs off by itself, and
+  Microphone Off is carried out on the host alone. Header byte 6 of report
+  `0x11` is the brightness in percent.
 - Default key and button functions from Turtle Beach's public support
   article, cited as such: the action bar's buttons now have names in the LED
   map, and the empty LED slots line up with the extra keys of the ISO and
@@ -89,7 +94,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
   frames. Whoever streams last owns the LEDs.
 - What actually drives the lighting: the `a1` stream on interface 1 carries the
   live 112-LED colour table, in the same layout as report `0x11` and scaled by
-  255/256. Report `0x11` is stored configuration, which is why writing it only
+  the current brightness. Report `0x11` is stored configuration, which is why writing it only
   makes the keyboard flicker before the stream wins.
 - The LED addressing scheme, proved by lighting a single key: an LED's red,
   green and blue bytes sit sixteen apart inside its 48-byte block, and

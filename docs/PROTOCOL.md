@@ -245,9 +245,11 @@ three bytes can therefore straddle two banks. Always concatenate all six banks
 into the 360-byte payload first and index into that; reading LED positions
 straight out of a single bank only works by accident.
 
-**The values are scaled down by one.** `floor(v x 255/256)`:
+**The values are the colours scaled by the current brightness.** At the 99 %
+brightness these captures were made at, every value came out one lower than
+configured:
 
-| Configured | On the wire |
+| Configured | On the wire at 99 % |
 |---|---|
 | 255 | `0xfe` (254) |
 | 192 | `0xbf` (191) |
@@ -256,6 +258,13 @@ straight out of a single bank only works by accident.
 | 16 | `0x0f` (15) |
 | 0 | `0x00` (0) |
 
+An earlier version of this section read that as a fixed `floor(v x 255/256)`
+encoding. `04-rgb-fn-keys-and-mic-1` shows it is brightness: raising the
+brightness from 99 % to 100 % with Fn + Up moved the same red from 254 to 255,
+and stepping down to 20 % took it through 232, 206, 180, 155, 129, 103, 77 and
+52. Those steps are close to, but a point or two above, a straight
+`v x percent / 100`; the exact curve is unknown.
+
 That also explains the byte histogram of a static 255, 51, 51: 101 bytes of
 `0xfe` are reds at full, 188 bytes of `0x32` are the greens and blues, 64 zeros
 are LEDs that are off, and the seven `0x7f` are LEDs sitting at 128.
@@ -263,7 +272,8 @@ are LEDs that are off, and the seven `0x7f` are LEDs sitting at 128.
 | Finding | Status |
 |---|---|
 | The `a1` stream carries the live 112-LED colour table, in the same layout as report `0x11` | **confirmed** (`03-rgb-perkey-esc-1040c0-1`) |
-| Values are transmitted as `floor(v x 255/256)` | observed (five distinct values) |
+| The host applies the brightness itself, by scaling the colours it streams | observed (`04-rgb-fn-keys-and-mic-1`) |
+| The exact brightness curve | unknown — nine points observed for a value of 255 |
 | What the trailing 24 bytes hold | unknown |
 | Why the table is resent 20 times a second rather than on change | unknown |
 
@@ -499,6 +509,25 @@ Byte 2 selects the kind of event. Seen so far:
 | `31` | `03 00 31 <view> <b4> <b5> <b6> 00` | the screen has drawn a new view and wants live values: after every profile switch, about 4.9 s after plug-in, and on entering and leaving the on-screen settings. Swarm II answers each one by re-sending the mute state and volume frames. `<view>` is `20` for a profile's main page and `04` for the settings view seen so far | observed / hypothesis for the meaning |
 | `cc` | `03 00 cc 01 00 00 00 00` | the volume dial was turned | observed (`10-dial-volume-up-1`) |
 | `06` | `03 00 06 <down> 00 <usage> 00 06` | a screen button bound to a modifier on its own | observed (`15-screen-assign-break-1`) |
+| `fc` | `03 00 fc <down> 00 00 00 00` | the Fn key pressed (`01`) or released (`00`) | observed (`04-rgb-fn-keys-and-mic-1`) |
+| `02` | `03 00 02 <key> <down> 00 00 00` | a key pressed or released that the keyboard handles itself: Fn-layer keys and the action bar. `<key>` is an internal number, not the LED index or a HID usage: Up `3a`, Down `3b`, Microphone Off `57`, RGB on/off `58` | observed |
+| `0c` | `03 00 0c <percent> 00 00 00 00` | the LED brightness changed, in steps of ten from 20 to 100 | observed |
+| `11` | `03 00 11 <off> 00 00 00 00` | the RGB on/off button: `01` when it switched the LEDs off, `00` when back on | observed |
+| `f1` | `03 00 f1 08 57 11 <down> 00` | sent alongside the Microphone Off button's own `02` event | observed; meaning unknown |
+| `fa` | `03 00 fa …` | hundreds per second while Fn is held; bytes 3–5 change as other keys are pressed | observed; meaning unknown |
+
+**What `04-rgb-fn-keys-and-mic-1` shows about who does what.** Swarm II was
+running and sent nothing to the keyboard but its lighting stream throughout.
+
+- **Brightness**: the keyboard computes the new level from Fn + Up/Down and
+  reports it (`0c`); Swarm II applies it by scaling the colours it streams.
+- **RGB on/off**: the keyboard switches its LEDs off and on by itself — the
+  stream carried on unchanged throughout.
+- **Microphone Off**: the keyboard only reports the press; the host mutes the
+  microphone, and nothing comes back to the keyboard.
+- **Fn + Left/Right** (previous/next effect) produced key events but no visible
+  change and no stream change, with a Swarm II profile active. Whether they do
+  something without Swarm II is open.
 
 Bytes 4–6 of the `31` event vary every time, and they are not a simple counter:
 across five profile switches they happened to rise (`11 1b 83` … `b9 30 87`),
@@ -529,7 +558,7 @@ stream stays unchanged, so lighting is configuration, not a per-frame stream.
 | 2 | `01` | constant | observed |
 | 3 | `00` / `04` | varies between the read and the write | unknown |
 | 4–5 | `01 06` | constant | observed |
-| 6 | `63` / `64` | 99 and 100 — reads like a brightness percentage | hypothesis |
+| 6 | `63` / `64` | brightness in percent: Swarm II wrote 99 while the brightness was at 99 %, which the Fn-key capture confirms independently through the stream values | observed, by agreement with `04-rgb-fn-keys-and-mic-1` |
 | 7 | `0b` / `03` | differs between the written and the read frame — effect or mode | hypothesis |
 | 8–9 | `01 00` | constant | observed |
 | 10–345 | 336 bytes | the LED table, see below | observed |
