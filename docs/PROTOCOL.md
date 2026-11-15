@@ -354,10 +354,18 @@ Across captures:
 02-swarm-start 03 00 31 20 43 20 04 00
 ```
 
-Byte 2 is always `0x31`. Bytes 3–7 vary, and byte 6 took the values `00`, `03`
-and `04`, which looks like an event or status code. This is the channel the
-device uses to tell the host something happened — worth watching during the
-touch scenarios.
+An earlier version of this section claimed byte 2 was always `0x31`. That is
+**wrong**: the dial capture shows `0xcc` there. Every byte after the report ID
+varies.
+
+```
+10-dial-volume-up-1   03 00 cc 01 00 00 00 00   (x56, one per dial click)
+```
+
+This is the channel the device uses to tell the host something happened. It
+fires once per dial click, alongside the Consumer report described below, so it
+is a general "something was operated" notification rather than anything
+volume-specific. Worth watching during the touch scenarios.
 
 **Caveat on all of the above**: `02-swarm-start` has only **one** take so far.
 The capture guide asks for two, so the varying bytes have not been separated from
@@ -374,8 +382,51 @@ unknown
 ### Touchscreen: image upload
 unknown. Pixel format, chunk size, addressing, checksum.
 
+### The volume dial: a complete round trip
+
+The keyboard has a volume dial above Escape. `10-dial-volume-up-1` captures 56
+clicks of it, and shows the full path from a physical control to the value drawn
+on the screen.
+
+**One click, device → host, three reports in the same millisecond:**
+
+```
+ep 0x8c   03 00 cc 01 00 00 00 00     report 0x03, the notification
+ep 0x8c   01 40 00 00                 report 0x01, Consumer page: bit 0x40 set
+ep 0x8c   01 00 00 00                 report 0x01, all bits clear - released
+```
+
+Report `0x01` is the 3-byte Consumer report from the report map (usage page
+`0x000c`). The value is a **bitmap**, not a usage code: one bit, `0x40`, goes up
+and comes back down like an ordinary key press and release.
+
+**Then, 9 ms later, host → device:**
+
+```
+ep 0x0d   a3 00 01 00 00 0d <level> 00 01 00 <level> 00
+```
+
+| Finding | Status |
+|---|---|
+| Each click produces exactly one report `0x03` and one press/release pair of report `0x01` — 56 clicks gave 56 and 112 | observed (`10-dial-volume-up-1`) |
+| The dial is **relative**: it reports a step, nothing more. Windows decides the level and the host pushes the absolute value back for display | observed (`10-dial-volume-up-1`) |
+| One click moves Windows volume by **2 percentage points**, and the level saturates at 100 | observed (`10-dial-volume-up-1`) |
+| The host sends each level **twice**, roughly 50 ms apart | observed (`09-volume-50-1`, `10-dial-volume-up-1`) |
+| Round-trip latency from the device's report to the host's `a3` frame is about 9 ms | observed (`10-dial-volume-up-1`) |
+| Which bit corresponds to volume *down*, and what the other bits of report `0x01` are | unknown |
+
+**What this means for the project.** The screen is a slave display for host-side
+state: the keyboard does not know its own volume. Any replacement for Swarm II
+therefore has to take over both halves — read the device's input reports *and*
+push values back — or the screen will simply stop updating. It also means the
+hardware does not need to be taught anything to show a value; it only needs to
+be sent one.
+
 ### Touch input events
-unknown
+unknown. The dial's notification on report `0x03` and the Consumer report `0x01`
+show the shape device-initiated input takes, so the touch reports are likely to
+arrive on `0x8c` as well. Report `0x33` (vendor input, 11 bytes) remains the
+candidate. Scenario 05 has to confirm it.
 
 ### Profiles
 unknown
@@ -402,7 +453,10 @@ _None identified yet._
 3. Is there a checksum or sequence counter in write commands?
 4. Which interface carries keystrokes besides the boot keyboard (NKRO)?
    Interface 2 exposes a keyboard collection next to its vendor-defined ones, so
-   it is the first candidate — but this has not been seen in traffic.
+   it is the first candidate. Its Consumer report `0x01` and notification report
+   `0x03` have now both been seen carrying real input from the volume dial, which
+   makes interface 2 the input channel — but no actual keystroke has been
+   observed on it yet.
 5. The device presents three OUT endpoints (`0x06`, `0x0d`, `0x0f`). Swarm II
    uses `0x0d` for its state stream; `0x06` and `0x0f` have not been seen in use.
 6. **Does connecting over USB-C change anything?** Every capture so far was made
