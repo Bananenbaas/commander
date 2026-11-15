@@ -197,6 +197,49 @@ class UsbPcapTransferTests(TempDirTest):
             cap.resolve_device("dead:beef")
 
 
+class TimingTests(TempDirTest):
+    """Interrupt IN requests are queued long before the device has data.
+
+    The data reaches the host when the request completes, so that is the time a
+    transfer must carry. Timestamping at submission puts every report next to
+    the previous one, which made two taps three seconds apart look like a pair
+    of duplicates in a real capture.
+    """
+
+    def test_usbpcap_in_transfer_carries_its_completion_time(self) -> None:
+        b = synth.UsbPcapBuilder()
+        b.enumerate()
+        irp = b._next_irp()
+        b._pkt(irp, 0, 0x82, 1, b"")              # read queued now ...
+        queued_at = b.t
+        b.t += 3.0
+        b.interrupt_out(0x03, bytes(32))          # ... something else happens ...
+        b._pkt(irp, 1, 0x82, 1, bytes([0x06, 0x00, 0x01]))  # ... data arrives 3 s later
+        arrived_at = b.t
+        synth.write_pcapng(self.path("t.pcapng"), 249, b.packets)
+        cap = Capture(self.path("t.pcapng"))
+        intr = [t for t in cap.transfers if t.xfer_type == XFER_INTERRUPT]
+        self.assertEqual([t.endpoint for t in intr], [0x03, 0x82])
+        self.assertAlmostEqual(intr[1].ts, arrived_at, places=4)
+        self.assertAlmostEqual(intr[1].submitted, queued_at, places=4)
+        self.assertEqual([t.ts for t in cap.transfers], sorted(t.ts for t in cap.transfers))
+
+    def test_usbmon_in_transfer_carries_its_completion_time(self) -> None:
+        setup = synth.setup_bytes(0x21, 0x09, 0x0305, 1, len(FEATURE))
+        packets = [
+            (1.0, synth.usbmon_packet(7, "S", 1, 0x82, 7, 3, 1.0, None, b"")),
+            (2.0, synth.usbmon_packet(8, "S", 2, 0x00, 7, 3, 2.0, setup, FEATURE)),
+            (2.1, synth.usbmon_packet(8, "C", 2, 0x00, 7, 3, 2.1, None, b"")),
+            (4.0, synth.usbmon_packet(7, "C", 1, 0x82, 7, 3, 4.0, None, bytes([0x06, 0x00, 0x01]))),
+        ]
+        synth.write_pcapng(self.path("m.pcapng"), 220, packets)
+        cap = Capture(self.path("m.pcapng"))
+        ctrl, intr = cap.transfers
+        self.assertEqual((ctrl.xfer_type, intr.xfer_type), (XFER_CONTROL, XFER_INTERRUPT))
+        self.assertAlmostEqual(intr.ts, 4.0, places=4)
+        self.assertAlmostEqual(intr.submitted, 1.0, places=4)
+
+
 class UsbmonTests(TempDirTest):
     def test_usbmon_mmapped_and_plain(self) -> None:
         setup = synth.setup_bytes(0x21, 0x09, 0x0305, 1, len(FEATURE))

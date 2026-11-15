@@ -99,6 +99,10 @@ class Transfer:
     data: bytes = b""
     status: int | None = None  # None = never completed in this capture
     complete: bool = False
+    # When the request was queued. ``ts`` is when it completed, which is when an
+    # IN transfer's data actually arrived; for a request queued before the
+    # capture started the two are equal.
+    submitted: float | None = None
 
     @property
     def address(self) -> str:
@@ -133,31 +137,27 @@ class _Pending:
 
 
 def iter_transfers(packets: Iterable[RawPacket]) -> Iterator[Transfer]:
-    """Pair submissions and completions into transfers, in submission order."""
-    pending: dict[tuple[int, int], _Pending] = {}
-    order: list[_Pending] = []
-    emitted = 0
+    """Pair submissions and completions into transfers, in completion order.
 
-    def flush_ready() -> Iterator[Transfer]:
-        nonlocal emitted, order
-        # Emit in submission order so output stays chronological.
-        while emitted < len(order) and order[emitted].transfer.complete:
-            yield _finalise(order[emitted])
-            emitted += 1
-        if emitted > 256:
-            order = order[emitted:]
-            emitted = 0
+    A transfer is timestamped when it completes. Host controllers queue
+    interrupt IN requests long before the device has anything to send, so the
+    submission time says nothing about when the data arrived; ordering and
+    timing by it put each report next to the previous one. Transfers that never
+    complete within the capture come last, ordered by submission.
+    """
+    pending: dict[tuple[int, int], _Pending] = {}
 
     for pkt in packets:
         if pkt.linktype == LINKTYPE_USBPCAP:
-            _handle_usbpcap(pkt, pending, order)
+            done = _handle_usbpcap(pkt, pending)
         elif pkt.linktype in (LINKTYPE_USB_LINUX, LINKTYPE_USB_LINUX_MMAPPED):
-            _handle_usbmon(pkt, pending, order)
+            done = _handle_usbmon(pkt, pending)
         else:
             continue
-        yield from flush_ready()
+        if done is not None:
+            yield _finalise(done)
 
-    for p in order[emitted:]:
+    for p in sorted(pending.values(), key=lambda p: p.transfer.ts):
         yield _finalise(p)
 
 
@@ -166,10 +166,18 @@ def _finalise(p: _Pending) -> Transfer:
     return p.transfer
 
 
-def _handle_usbpcap(pkt: RawPacket, pending: dict, order: list) -> None:
+def _complete(p: _Pending, ts: float, status: int) -> _Pending:
+    t = p.transfer
+    t.ts = ts
+    t.status = status
+    t.complete = True
+    return p
+
+
+def _handle_usbpcap(pkt: RawPacket, pending: dict) -> _Pending | None:
     d = pkt.data
     if len(d) < 27:
-        return
+        return None
     header_len, irp_id, status, _function, info, bus, device, endpoint, xfer, data_len = \
         struct.unpack("<HQIHBHHBBI", d[:27])
     stage = d[27] if xfer == XFER_CONTROL and header_len >= 28 else None
@@ -179,9 +187,8 @@ def _handle_usbpcap(pkt: RawPacket, pending: dict, order: list) -> None:
 
     p = pending.get(key)
     if p is None:
-        p = _Pending(Transfer(pkt.ts, bus, device, endpoint, xfer))
+        p = _Pending(Transfer(pkt.ts, bus, device, endpoint, xfer, submitted=pkt.ts))
         pending[key] = p
-        order.append(p)
 
     t = p.transfer
     if xfer == XFER_CONTROL:
@@ -199,30 +206,29 @@ def _handle_usbpcap(pkt: RawPacket, pending: dict, order: list) -> None:
             # does not count the same bytes twice.
             p.chunks.append(payload)
         if is_completion and stage in (USBPCAP_STAGE_STATUS, USBPCAP_STAGE_COMPLETE):
-            t.status = status
-            t.complete = True
             del pending[key]
-        return
+            return _complete(p, pkt.ts, status)
+        return None
 
     is_in = bool(endpoint & 0x80)
     if is_completion:
         if is_in:
             p.chunks.append(payload)
-        t.status = status
-        t.complete = True
         del pending[key]
-    elif not is_in:
+        return _complete(p, pkt.ts, status)
+    if not is_in:
         p.chunks.append(payload)
+    return None
 
 
 _USBMON_HDR = struct.Struct("<QBBBBHbbqiiII8s")
 
 
-def _handle_usbmon(pkt: RawPacket, pending: dict, order: list) -> None:
+def _handle_usbmon(pkt: RawPacket, pending: dict) -> _Pending | None:
     hdr_len = 64 if pkt.linktype == LINKTYPE_USB_LINUX_MMAPPED else 48
     d = pkt.data
     if len(d) < hdr_len:
-        return
+        return None
     (urb_id, ev_type, xfer, epnum, devnum, busnum, flag_setup, _flag_data,
      ts_sec, ts_usec, status, _length, len_cap, setup_raw) = _USBMON_HDR.unpack(d[:48])
     payload = d[hdr_len:hdr_len + len_cap]
@@ -230,22 +236,18 @@ def _handle_usbmon(pkt: RawPacket, pending: dict, order: list) -> None:
     ts = ts_sec + ts_usec / 1e6
 
     if ev_type == ord("S"):
-        p = _Pending(Transfer(ts, busnum, devnum, epnum, xfer))
+        p = _Pending(Transfer(ts, busnum, devnum, epnum, xfer, submitted=ts))
         pending[key] = p
-        order.append(p)
         if xfer == XFER_CONTROL and flag_setup == 0:
             p.transfer.setup = Setup.parse(setup_raw)
         if not p.transfer.direction_in and payload:
             p.chunks.append(payload)
-        return
+        return None
 
     p = pending.pop(key, None)
     if p is None:
         # Completion without a submission in this capture (capture started mid-transfer).
-        p = _Pending(Transfer(ts, busnum, devnum, epnum, xfer))
-        order.append(p)
-    t = p.transfer
-    if t.direction_in and payload:
+        p = _Pending(Transfer(ts, busnum, devnum, epnum, xfer, submitted=ts))
+    if p.transfer.direction_in and payload:
         p.chunks.append(payload)
-    t.status = status
-    t.complete = True
+    return _complete(p, ts, status)

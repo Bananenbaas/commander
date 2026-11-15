@@ -67,6 +67,15 @@ pip install -e .                            # then: kb7cap summary <capture>
   (`control_in(..., data_on_complete=True)`). When adding a stage, keep the
   "only if no earlier stage supplied data" guard, or a capture containing both
   layouts will count the same bytes twice.
+- **Transfers are timestamped when they complete.** Interrupt IN requests are
+  queued long before the device has data — Windows keeps several outstanding per
+  endpoint and resubmits one the moment another completes — so a request's
+  submission time says nothing about when its data arrived. An earlier version
+  timestamped and ordered by submission, which put each report next to the
+  previous one: two screen taps three seconds apart came out as an adjacent
+  duplicate pair, and the order of the dial's three reports was reversed.
+  `Transfer.submitted` keeps the queueing time. Requests still outstanding when
+  a capture stops never complete and are emitted last, without data.
 - `--inject-descriptors` gives device and configuration descriptors only. HID
   report descriptors and string descriptors appear solely in a real enumeration,
   so `01-plug-in` cannot be skipped.
