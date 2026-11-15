@@ -269,10 +269,35 @@ The flicker is useful evidence rather than a nuisance: it shows the write does
 reach the LEDs, so `0x11` is not ignored. It is stored configuration that the
 device applies once, and the stream is what the LEDs obey from then on.
 
-So driving the lighting means writing `a1` frames to `0x0d` — the same endpoint
-and the same mechanism as the `a3` volume frame that has already been replayed
-successfully. It also means a replacement for Swarm II has to *keep* streaming,
-or the host has to stop streaming before anything else can take over.
+#### Streaming our own LED frames works, and contends with Swarm II
+
+Driving the lighting means writing `a1` frames to `0x0d` — the same endpoint and
+mechanism as the `a3` volume frame. `13-replay-led-stream-green-1` does exactly
+that: the 360-byte payload from a real capture with all 112 LEDs set to green,
+split into the usual six banks, written at 30 Hz for eight seconds. 1188 frames
+went out, none failed.
+
+The keyboard strobed violently between our green and Swarm II's red. The capture
+explains why precisely: in the eight-second window 356 bank-1 frames reached the
+device, **198 ours and 158 Swarm II's** — a 56% share. The LEDs were following
+whichever frame arrived last, roughly twenty-eight times a second.
+
+| Finding | Status |
+|---|---|
+| The `a1` stream drives the LEDs, and frames written from our own code are rendered | **confirmed** (`13-replay-led-stream-green-1`) |
+| A frame is 64 bytes: `a1 <bank 01–06> <len-lo> <len-hi>` plus 60 payload bytes, with the length only on bank 1 | **confirmed** |
+| Writing goes to the interface 1 collection as a 65-byte `WriteFile`, exactly like the `a3` volume frame | **confirmed** |
+| The device renders the most recent frame; there is no arbitration between writers | observed |
+
+**The architectural consequence.** Lighting cannot be shared. Whoever streams
+last owns the LEDs, so taking over the keyboard means Swarm II has to stop
+streaming first — which is the whole point of the project, but it also means a
+replacement must *keep* streaming at 20 Hz or better for as long as it wants the
+lighting to hold. There is no fire-and-forget equivalent for colour, unlike the
+volume frame.
+
+Do not run this test while Swarm II is open unless the strobing is wanted: it is
+harmless, but it is unpleasant to look at.
 
 Reading report `0x11` back directly does not work: `HidD_GetFeature` fails with
 error 31 for any buffer length. Swarm II reads it through the selector register
