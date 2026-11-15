@@ -205,26 +205,80 @@ frames per second in each direction.
 payload across all 821 cycles. Swarm II resends unchanged state twenty times a
 second; it does not animate and it does not stream anything that varies.
 
-**The reassembled 360-byte payload** contains only three byte values:
+**The payload is the live LED table.** An earlier reading of this section
+treated `0xfe` as filler marking an unassigned slot. That was wrong. The 360
+bytes are per-LED colour, and `0xfe` is simply red at full brightness.
 
-| Value | Count per cycle |
+Setting a single key proved it. With the keyboard at 255, 51, 51 and **only
+Escape** changed to 16, 64, 192, the reassembled payload moved in exactly three
+bytes:
+
+```
+offset  0:  fe -> 0f        block 0, R plane, index 0
+offset 16:  32 -> 3f        block 0, G plane, index 0
+offset 32:  32 -> bf        block 0, B plane, index 0
+```
+
+Same LED index, same three planes, same sixteen-byte stride as report `0x11` —
+and the same block-of-48 layout, just without the 10-byte header:
+
+```
+360 = 336 + 24
+336 = 7 blocks x 48, each R[16] G[16] B[16]  ->  the same 112 LEDs
+ 24 = trailing bytes, purpose unknown
+```
+
+**The values are scaled down by one.** `floor(v x 255/256)`:
+
+| Configured | On the wire |
 |---|---|
-| `0xfe` | 289 |
-| `0x00` | 64 |
-| `0x7f` | 7 |
+| 255 | `0xfe` (254) |
+| 192 | `0xbf` (191) |
+| 64 | `0x3f` (63) |
+| 51 | `0x32` (50) |
+| 16 | `0x0f` (15) |
+| 0 | `0x00` (0) |
 
-And it has a clear stride: **every `0x7f` at offset p is matched by a `0x00` at
-offset p+16**, for all seven occurrences without exception —
-13→29, 150→166, 153→169, 196→212, 202→218, 204→220, 205→221. Beyond offset ~250
-the zeros fall in runs of five to six at roughly the same stride of 16, and the
-final 30 bytes (330–359) are all zero.
+That also explains the byte histogram of a static 255, 51, 51: 101 bytes of
+`0xfe` are reds at full, 188 bytes of `0x32` are the greens and blues, 64 zeros
+are LEDs that are off, and the seven `0x7f` are LEDs sitting at 128.
 
-| Reading | Status |
+| Finding | Status |
 |---|---|
-| A table with a 16-byte stride, `0xfe` meaning an empty or unassigned slot | hypothesis |
-| This is device **state** (key bindings, layout or lighting), not pixel data — 360 static bytes at 20 Hz is orders of magnitude too little for a screen image | hypothesis |
-| What the seven `0x7f`/`0x00` pairs represent | unknown |
-| Why state is resent 20 times a second instead of on change | unknown |
+| The `a1` stream carries the live 112-LED colour table, in the same layout as report `0x11` | **confirmed** (`03-rgb-perkey-esc-1040c0-1`) |
+| Values are transmitted as `floor(v x 255/256)` | observed (five distinct values) |
+| What the trailing 24 bytes hold | unknown |
+| Why the table is resent 20 times a second rather than on change | unknown |
+
+#### Report `0x11` is configuration, not the display
+
+This settles something that writing the table taught the hard way. Report `0x11`
+can be written successfully from our own code: `HidD_SetFeature` with the
+348-byte frame returns success and the device's status register, report `0x05`,
+reads back `05 01 00 00` — byte for byte what Swarm II sees after its own writes.
+`12-replay-led-block0-1` records our frame on the wire, identical in shape to
+Swarm II's.
+
+**And the lighting barely changes.** What is actually visible is a brief
+flicker: the keyboard jumps to the written table and is back to Swarm II's
+colours before you can make out what it showed. That is the stream winning.
+Swarm II pushes its own copy every 50 ms, so anything written to `0x11` survives
+at most one frame.
+
+The flicker is useful evidence rather than a nuisance: it shows the write does
+reach the LEDs, so `0x11` is not ignored. It is stored configuration that the
+device applies once, and the stream is what the LEDs obey from then on.
+
+So driving the lighting means writing `a1` frames to `0x0d` — the same endpoint
+and the same mechanism as the `a3` volume frame that has already been replayed
+successfully. It also means a replacement for Swarm II has to *keep* streaming,
+or the host has to stop streaming before anything else can take over.
+
+Reading report `0x11` back directly does not work: `HidD_GetFeature` fails with
+error 31 for any buffer length. Swarm II reads it through the selector register
+instead (write `05 00 b0 00`, then read). Note also that a status read of report
+`0x05` needs a 64-byte buffer; a 4-byte one fails with error 31 until a longer
+read has succeeded once.
 
 **Two channels, two jobs.** `00-idle-1` alone suggested interface 1 had replaced
 the interface 2 feature reports as the command surface. `02-swarm-start-1` shows

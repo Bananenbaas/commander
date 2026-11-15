@@ -48,6 +48,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - The RGB lighting format: report `0x11` over the control endpoint, a 112-LED
   table stored as seven blocks of sixteen reds, greens and blues, and a
   trailing 16-bit sum as its checksum.
+- What actually drives the lighting: the `a1` stream on interface 1 carries the
+  live 112-LED colour table, in the same layout as report `0x11` and scaled by
+  255/256. Report `0x11` is stored configuration, which is why writing it only
+  makes the keyboard flicker before the stream wins.
 - The LED addressing scheme, proved by lighting a single key: an LED's red,
   green and blue bytes sit sixteen apart inside its 48-byte block, and
   Escape is LED index 0.
