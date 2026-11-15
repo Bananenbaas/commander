@@ -42,3 +42,6 @@ and the project uses [Semantic Versioning](https://semver.org/).
   selects one of nineteen configuration blocks, whose report IDs and lengths
   match the report map exactly. Plus the `a1` state stream and `a3` frames on
   interface 1, and the device's own notification report `0x03`.
+- The system-volume frame on interface 1, verified by predicting where the
+  level would appear and then capturing a slider drag. Live PC values reach
+  the screen as numbers, not as rendered images.

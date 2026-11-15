@@ -284,21 +284,62 @@ what ties the report map to real behaviour.
 Writing has **not** been observed: every exchange above is a read. Nothing here
 is enough to safely write configuration back.
 
-### `a3` frames on interface 1
+### `a3` frames on interface 1: the PC pushes values, the device renders
 
-Besides the `a1` state stream, `02-swarm-start-1` carries seven 64-byte `a3`
-frames on `0x0d`. Four distinct bodies:
+Besides the `a1` state stream, `0x0d` carries 64-byte `a3` frames. Unlike the
+`a1` stream these are sent **only when something changes** — `00-idle-1` contains
+none at all.
+
+**System volume frame**, verified by prediction in `09-volume-50-1`:
 
 ```
-a3 00 01 00 03 0e 00 64 64 00 64 64 00 ...
-a3 00 01 00 00 0d 4a 00 01 00 4a 00 00 ...
-a3 00 01 01 02 02 00 00 00 00 00 00 00 ...
-a3 00 01 01 02 04 00 00 02 00 00 0c 00 ...
+a3 00 01 00 00 0d <vol> 00 01 00 <vol> 00   + zero padding to 64 bytes
+                   ^^^              ^^^
+                   offset 6         offset 10
 ```
 
-Bytes 1–2 are `00 01` in all of them. `0x64` is 100 and `0x4a` is 74, which read
-like percentages — plausibly brightness or speed, but that is a guess. Status:
-**hypothesis**, and the frames have not been tied to any action.
+I dragged the Windows volume slider while capturing, aiming for 50 and
+settling on 51. Nine frames came out, and offsets 6 and 10 tracked the slider
+exactly:
+
+| Frame | Byte | Decimal |
+|---|---|---|
+| 1 | `0x40` | 64 |
+| 2 | `0x36` | 54 |
+| 3 | `0x35` | 53 |
+| 4, 5 | `0x32` | 50 |
+| 6 | `0x33` | 51 |
+| 7, 8 | `0x32` | 50 |
+| 9 | `0x33` | **51** — the value left on screen |
+
+| Finding | Status |
+|---|---|
+| `a3 00 01 00 00 0d` introduces a system-volume frame; the level sits at offsets 6 **and** 10 | observed (`09-volume-50-1`) |
+| The level is a plain percentage, 0–100 decimal, not a 0–255 scale | observed (`09-volume-50-1`) |
+| `a3` frames are change-driven, not periodic | observed (`00-idle-1` has none, `09-volume-50-1` has nine) |
+| Why the level is repeated at two offsets — two channels, or current and target | unknown |
+
+Bytes 4–5 distinguish frame types. Seen so far:
+
+| Bytes 4–5 | Body | Reading | Status |
+|---|---|---|---|
+| `00 0d` | `<vol> 00 01 00 <vol> 00` | system volume | observed (`09-volume-50-1`) |
+| `03 0e` | `00 64 64 00 64 64 00` | per-application volume. The volume page on the screen shows the system level plus two applications, both at 100%, which matches two pairs of `0x64` | hypothesis |
+| `01 02 02` | zeros | unknown | unknown |
+| `01 02 04` | `00 00 02 00 00 0c` | unknown | unknown |
+
+**This answers open question 2.** Live PC data is pushed as **numbers**, not as
+rendered images: the host sends a percentage and the device draws the volume page
+itself. The `Turtle Beach Global System Media Control` process that runs
+alongside Swarm II is what feeds these values. For anything dashboard-like this
+is the good outcome — a value per metric rather than a framebuffer.
+
+**First replayable command.** These `a3` frames are host → device and have been
+observed on the wire, so under this project's safety rule they are the first
+thing that could legitimately be replayed from our own code. Replaying one
+sets a volume level, which is harmless and instantly visible on the screen, and
+it would be the step that promotes this entry from `observed` to `confirmed`.
+Nothing has been sent to the device yet.
 
 ### Device notifications on `0x8c`
 
@@ -349,11 +390,15 @@ _None identified yet._
 ## Open questions
 
 1. Does the screen accept raw frames from the PC, or does it render from assets
-   stored on the device? (captures 06, 07)
-2. Are live PC stats pushed as rendered images, as numbers, or not at all?
-   Not at all while idle: `00-idle-1` shows only a static 360-byte state frame
-   repeated at 20 Hz, with no image-sized traffic anywhere. Scenario 07 has to
-   turn the PC-performance view on explicitly.
+   stored on the device? (captures 06, 07) Two pieces of evidence for onboard
+   rendering: the keyboard draws a boot screen with its firmware version before
+   any PC software is involved, and the volume page is drawn from a numeric
+   percentage rather than a pushed image. Whether raw frames are *also* accepted
+   is what scenario 06 has to settle.
+2. ~~Are live PC stats pushed as rendered images, as numbers, or not at all?~~
+   **Answered for volume**: as numbers. An `a3` frame carries a plain percentage
+   and the device renders the page itself (`09-volume-50-1`). Whether the
+   PC-performance view works the same way is still open — scenario 07.
 3. Is there a checksum or sequence counter in write commands?
 4. Which interface carries keystrokes besides the boot keyboard (NKRO)?
    Interface 2 exposes a keyboard collection next to its vendor-defined ones, so
