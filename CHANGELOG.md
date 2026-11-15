@@ -45,6 +45,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - The system-volume frame on interface 1, verified by predicting where the
   level would appear and then capturing a slider drag. Live PC values reach
   the screen as numbers, not as rendered images.
+- The RGB lighting format: report `0x11` over the control endpoint, a 112-LED
+  table stored as seven blocks of sixteen reds, greens and blues, and a
+  trailing 16-bit sum as its checksum.
 - First command replayed to the hardware: an `a3` volume frame written to
   interface 1 set the level shown on the keyboard's screen, promoting that
   frame from `observed` to `confirmed`. Documented with the Windows HID

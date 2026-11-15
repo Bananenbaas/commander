@@ -394,10 +394,68 @@ volume-specific. Worth watching during the touch scenarios.
 The capture guide asks for two, so the varying bytes have not been separated from
 the stable ones the way they were for `01-plug-in`.
 
-### RGB lighting
-unknown. Not seen in `00-idle-1`: the state stream on interface 1 was static
-throughout, so whatever lighting was active was not being driven from the PC
-frame by frame. Scenario 03 should show which channel a colour change uses.
+### RGB lighting: report `0x11`
+
+Setting a static colour writes **report `0x11`** as a feature report over the
+control endpoint — the same report the startup sequence *reads* with selector
+`b0`. It is read/write, 347 bytes of payload, and the device acknowledges each
+write with `05 01 00 00` on `0x80`.
+
+Nothing lighting-related appears on interface 1: with a static colour the `a1`
+stream stays unchanged, so lighting is configuration, not a per-frame stream.
+
+**Frame layout**, from `03-rgb-static-ff0000-1`, a static 255, 51, 51:
+
+| Offset | Bytes | Meaning | Status |
+|---|---|---|---|
+| 0 | `11` | report ID | observed |
+| 1 | `5c` | constant across every `0x11` frame seen | observed |
+| 2 | `01` | constant | observed |
+| 3 | `00` / `04` | varies between the read and the write | unknown |
+| 4–5 | `01 06` | constant | observed |
+| 6 | `63` / `64` | 99 and 100 — reads like a brightness percentage | hypothesis |
+| 7 | `0b` / `03` | differs between the written and the read frame — effect or mode | hypothesis |
+| 8–9 | `01 00` | constant | observed |
+| 10–345 | 336 bytes | the LED table, see below | observed |
+| 346–347 | checksum | 16-bit sum, see below | **confirmed by arithmetic** |
+
+**The LED table is planar in groups of sixteen.** The 336-byte data area is
+`336 = 7 × 48`, and each 48-byte block holds sixteen reds, then sixteen greens,
+then sixteen blues:
+
+```
+block n:  R[0..15]  G[0..15]  B[0..15]
+7 blocks  ->  112 LEDs
+```
+
+The run lengths prove it. A single colour of (255, 51, 51) produces repeating
+`ff` × 16 followed by `33` × 32 — the 1:2 ratio of one channel at 255 against
+two at 51, with the boundary falling every 48 bytes. The plane order is
+therefore **R, G, B**.
+
+Individual bytes depart from the set colour (`0x80` and `0x00` appear in the red
+plane, `0x00` in the others), which is why the table is per-LED rather than a
+single colour triplet. Status: **observed**; which physical key each of the 112
+slots drives is **unknown** and needs a capture that lights one key at a time.
+
+**The checksum is a plain 16-bit sum.** Add bytes 0 through 345 — the report ID
+included, the trailer excluded — keep the low 16 bits and store them
+little-endian:
+
+```python
+csum = sum(frame[:346]) & 0xFFFF
+frame[346] = csum & 0xFF
+frame[347] = csum >> 8
+```
+
+Verified against all seven distinct `0x11` frames across `02-swarm-start-1` and
+`03-rgb-static-ff0000-1`, reads and writes alike. No CRC is involved.
+
+| Still unknown | Why it matters |
+|---|---|
+| The LED index → key mapping | needed for per-key lighting |
+| Bytes 3, 6 and 7 of the header | brightness and effect are guesses; a brightness capture (`04-rgb-brightness`) would settle byte 6 |
+| Whether a write needs the preceding read | Swarm II read `0x11` at startup before writing it |
 
 ### Touchscreen: button layout and pages
 unknown
