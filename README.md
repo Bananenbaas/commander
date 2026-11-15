@@ -26,15 +26,17 @@ The end goal is to turn the KB7 into a fully programmable hardware platform.
 
 ## Status
 
-**Phase 0: collecting captures.** The protocol is not known yet; nothing in
-this repository talks to the keyboard yet. Progress is tracked in
+**Phase 0: collecting captures**, with the first results in. The device is
+mapped, Swarm II's startup exchange and its live state stream are documented,
+and one command has been replayed successfully: a volume level written to the
+keyboard's screen. Progress is tracked in
 [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 
 | Phase | Goal | State |
 |---|---|---|
 | 0 | USB captures of Swarm II ↔ KB7, one action per capture | in progress |
 | 1 | Analysis toolkit (`kb7cap`) and protocol notes | toolkit ready |
-| 2 | Safe replay: device info → RGB → button layout → image upload → touch input | not started |
+| 2 | Safe replay: device info → RGB → button layout → image upload → touch input | first command replayed |
 | 3 | `kb7` library, daemon, dashboards, plugins, macros | not started |
 
 ## The `kb7cap` toolkit

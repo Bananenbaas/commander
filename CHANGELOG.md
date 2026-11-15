@@ -45,6 +45,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - The system-volume frame on interface 1, verified by predicting where the
   level would appear and then capturing a slider drag. Live PC values reach
   the screen as numbers, not as rendered images.
+- First command replayed to the hardware: an `a3` volume frame written to
+  interface 1 set the level shown on the keyboard's screen, promoting that
+  frame from `observed` to `confirmed`. Documented with the Windows HID
+  details needed to repeat it.
 - The volume dial's full round trip: the device reports a relative step as a
   Consumer bitmap plus a notification, and the host pushes the resulting
   absolute level back about 9 ms later. The screen is a slave display for

@@ -314,8 +314,8 @@ exactly:
 
 | Finding | Status |
 |---|---|
-| `a3 00 01 00 00 0d` introduces a system-volume frame; the level sits at offsets 6 **and** 10 | observed (`09-volume-50-1`) |
-| The level is a plain percentage, 0–100 decimal, not a 0–255 scale | observed (`09-volume-50-1`) |
+| `a3 00 01 00 00 0d` introduces a system-volume frame; the level sits at offsets 6 **and** 10 | **confirmed** (`09-volume-50-1`, replayed in `11-replay-volume-07-1`) |
+| The level is a plain percentage, 0–100 decimal, not a 0–255 scale | **confirmed** (`09-volume-50-1`, replayed in `11-replay-volume-07-1`) |
 | `a3` frames are change-driven, not periodic | observed (`00-idle-1` has none, `09-volume-50-1` has nine) |
 | Why the level is repeated at two offsets — two channels, or current and target | unknown |
 
@@ -334,12 +334,35 @@ itself. The `Turtle Beach Global System Media Control` process that runs
 alongside Swarm II is what feeds these values. For anything dashboard-like this
 is the good outcome — a value per metric rather than a framebuffer.
 
-**First replayable command.** These `a3` frames are host → device and have been
-observed on the wire, so under this project's safety rule they are the first
-thing that could legitimately be replayed from our own code. Replaying one
-sets a volume level, which is harmless and instantly visible on the screen, and
-it would be the step that promotes this entry from `observed` to `confirmed`.
-Nothing has been sent to the device yet.
+#### Replayed: the first command sent from this project
+
+`11-replay-volume-07-1` records our own frame going out. One `a3` frame was
+written to interface 1 with the level set to 7, a value the dial cannot produce
+from an even starting point, while Windows itself stood at 98:
+
+```
+t+18.300   a3 00 01 00 00 0d 07 00 01 00 07 00   (+ zero padding to 64)
+```
+
+The screen showed **7%**. The device sent nothing back: no acknowledgement on
+`0x85` beyond the ordinary `32` replies, and nothing on `0x8c`. A volume frame is
+fire-and-forget.
+
+**How to write it on Windows.** The frame goes to the HID collection of
+interface 1, which Windows exposes at a path containing `mi_01` with usage page
+`0xff00`. `HidP_GetCaps` reports an output report length of **65**: one report-ID
+byte plus the 64-byte frame. Since the report descriptor declares no report ID,
+that leading byte is `0x00`, and the 64 bytes on the wire are the frame itself.
+A plain `WriteFile` of those 65 bytes is enough — no feature report, no control
+transfer.
+
+Windows' own enumeration independently confirms the report map derived from the
+captures: every collection's report length matches, including `0x000c` at 4
+bytes for the dial, `0xff01` at 8, `0xff02` at 12 and `0xff03` at 1044.
+
+This is the first thing this project has sent to the hardware. It changes only
+what the screen displays; it does not touch the host's actual volume, and the
+next real volume change resyncs it.
 
 ### Device notifications on `0x8c`
 
