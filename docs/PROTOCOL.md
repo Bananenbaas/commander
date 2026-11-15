@@ -365,7 +365,7 @@ what ties the report map to real behaviour.
 | The selector is a **lookup table, not a formula** — the difference ranges from +123 to +164 | observed (`02-swarm-start-1`) |
 | `b4` and `b5` both return report `0x31`, `b6` and `b7` both return `0x32`: two selectors, one block shape. Likely separate slots of the same kind of block, for instance per profile or per layer | hypothesis |
 | Each selector was read five times in this capture, except `ba` once | observed (`02-swarm-start-1`) |
-| Report `0x16` (103 B, selector `ba`) begins with the ASCII text `DESKTOP`, so the device stores a host name | observed (`02-swarm-start-1`) |
+| Report `0x16` (103 B, selector `ba`) begins with the ASCII text `DESKTOP`: the name of the active Swarm II profile, which the device stores itself. Not a host name, as first assumed | observed (`02-swarm-start-1`) |
 | Report `0x0e` is written as `0e 05 00 00 00` and `0e 05 01 00 00`, a register taking 0 and 1 — looks like enabling something before the reads | hypothesis |
 
 Writing has **not** been observed: every exchange above is a read. Nothing here
@@ -552,7 +552,7 @@ def offsets(led):           # led = 0 .. 111
 | The plane order is R, G, B | **confirmed** — a colour with three distinct channel values landed in that order |
 | **Escape is LED index 0** | **confirmed** (`03-rgb-perkey-esc-1040c0-1`) |
 | The checksum covers the colour bytes: changing three data bytes changed the trailer | **confirmed** |
-| Which key each of the remaining 111 slots drives | unknown |
+| Which key each of the 112 slots drives | **confirmed** — see the LED map below |
 
 While the colour picker is dragged, Swarm II writes the **whole table** each
 time, and it sends partial colours on the way: of the seven frames in that
@@ -575,7 +575,6 @@ Verified against all seven distinct `0x11` frames across `02-swarm-start-1` and
 
 | Still unknown | Why it matters |
 |---|---|
-| The LED index → key mapping | needed for per-key lighting |
 | Bytes 3, 6 and 7 of the header | brightness and effect are guesses; a brightness capture (`04-rgb-brightness`) would settle byte 6 |
 | Whether a write needs the preceding read | Swarm II read `0x11` at startup before writing it |
 
@@ -631,8 +630,57 @@ show the shape device-initiated input takes, so the touch reports are likely to
 arrive on `0x8c` as well. Report `0x33` (vendor input, 11 bytes) remains the
 candidate. Scenario 05 has to confirm it.
 
+### LED map
+
+Mapped by writing report `0x11` from our own code with Swarm II fully closed, so
+that the keyboard shows the stored table, and photographing the result. Each
+pass lit sixteen consecutive indices in a repeating red, green, blue, white
+cycle, which pins every lit key to its index modulo four; the order along the
+row fixes the rest. Ambiguous slots were then resolved by lighting only the
+candidates, each in its own colour.
+
+| Index | LED | Index | LED |
+|---|---|---|---|
+| 0 | Esc | 56 | Left Shift |
+| 1–12 | F1–F12 | 57 | — (ISO `<>` position) |
+| 13 | — | 58–64 | Z X C V B N M |
+| 14 | `` ` `` | 65–67 | `,` `.` `/` |
+| 15–24 | 1 2 3 4 5 6 7 8 9 0 | 68 | — |
+| 25–27 | `-` `=` Backspace | 69 | Right Shift |
+| 28 | Tab | 70 | Up arrow |
+| 29–38 | Q W E R T Y U I O P | 71–73 | Left Ctrl, Windows, Left Alt |
+| 39–41 | `[` `]` `\` | 74 | — |
+| 42 | Caps Lock | 75 | Space |
+| 43–51 | A S D F G H J K L | 76–77 | — |
+| 52–53 | `;` `'` | 78–79 | Right Alt, Fn |
+| 54 | — (ISO `#` position) | 80–81 | menu key, Right Ctrl |
+| 55 | Enter | 82–84 | Left, Down, Right arrows |
+| | | 85–86 | media previous, next |
+| | | 87–90 | the four triangular top buttons, left to right |
+| | | 91–95 | — |
+| | | 96–105 | wrist rest light strip, ten segments left to right |
+| | | 106–111 | — |
+
+94 of the 112 slots drive something.
+
+| Finding | Status |
+|---|---|
+| The main block is laid out as rows of fourteen: 0–13, 14–27, 28–41, 42–55, 56–69, with the bottom row from 70 | **confirmed** |
+| The matrix is wired for an **ISO** layout: slots 54 and 57 sit exactly where the ISO-only `#` and `<>` keys would be, and are empty on this ANSI unit | **confirmed** for the empty slots; an ISO unit lighting them is a hypothesis |
+| The up arrow sits at 70, at the start of the bottom row, apart from the other three arrows (82–84) | **confirmed** |
+| The volume dial and its play/pause button have no slot in this table | observed — they never lit in any pass |
+| The wrist rest strip is ten LEDs, 96–105, driven from the same table | **confirmed** |
+
+**Report `0x11` is what the keyboard shows on its own.** With Swarm II and its
+device service closed, nothing streams `a1` frames, and a written `0x11` table
+appears immediately and stays. Combined with the flicker seen while Swarm II
+runs, the model is: `0x11` holds the keyboard's own lighting, and the `a1`
+stream is a live overlay that wins for as long as somebody keeps sending it.
+
 ### Profiles
-unknown
+Report `0x16` holds the name of the active Swarm II profile — `DESKTOP` on
+this keyboard — read at startup with selector `ba`. How profiles are switched
+is still unknown; scenario 08 should show it.
 
 ## Do-not-send list
 

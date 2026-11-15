@@ -54,6 +54,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - The RGB lighting format: report `0x11` over the control endpoint, a 112-LED
   table stored as seven blocks of sixteen reds, greens and blues, and a
   trailing 16-bit sum as its checksum.
+- The complete LED map: 94 of the 112 slots identified, including the arrow
+  keys, the top buttons and the ten-segment wrist rest strip, with the matrix
+  shown to be wired for an ISO layout. With Swarm II closed, a written report
+  `0x11` is what the keyboard displays.
 - Lighting driven from our own code: streaming `a1` frames at 30 Hz rendered
   on the keyboard, contending with Swarm II's 20 Hz for a 56% share of the
   frames. Whoever streams last owns the LEDs.
