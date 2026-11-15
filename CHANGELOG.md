@@ -38,3 +38,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
   four HID interfaces, three of them with an OUT endpoint.
 - Capture guide: the `00-descriptors` shortcut for pulling device and
   configuration descriptors without a full plug-in capture.
+- The Swarm II startup exchange: a selector register (report `0x05`) that
+  selects one of nineteen configuration blocks, whose report IDs and lengths
+  match the report map exactly. Plus the `a1` state stream and `a3` frames on
+  interface 1, and the device's own notification report `0x03`.

@@ -226,11 +226,101 @@ final 30 bytes (330–359) are all zero.
 | What the seven `0x7f`/`0x00` pairs represent | unknown |
 | Why state is resent 20 times a second instead of on change | unknown |
 
-**Correction to an earlier guess.** The feature reports on interface 2 were
-written up as the likely command surface because they are reachable with
-`SET_REPORT`. The idle capture shows the live channel is interface 1's interrupt
-endpoints instead. The interface 2 feature reports may still carry configuration;
-nothing has been seen on them yet.
+**Two channels, two jobs.** `00-idle-1` alone suggested interface 1 had replaced
+the interface 2 feature reports as the command surface. `02-swarm-start-1` shows
+both are used, for different things:
+
+| Channel | Transport | Used for | Status |
+|---|---|---|---|
+| Interface 2 feature reports | `SET_REPORT` / `GET_REPORT` over the control endpoint | reading and presumably writing configuration, at startup | observed (`02-swarm-start-1`) |
+| Interface 1 `0x0d` / `0x85` | interrupt | the `a1` state stream, plus `a3` frames | observed (`00-idle-1`, `02-swarm-start-1`) |
+
+### Reading configuration: the selector register
+
+At startup Swarm II reads a long list of configuration blocks. Each read is
+three steps:
+
+```
+OUT 0x00   05 00 <selector> 00        write report 0x05, the selector register
+IN  0x80   05 01 00 00                device reports ready
+IN  0x80   <report id> <len> <data>   the selected block
+```
+
+Report `0x05` is a 3-byte feature report, which matches the 4 bytes on the wire
+including the report ID. The reply block's own report ID and length match the
+report map exactly — **all nineteen observed reads, without exception**, which is
+what ties the report map to real behaviour.
+
+| Selector | Report | Payload | Selector − report |
+|---|---|---|---|
+| `a0` | `0x20` | 91 B | +128 |
+| `a1` | `0x21` | 347 B | +128 |
+| `a2` | `0x22` | 347 B | +128 |
+| `a3` | `0x23` | 347 B | +128 |
+| `a5` | `0x26` | 175 B | +127 |
+| `a6` | `0x27` | 175 B | +127 |
+| `a8` | `0x2d` | 15 B | +123 |
+| `ab` | `0x2b` | 91 B | +128 |
+| `ac` | `0x2c` | 91 B | +128 |
+| `af` | `0x17` | 43 B | +152 |
+| `b0` | `0x11` | 347 B | +159 |
+| `b3` | `0x30` | 179 B | +131 |
+| `b4` | `0x31` | 687 B | +131 |
+| `b5` | `0x31` | 687 B | +132 |
+| `b6` | `0x32` | 175 B | +132 |
+| `b7` | `0x32` | 175 B | +133 |
+| `b8` | `0x25` | 163 B | +147 |
+| `b9` | `0x29` | 583 B | +144 |
+| `ba` | `0x16` | 103 B | +164 |
+
+| Reading | Status |
+|---|---|
+| The selector is a **lookup table, not a formula** — the difference ranges from +123 to +164 | observed (`02-swarm-start-1`) |
+| `b4` and `b5` both return report `0x31`, `b6` and `b7` both return `0x32`: two selectors, one block shape. Likely separate slots of the same kind of block, for instance per profile or per layer | hypothesis |
+| Each selector was read five times in this capture, except `ba` once | observed (`02-swarm-start-1`) |
+| Report `0x16` (103 B, selector `ba`) begins with the ASCII text `DESKTOP`, so the device stores a host name | observed (`02-swarm-start-1`) |
+| Report `0x0e` is written as `0e 05 00 00 00` and `0e 05 01 00 00`, a register taking 0 and 1 — looks like enabling something before the reads | hypothesis |
+
+Writing has **not** been observed: every exchange above is a read. Nothing here
+is enough to safely write configuration back.
+
+### `a3` frames on interface 1
+
+Besides the `a1` state stream, `02-swarm-start-1` carries seven 64-byte `a3`
+frames on `0x0d`. Four distinct bodies:
+
+```
+a3 00 01 00 03 0e 00 64 64 00 64 64 00 ...
+a3 00 01 00 00 0d 4a 00 01 00 4a 00 00 ...
+a3 00 01 01 02 02 00 00 00 00 00 00 00 ...
+a3 00 01 01 02 04 00 00 02 00 00 0c 00 ...
+```
+
+Bytes 1–2 are `00 01` in all of them. `0x64` is 100 and `0x4a` is 74, which read
+like percentages — plausibly brightness or speed, but that is a guess. Status:
+**hypothesis**, and the frames have not been tied to any action.
+
+### Device notifications on `0x8c`
+
+Report `0x03`, the report the device sends unprompted, is not fixed after all.
+Across captures:
+
+```
+01-plug-in-1   03 00 31 20 d1 da 00 00
+01-plug-in-2   03 00 31 20 c9 da 00 00
+02-swarm-start 03 00 31 20 fc 50 03 00
+02-swarm-start 03 00 31 00 87 06 00 00
+02-swarm-start 03 00 31 20 43 20 04 00
+```
+
+Byte 2 is always `0x31`. Bytes 3–7 vary, and byte 6 took the values `00`, `03`
+and `04`, which looks like an event or status code. This is the channel the
+device uses to tell the host something happened — worth watching during the
+touch scenarios.
+
+**Caveat on all of the above**: `02-swarm-start` has only **one** take so far.
+The capture guide asks for two, so the varying bytes have not been separated from
+the stable ones the way they were for `01-plug-in`.
 
 ### RGB lighting
 unknown. Not seen in `00-idle-1`: the state stream on interface 1 was static
