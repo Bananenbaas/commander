@@ -804,7 +804,7 @@ twenty-byte fields from offset 2:
 | Slot | Name |
 |---|---|
 | 0 | `DESKTOP` |
-| 1 | starts with `SC` |
+| 1 | `SC` — the complete name, kept short to fit the profile label on the screen |
 | 2 | `DEFAULT 03` |
 | 3 | `DEFAULT 04` |
 | 4 | `DEFAULT 05` |
