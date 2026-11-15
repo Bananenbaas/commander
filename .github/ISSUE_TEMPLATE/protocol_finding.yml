@@ -1,0 +1,80 @@
+name: Protocol finding
+description: You worked something out about the KB7 protocol from a capture.
+labels: ["protocol"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Findings end up in [`docs/PROTOCOL.md`](https://github.com/Bananenbaas/kb7-commander/blob/main/docs/PROTOCOL.md),
+        where every claim carries a status tag and names its capture.
+
+        **Do not attach a raw `.pcap` / `.pcapng`** — paste short, reviewed hex
+        excerpts only.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Device identity / descriptors
+        - Interfaces and endpoints
+        - HID reports
+        - Device info / handshake
+        - RGB lighting
+        - Touchscreen - button layout and pages
+        - Touchscreen - image upload
+        - Touch input events
+        - Profiles
+        - Firmware / bootloader / reset (do-not-send list)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: finding
+    attributes:
+      label: The finding
+      description: What does the command or report do, and how is it laid out? Mention direction (host→device or device→host) and transport (SET_REPORT, interrupt, bulk).
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Short hex excerpts, or `kb7cap dump` / `kb7cap diff` output. Mark the bytes that matter.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: status
+    attributes:
+      label: Proposed status
+      description: "`confirmed` requires that you reproduced it by replay from this project's own code, not just that you saw it in a capture."
+      options:
+        - observed - seen consistently in captures, not replayed
+        - confirmed - seen in captures and reproduced by replay
+        - hypothesis - interpretation that still needs proof
+    validations:
+      required: true
+  - type: input
+    id: captures
+    attributes:
+      label: Capture(s) this is based on
+      description: The file stems from the naming scheme in CAPTURE-GUIDE.md.
+      placeholder: "e.g. 03-rgb-static-ff0000-1, 03-rgb-static-0000ff-1"
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Swarm II version and KB7 firmware version
+      description: The protocol may differ per firmware, so a finding without versions is hard to use.
+    validations:
+      required: true
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have not attached a raw capture file, and I reviewed every excerpt I pasted for keystrokes.
+          required: true
+        - label: This finding comes from observed USB traffic on hardware I own - not from Swarm II binaries, assets or decompiled code.
+          required: true

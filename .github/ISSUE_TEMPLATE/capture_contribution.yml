@@ -1,0 +1,61 @@
+name: Capture contribution
+description: You recorded captures and want to offer the results.
+labels: ["capture"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Captures are the bottleneck in Phase 0, so thank you. Follow
+        [`docs/CAPTURE-GUIDE.md`](https://github.com/Bananenbaas/kb7-commander/blob/main/docs/CAPTURE-GUIDE.md):
+        one action per capture, every scenario twice, no typing while recording.
+
+        **Raw captures are never published.** Keep the files on your own machine
+        and share `kb7cap` output here.
+  - type: textarea
+    id: scenarios
+    attributes:
+      label: Which scenarios did you record?
+      description: Use the file stems from the capture guide, and say how many takes of each.
+      placeholder: |
+        01-plug-in (2 takes)
+        03-rgb-static-ff0000 (2 takes)
+        03-rgb-static-0000ff (2 takes)
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Swarm II version and KB7 firmware version
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Capture setup
+      placeholder: "e.g. Wireshark 4.4.2 + USBPcap on Windows 11, snaplen 65535, descriptors injected"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Output of `kb7cap summary`
+      description: Paste the summary for the most interesting capture. Devices, interfaces, HID report IDs and traffic per endpoint.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything odd you noticed
+      description: Optional. Traffic you did not expect, actions Swarm II refused, differences between the two takes.
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Before submitting
+      options:
+        - label: I did not type anything while capturing, and I reviewed the pasted output for keystrokes.
+          required: true
+        - label: I am not attaching raw capture files, and I understand they should not be published.
+          required: true
+        - label: I did not install a firmware update while capturing.
+          required: true

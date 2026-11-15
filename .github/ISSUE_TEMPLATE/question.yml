@@ -1,0 +1,30 @@
+name: Question or idea
+description: An open question about the protocol, the tooling or the roadmap, or an idea you want to float.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        No capture needed, no form to fill in carefully — just ask.
+
+        One rule still applies: **do not attach a raw `.pcap` / `.pcapng`.** A
+        keyboard capture contains everything that was typed while it was
+        recording. A short hex excerpt or `kb7cap` output is fine.
+  - type: textarea
+    id: question
+    attributes:
+      label: What would you like to know, or what is your idea?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Optional. What you already tried, which Swarm II and firmware version you are on, which command you ran.
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Before submitting
+      options:
+        - label: I am not attaching a raw capture file, and I checked anything I pasted for keystrokes.
+          required: true

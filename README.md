@@ -1,5 +1,9 @@
 # KB7 Unleashed: Beyond Swarm II
 
+[![CI](https://github.com/Bananenbaas/kb7-commander/actions/workflows/ci.yml/badge.svg)](https://github.com/Bananenbaas/kb7-commander/actions/workflows/ci.yml)
+[![License: GPL v2+](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+
 An open-source project to unlock the full potential of the **Turtle Beach
 Command Series KB7**.
 
@@ -39,6 +43,9 @@ Pure Python (3.10+), no dependencies. Reads Windows USBPcap and Linux usbmon
 captures (`.pcap` / `.pcapng`).
 
 ```sh
+git clone https://github.com/Bananenbaas/kb7-commander.git
+cd kb7-commander
+
 python -m kb7tools summary capture.pcapng            # devices, interfaces, HID reports, traffic
 python -m kb7tools dump capture.pcapng -d <vid>:<pid> # transfers with hex payload
 python -m kb7tools diff a.pcapng b.pcapng -d <vid>:<pid>  # which bytes changed
@@ -51,11 +58,18 @@ what was typed during the capture (`--show-keystrokes` to override).
 
 Tests: `python -m unittest discover -s tests -t .`
 
-## Contributing captures
+## Contributing
 
-Follow [`docs/CAPTURE-GUIDE.md`](docs/CAPTURE-GUIDE.md). In short: one action
-per capture, every scenario twice, no typing while recording, and never publish
-raw captures. Share reviewed `kb7cap` output instead.
+Captures are the bottleneck in Phase 0, so a good capture is the most useful
+thing you can contribute. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and
+[`docs/CAPTURE-GUIDE.md`](docs/CAPTURE-GUIDE.md) first. In short: one action per
+capture, every scenario twice, no typing while recording, and **never publish
+raw captures** — share reviewed `kb7cap` output instead.
+
+Working on the code? [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) has the
+layout, conventions and known pitfalls. Privacy or hardware-safety problems go
+to [`SECURITY.md`](SECURITY.md) rather than a public issue. Participation is
+covered by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Safety rules
 

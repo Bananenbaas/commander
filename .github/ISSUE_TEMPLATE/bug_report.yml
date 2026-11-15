@@ -1,0 +1,59 @@
+name: Bug report (kb7cap toolkit)
+description: Something in the kb7cap toolkit crashes, misparses a capture or prints the wrong thing.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a protocol question, use *Protocol finding* instead.
+
+        **Do not attach a raw `.pcap` / `.pcapng`.** A keyboard capture contains
+        everything that was typed while it was recording. Paste a short hex
+        excerpt or the `kb7cap` output instead — and read it before posting.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what did you get?
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and output
+      description: The exact command you ran and its output, including the traceback if it crashed.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `kb7cap --version`, or the commit you are on.
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version and OS
+      placeholder: "e.g. Python 3.12.3 on Windows 11"
+    validations:
+      required: true
+  - type: dropdown
+    id: capture-source
+    attributes:
+      label: Where does the capture come from?
+      options:
+        - USBPcap (Wireshark on Windows)
+        - usbmon (Linux)
+        - Synthetic capture from tests/synth.py
+        - Other / unknown
+    validations:
+      required: true
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have not attached a raw capture file, and I checked the pasted output for keystrokes.
+          required: true
