@@ -435,8 +435,43 @@ therefore **R, G, B**.
 
 Individual bytes depart from the set colour (`0x80` and `0x00` appear in the red
 plane, `0x00` in the others), which is why the table is per-LED rather than a
-single colour triplet. Status: **observed**; which physical key each of the 112
-slots drives is **unknown** and needs a capture that lights one key at a time.
+single colour triplet.
+
+**Addressing one LED.** Setting a single key proved the scheme outright. In
+`03-rgb-perkey-esc-1040c0-1` the keyboard stayed at 255, 51, 51 and **only
+Escape** was set to 16, 64, 192 (`10 40 c0`). Between the first and the last frame
+of that capture exactly **five** bytes differ:
+
+```
+offset  10   01 -> 10     block 0, R plane, index 0
+offset  26   33 -> 40     block 0, G plane, index 0
+offset  42   33 -> c0     block 0, B plane, index 0
+offset 346   6a -> 13     checksum
+offset 347   98 -> 99     checksum
+```
+
+Nothing else moved. That fixes the whole addressing scheme:
+
+```python
+def offsets(led):           # led = 0 .. 111
+    block, i = divmod(led, 16)
+    base = 10 + block * 48
+    return base + i, base + 16 + i, base + 32 + i   # R, G, B
+```
+
+| Finding | Status |
+|---|---|
+| An LED's three bytes sit sixteen apart inside its own 48-byte block | **confirmed** (`03-rgb-perkey-esc-1040c0-1`) |
+| The plane order is R, G, B | **confirmed** — a colour with three distinct channel values landed in that order |
+| **Escape is LED index 0** | **confirmed** (`03-rgb-perkey-esc-1040c0-1`) |
+| The checksum covers the colour bytes: changing three data bytes changed the trailer | **confirmed** |
+| Which key each of the remaining 111 slots drives | unknown |
+
+While the colour picker is dragged, Swarm II writes the **whole table** each
+time, and it sends partial colours on the way: of the seven frames in that
+capture the first carries only the new red, the fourth red and green, and the
+last all three channels. Writing the table is evidently cheap enough to do on
+every mouse move. The checksum held for all seven.
 
 **The checksum is a plain 16-bit sum.** Add bytes 0 through 345 — the report ID
 included, the trailer excluded — keep the low 16 bits and store them
