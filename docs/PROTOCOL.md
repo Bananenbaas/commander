@@ -622,7 +622,7 @@ pos  5     00 48 0c 00  BREAK   ->   e2 00 06 00  ALT
 pos  6-11  INS, HOME, PGUP, DEL, END, PGDOWN  (usages 49-4e)
 ```
 
-Swarm II overwrote the label without clearing it: the new entry reads `ALT K`,
+Swarm II overwrote the label without clearing it: the new entry reads `ALT\0K`,
 the `K` left over from `BREAK`. Harmless, since the label is NUL-terminated.
 
 | Finding | Status |
@@ -810,7 +810,7 @@ twenty-byte fields from offset 2:
 | 4 | `DEFAULT 05` |
 
 Some fields contain bytes after the name's terminating NUL; whether that is
-data or leftover content, as in the `ALT K` button label, is unknown.
+data or leftover content, as in the `ALT\0K` button label, is unknown.
 
 | Finding | Status |
 |---|---|
