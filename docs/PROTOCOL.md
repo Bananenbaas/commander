@@ -418,9 +418,9 @@ Bytes 4–5 distinguish frame types. Seen so far:
 
 | Bytes 4–5 | Body | Reading | Status |
 |---|---|---|---|
-| `00 0d` | `<vol> 00 01 00 <vol> 00` | system volume | observed (`09-volume-50-1`) |
+| `00 0d` | `<vol> 00 <unmuted> 00 <vol> 00` | system volume. Byte 8 is `01` while sound is on and `00` while muted | observed (`09-volume-50-1`, `05-touch-tap-volumeicon-1`) |
 | `03 0e` | `00 64 64 00 64 64 00` | per-application volume. The volume page on the screen shows the system level plus two applications, both at 100%, which matches two pairs of `0x64` | hypothesis |
-| `01 02 02` | zeros | unknown | unknown |
+| `01 02 02` | `<muted>` then zeros | mute state: byte 6 is `01` while muted and `00` otherwise. Sent at startup with `00` | observed (`02-swarm-start-1`, `05-touch-tap-volumeicon-1`) |
 | `01 02 04` | `00 00 02 00 00 0c` | unknown | unknown |
 
 **This answers open question 2.** Live PC data is pushed as **numbers**, not as
@@ -626,7 +626,8 @@ ep 0x0d   a3 00 01 00 00 0d <level> 00 01 00 <level> 00
 | The host sends each level **twice**, roughly 50 ms apart | observed (`09-volume-50-1`, `10-dial-volume-up-1`) |
 | Round-trip latency from the device's report to the host's first `a3` frame: median **10.5 ms**, at least 3.5 ms | observed (`10-dial-volume-up-1`) |
 | Bit `0x40` of report `0x01` is volume up, bit `0x20` volume down: of 56 clicks, the level rose after 31 of the 42 `0x40` presses and fell after 10 of the 14 `0x20` presses, the rest falling at 100% or at a change of direction | observed (`10-dial-volume-up-1`) |
-| What the other bits of report `0x01` are | unknown |
+| Bit `0x10` of report `0x01` is Mute: the on-screen speaker button sends it (`05-touch-tap-volumeicon-1`) | observed |
+| What the remaining bits of report `0x01` are | unknown |
 
 **What this means for the project.** The screen is a slave display for host-side
 state: the keyboard does not know its own volume. Any replacement for Swarm II
@@ -657,13 +658,24 @@ The second tap was the same apart from the LED value and a 94 ms hold.
 | Byte 7 is the touch state: `01` touched, `00` released | observed |
 | Byte 5 is the button's assigned key, as a HID keyboard usage: `0x47` is Scroll Lock | observed |
 | **The keyboard sends the keystroke itself**, on the boot-keyboard interface, within a millisecond of the touch. Windows sees an ordinary Scroll Lock key press; Swarm II does not translate the touch | observed |
-| Bytes 1–4 and 6 (`01 04 03 00`, `01`) | unknown — see below |
+| Byte 2 is the button's **position** on the page, counted row by row from 0 in the 3-column grid | observed — predicted before tapping BREAK (`05`) and the speaker button (`02`), and right both times |
+| Byte 3 is the kind of action: `03` for a button bound to a keyboard key, `48` for the speaker button, which mutes | observed; the full list of values is unknown |
+| Bytes 1, 4 and 6 (`01`, `00`, `01` in every tap so far) | unknown — byte 1 may be the page, byte 4 the modifier keys of a shortcut |
 
-On this page the buttons sit in a 3-column grid with SCR LK in the second row,
-second column: index 4 counting row by row from 0. Byte 2 is `04`, so it could
-be the button's position on the page, with byte 1 the page and byte 3 the action
-type. That is a **hypothesis** from a single button; a tap on a different button
-will confirm or refute it.
+Three buttons on the `DESKTOP` page, side by side:
+
+```
+SCR LK    33 01 04 03 00 47 01 01   key 0x47 Scroll Lock, sent on 0x8e
+BREAK     33 01 05 03 00 48 01 01   key 0x48 Pause, sent on 0x8e
+speaker   33 01 02 48 00 00 01 01   no key; Consumer report 0x01 bit 0x10 (Mute) instead
+```
+
+**The speaker button mutes, and the whole loop is visible.** The keyboard sends
+the Mute media key itself (Consumer report `01 10 00 00`), Windows mutes, and the
+host then pushes the new state back: the system-volume `a3` frame with its mute
+byte set to `00`, followed by a mute-state frame `a3 00 01 01 02 02 01`. A second
+tap reverses all three. That identifies two parts of the `a3` frames that were
+unknown before — the mute byte and the mute-state frame.
 
 Note for capture hygiene: a screen button bound to a key produces a real
 keystroke on `0x8e`, which `kb7cap` always hides. Report `0x33` carries the key

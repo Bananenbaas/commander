@@ -62,7 +62,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Touch events: report `0x33` reports a screen button being touched and
   released, with the button's key in it, and the keyboard sends that key
   itself. The dial's volume-down bit, and the boot-complete notification
-  about 4.9 s after plug-in.
+  about 4.9 s after plug-in. Report `0x33` carries the button's position on
+  the page, confirmed by prediction on two more buttons, and the mute loop
+  identifies the mute byte of the volume frame and the mute-state frame.
 - The complete LED map: 94 of the 112 slots identified, including the arrow
   keys, the top buttons and the ten-segment wrist rest strip, with the matrix
   shown to be wired for an ISO layout. With Swarm II closed, a written report
