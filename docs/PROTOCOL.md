@@ -144,12 +144,20 @@ takes.
 | Step | Direction | Transfer | Payload | Status |
 |---|---|---|---|---|
 | 1 | host → device | `SET_IDLE` on interfaces 0, 1, 2 and 3 | — | observed (`01-plug-in-1`, `-2`) |
-| 2 | **device → host** | report `0x03` on `0x8c` (interrupt IN, interface 2) | 8 bytes, see below | observed (`01-plug-in-1`, `-2`) |
-| 3 | host → device | `SET_REPORT` output, report `0x00`, interface 3 | `01` — boot-keyboard LED report (NumLock) | observed (`01-plug-in-1`, `-2`) |
+| 2 | host → device | `SET_REPORT` output, report `0x00`, interface 3 | `01` — boot-keyboard LED report (NumLock) | observed (`01-plug-in-1`, `-2`) |
+| 3 | **device → host**, **4.9 s later** | report `0x03` on `0x8c` (interrupt IN, interface 2) | 8 bytes, see below | observed (`01-plug-in-1`, `-2`) |
 
-Step 2 is the only thing the device sends unprompted during enumeration, and it
-matches report `0x03` in the report map (interface 2, usage page `0xff01`, 7-byte
-input plus the report ID):
+An earlier version of this table put the `0x03` report *between* the `SET_IDLE`
+requests. That was an artefact of the parser timestamping interrupt IN transfers
+when the request was queued instead of when the data arrived (see
+`DEVELOPMENT.md`). With that fixed, the report arrives **4.90 s** after the LED
+report in take 1 and **4.89 s** in take 2 — the same delay twice. After
+plugging in, the screen stays dark and then shows a boot screen with the
+firmware version for several seconds, so this report is very likely the keyboard
+announcing that it has finished booting. Status: **hypothesis**.
+
+It matches report `0x03` in the report map (interface 2, usage page `0xff01`,
+7-byte input plus the report ID):
 
 ```
 take 1   03 00 31 20 d1 da 00 00
@@ -590,19 +598,21 @@ The keyboard has a volume dial above Escape. `10-dial-volume-up-1` captures 56
 clicks of it, and shows the full path from a physical control to the value drawn
 on the screen.
 
-**One click, device → host, three reports in the same millisecond:**
+**One click, device → host, three reports within half a millisecond:**
 
 ```
-ep 0x8c   03 00 cc 01 00 00 00 00     report 0x03, the notification
-ep 0x8c   01 40 00 00                 report 0x01, Consumer page: bit 0x40 set
-ep 0x8c   01 00 00 00                 report 0x01, all bits clear - released
++0.0 ms   ep 0x8c   01 40 00 00                 report 0x01, Consumer page: bit set
++0.2 ms   ep 0x8c   01 00 00 00                 report 0x01, all bits clear - released
++0.3 ms   ep 0x8c   03 00 cc 01 00 00 00 00     report 0x03, the notification
 ```
 
 Report `0x01` is the 3-byte Consumer report from the report map (usage page
-`0x000c`). The value is a **bitmap**, not a usage code: one bit, `0x40`, goes up
-and comes back down like an ordinary key press and release.
+`0x000c`). The value is a **bitmap**, not a usage code: one bit goes up and comes
+back down like an ordinary key press and release — **`0x40` turns the volume
+up, `0x20` turns it down**. The notification comes *last*; an earlier version of
+this section put it first, which was the parser's timestamp artefact.
 
-**Then, 9 ms later, host → device:**
+**Then, about 10 ms later, host → device:**
 
 ```
 ep 0x0d   a3 00 01 00 00 0d <level> 00 01 00 <level> 00
@@ -614,8 +624,9 @@ ep 0x0d   a3 00 01 00 00 0d <level> 00 01 00 <level> 00
 | The dial is **relative**: it reports a step, nothing more. Windows decides the level and the host pushes the absolute value back for display | observed (`10-dial-volume-up-1`) |
 | One click moves Windows volume by **2 percentage points**, and the level saturates at 100 | observed (`10-dial-volume-up-1`) |
 | The host sends each level **twice**, roughly 50 ms apart | observed (`09-volume-50-1`, `10-dial-volume-up-1`) |
-| Round-trip latency from the device's report to the host's `a3` frame is about 9 ms | observed (`10-dial-volume-up-1`) |
-| Which bit corresponds to volume *down*, and what the other bits of report `0x01` are | unknown |
+| Round-trip latency from the device's report to the host's first `a3` frame: median **10.5 ms**, at least 3.5 ms | observed (`10-dial-volume-up-1`) |
+| Bit `0x40` of report `0x01` is volume up, bit `0x20` volume down: of 56 clicks, the level rose after 31 of the 42 `0x40` presses and fell after 10 of the 14 `0x20` presses, the rest falling at 100% or at a change of direction | observed (`10-dial-volume-up-1`) |
+| What the other bits of report `0x01` are | unknown |
 
 **What this means for the project.** The screen is a slave display for host-side
 state: the keyboard does not know its own volume. Any replacement for Swarm II
@@ -624,11 +635,41 @@ push values back — or the screen will simply stop updating. It also means the
 hardware does not need to be taught anything to show a value; it only needs to
 be sent one.
 
-### Touch input events
-unknown. The dial's notification on report `0x03` and the Consumer report `0x01`
-show the shape device-initiated input takes, so the touch reports are likely to
-arrive on `0x8c` as well. Report `0x33` (vendor input, 11 bytes) remains the
-candidate. Scenario 05 has to confirm it.
+### Touch input events: report `0x33`
+
+`05-touch-tap-scrlk-1`: with Swarm II running and the screen on the `DESKTOP`
+profile page, I tapped the on-screen **SCR LK** button twice, three seconds
+apart. Each tap:
+
+```
++0.0 ms    ep 0x8c  33 01 04 03 00 47 01 01 00 00 00 00   report 0x33: touched
++0.6 ms    ep 0x8e  00 00 47 00 00 00 00 00                boot keyboard: usage 0x47 down
++1.0 ms    host     SET_REPORT LED 05 (tap 1) / 01 (tap 2)  Windows toggles the Scroll Lock LED
++58 ms     ep 0x8c  33 01 04 03 00 47 01 00 00 00 00 00   report 0x33: released
++60 ms     ep 0x8e  00 00 00 00 00 00 00 00                boot keyboard: all keys up
+```
+
+The second tap was the same apart from the LED value and a 94 ms hold.
+
+| Finding | Status |
+|---|---|
+| Report `0x33` (12 bytes on the wire, `0xff02`) is the touch event for a screen button | observed (`05-touch-tap-scrlk-1`) |
+| Byte 7 is the touch state: `01` touched, `00` released | observed |
+| Byte 5 is the button's assigned key, as a HID keyboard usage: `0x47` is Scroll Lock | observed |
+| **The keyboard sends the keystroke itself**, on the boot-keyboard interface, within a millisecond of the touch. Windows sees an ordinary Scroll Lock key press; Swarm II does not translate the touch | observed |
+| Bytes 1–4 and 6 (`01 04 03 00`, `01`) | unknown — see below |
+
+On this page the buttons sit in a 3-column grid with SCR LK in the second row,
+second column: index 4 counting row by row from 0. Byte 2 is `04`, so it could
+be the button's position on the page, with byte 1 the page and byte 3 the action
+type. That is a **hypothesis** from a single button; a tap on a different button
+will confirm or refute it.
+
+Note for capture hygiene: a screen button bound to a key produces a real
+keystroke on `0x8e`, which `kb7cap` always hides. Report `0x33` carries the key
+code as well, but it is on a vendor page, so it is shown whenever the capture
+contains the report descriptor — and hidden, like everything on a HID interface,
+when it does not.
 
 ### LED map
 

@@ -7,6 +7,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- Transfers were timestamped and ordered by when the request was queued rather
+  than when it completed. For interrupt IN that is wrong by up to the gap
+  between two reports, so touch events appeared as duplicates and the order of
+  reports within a dial click was reversed. Transfers now carry their
+  completion time, with the queueing time kept in `Transfer.submitted`.
 - The keystroke filter could still leak. A report was classified by the usage
   page in effect at its first main item only, so one that starts on a vendor
   page and switches to the keyboard page passed as vendor data, and usage pages
@@ -54,6 +59,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - The RGB lighting format: report `0x11` over the control endpoint, a 112-LED
   table stored as seven blocks of sixteen reds, greens and blues, and a
   trailing 16-bit sum as its checksum.
+- Touch events: report `0x33` reports a screen button being touched and
+  released, with the button's key in it, and the keyboard sends that key
+  itself. The dial's volume-down bit, and the boot-complete notification
+  about 4.9 s after plug-in.
 - The complete LED map: 94 of the 112 slots identified, including the arrow
   keys, the top buttons and the ten-segment wrist rest strip, with the matrix
   shown to be wired for an ISO layout. With Swarm II closed, a written report
