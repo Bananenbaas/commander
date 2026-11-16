@@ -275,19 +275,19 @@ func TestSwitchProfile(t *testing.T) {
 	if got := f.Features(); len(got) != 1 || !bytes.Equal(got[0], proto.SwitchProfile(1)) {
 		t.Fatalf("%x", got)
 	}
-	// The stale notification must not have satisfied the wait: the first
-	// call after SetFeature is a read, and everything queued was consumed.
-	calls := f.Calls()
-	sawSet := false
-	for _, c := range calls {
+	// The stale report must have been read before the frame was sent.
+	staleBefore, sawSet := false, false
+	for _, c := range f.Calls() {
 		if c.Op == device.OpSetFeature {
 			sawSet = true
 		}
-		if sawSet && c.Op == device.OpReadInput && c.Data != nil && c.Data[0] == 0x03 && c.Data[2] == 0x01 {
-			return
+		if c.Op == device.OpReadInput && c.Err == nil && !sawSet {
+			staleBefore = true
 		}
 	}
-	t.Fatal("did not read the answer after sending")
+	if !staleBefore {
+		t.Fatal("old input was not dropped before sending")
+	}
 }
 
 func TestSwitchProfileTimeout(t *testing.T) {

@@ -17,7 +17,7 @@ var (
 	// ErrOpenerRefused means the keyboard answered the opening frame of a
 	// picture upload with something else than its echo. Nothing else was
 	// sent and the keyboard is still in its normal state.
-	ErrOpenerRefused = errors.New("keyboard: the keyboard refused to start the picture upload")
+	ErrOpenerRefused = errors.New("keyboard: the keyboard did not accept the upload; nothing else was sent")
 
 	// ErrUploadLeftOpen means a picture upload stopped half way, or without
 	// knowing whether it started, so the keyboard may be waiting for the rest.
@@ -49,6 +49,7 @@ type KB struct {
 
 	wroteButtons bool
 	lastButtons  time.Time
+	uploadOpen   bool // an upload was left open; no further upload is tried
 }
 
 // New returns a KB that uses d and the real clock.
@@ -92,7 +93,7 @@ func (k *KB) drainInput() error {
 			return fmt.Errorf("keyboard: dropping old input: %w", err)
 		}
 	}
-	return nil
+	return errors.New("keyboard: input not quiet, nothing was sent")
 }
 
 // drainStream drops stale stream frames.
@@ -105,7 +106,7 @@ func (k *KB) drainStream() error {
 			return fmt.Errorf("keyboard: dropping old frames: %w", err)
 		}
 	}
-	return nil
+	return errors.New("keyboard: stream not quiet, upload not started")
 }
 
 // readAck waits up to ackTimeout for the next frame that is an a5 frame or
@@ -146,6 +147,9 @@ func isAck(fr [64]byte) bool {
 // nothing else was sent. Once the opening frame may have been accepted, any
 // failure returns ErrUploadLeftOpen, wrapping the cause where there is one.
 func (k *KB) Upload(slot byte, data []byte) error {
+	if k.uploadOpen {
+		return fmt.Errorf("%w (an earlier upload was not completed; nothing was sent)", ErrUploadLeftOpen)
+	}
 	frames, err := proto.UploadFrames(slot, data)
 	if err != nil {
 		return fmt.Errorf("keyboard: upload: %w", err)
@@ -155,30 +159,32 @@ func (k *KB) Upload(slot byte, data []byte) error {
 	}
 	for i, f := range frames {
 		if err := k.d.WriteStream(f.Out); err != nil {
-			if i == 0 {
+			if i == 0 && errors.Is(err, device.ErrDisconnected) {
 				return fmt.Errorf("keyboard: starting the upload: %w", err)
 			}
-			return leftOpen(i, len(frames), err)
+			return k.leftOpen(i, len(frames), err)
 		}
 		ack, err := k.readAck()
 		switch {
 		case err != nil:
-			return leftOpen(i, len(frames), err)
+			return k.leftOpen(i, len(frames), err)
 		case ack != f.Ack && i == 0:
-			return ErrOpenerRefused
+			return fmt.Errorf("%w (reply % x)", ErrOpenerRefused, ack[:8])
 		case ack != f.Ack:
-			return leftOpen(i, len(frames), errors.New("unexpected acknowledgement"))
+			return k.leftOpen(i, len(frames), fmt.Errorf("unexpected acknowledgement % x", ack[:8]))
 		}
 	}
 	return nil
 }
 
-func leftOpen(i, n int, cause error) error {
+func (k *KB) leftOpen(i, n int, cause error) error {
+	k.uploadOpen = true
 	return fmt.Errorf("%w (frame %d of %d: %w)", ErrUploadLeftOpen, i+1, n, cause)
 }
 
 // selectTable asks for a table of a profile and checks the keyboard is ready.
 func (k *KB) selectTable(profile, selector byte) error {
+	k.settle()
 	if err := k.d.SetFeature(proto.Select(profile, selector)); err != nil {
 		return fmt.Errorf("keyboard: selecting table: %w", err)
 	}
@@ -267,6 +273,7 @@ func firstByte(b []byte) byte {
 // keyboard to say so. Input that is already queued is dropped first, and
 // other events that arrive while waiting are discarded.
 func (k *KB) SwitchProfile(p byte) error {
+	k.settle()
 	if err := k.drainInput(); err != nil {
 		return err
 	}
@@ -283,6 +290,7 @@ func (k *KB) SwitchProfile(p byte) error {
 // the keyboard's redraw request. Other events that arrive meanwhile are
 // discarded.
 func (k *KB) EnableNotifications() error {
+	k.settle()
 	if err := k.d.SetFeature(proto.Notifications(true)); err != nil {
 		return fmt.Errorf("keyboard: enabling notifications: %w", err)
 	}
@@ -308,8 +316,9 @@ func (k *KB) waitFor(timeout time.Duration, what string, match func(any) bool) e
 }
 
 // WriteButtons writes a button table. The keyboard needs 200 ms before the
-// next report, which WriteType and WriteTypes wait for.
+// next report, which every later report waits for.
 func (k *KB) WriteButtons(t *proto.Table29) error {
+	k.settle()
 	if err := k.d.SetFeature(t.Bytes()); err != nil {
 		return fmt.Errorf("keyboard: writing button table: %w", err)
 	}
