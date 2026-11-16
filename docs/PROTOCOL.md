@@ -406,7 +406,7 @@ what ties the report map to real behaviour.
 | Report `0x16` (103 B, selector `ba`) holds the names of all five profiles, see "Profiles". Not a host name, as first assumed | observed (`02-swarm-start-1`) |
 | **Byte 3 of a block is the profile slot, 0–4.** Every selector read five times returns the same block five times with byte 3 counting `00`…`04`. The lighting block `0x11` differs between slots; the screen block `0x29` is identical in all five apart from that byte | observed (`02-swarm-start-1`, reports `0x11`, `0x21`, `0x29`) |
 | Report `0x0e` is written as `0e 05 00 00 00` and `0e 05 01 00 00`, a register taking 0 and 1 — looks like enabling something before the reads | hypothesis |
-| From a cold start (`02-swarm-start-2`, the keyboard silent since the PC booted), `0e 05 01 00 00` is Swarm II's **first write**, before any selector read, and the screen redraws (`31` event) two seconds later. It is the first candidate for switching on the notifications described under "Without Swarm II"; the other write before Fn was first reported is report `0x28` (308 bytes, opening with the text `System`) | observed; the link is a hypothesis until replayed |
+| From a cold start (`02-swarm-start-2`, the keyboard silent since the PC booted), `0e 05 01 00 00` is Swarm II's **first write**, before any selector read, and the screen redraws (`31` event) two seconds later. Replayed on its own, it switches on the notifications described under "Without Swarm II" | **confirmed** (`19-replay-0e-1`) |
 
 Writing configuration does not go through the selector: Swarm II writes a
 block directly with `SET_REPORT`, with byte 3 set to the slot it is writing
@@ -1071,11 +1071,30 @@ each profile switch        03 00 31 20 <b4> <b5> <b6> 0f
 | A profile switch changes the screen and the lighting to what the slot holds, and sends only the `31` event; the `01 <slot>` notification is missing | observed (`16`) |
 | Bytes 4–6 of the `31` event rose across the five switches (`af c5 cb` … `26 29 ce`) and byte 7 was `0f` each time | observed; meaning still unknown |
 
-So the extra notifications are not sent by default; something Swarm II does
-switches them on. Candidates are the selector writes of its startup exchange,
-the `a1`/`a3` streams, or its device service merely opening the interface.
-Finding which one is the next step, since a replacement for Swarm II needs the
-same reports.
+So the extra notifications are not sent by default.
+
+#### Replayed: report `0x0e` switches the notifications on
+
+`19-replay-0e-1`, after a reboot of the PC with no Swarm II component running:
+
+```
+before the write   Fn pressed three times        nothing on the bus
+11:22:16.452       SET_REPORT 0x0e  0e 05 01 00 00   (HidD_SetFeature, 5-byte buffer)
++1.9 s             03 00 31 20 …                  the screen redraws
+then               Fn three times                 03 00 fc 01 / 03 00 fc 00, with the fa stream
+                   dial one click                 01 40 00 00, 01 00 00 00, 03 00 cc 01
+```
+
+| Finding | Status |
+|---|---|
+| Writing `0e 05 01 00 00` turns on the extended notifications: Fn (`fc`, `fa`) and the dial (`cc`) report from then on, where the same actions before the write sent nothing | **confirmed** (`19-replay-0e-1`) |
+| The screen redraws about two seconds after the write, as it does when Swarm II starts | observed |
+| Nothing else is needed: no selector read, no stream, no other write | confirmed |
+| `0e 05 00 00 00`, also seen from Swarm II, presumably switches them off again | hypothesis |
+| Whether the setting survives unplugging the keyboard or a reboot of the PC | unknown — after the reboot before this capture it was off |
+
+This is the first step of any replacement for Swarm II: one feature report, and
+the keyboard reports everything Swarm II gets.
 
 ## Do-not-send list
 

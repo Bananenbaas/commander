@@ -31,6 +31,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
   both layouts, and the device-inventory test runs against each.
 
 ### Added
+- Second command replayed to the hardware: writing feature report `0x0e` as
+  `0e 05 01 00 00` switches on the notifications that the keyboard otherwise
+  only sends with Swarm II running; Fn and dial events were checked.
 - Report `0x35` sets the widget type of one screen position; type `00` leaves
   the position empty, so the background image shows through.
 - Hardware hints from the names and sizes of files in the Swarm II
