@@ -337,9 +337,11 @@ In this order:
 3. Restoring a position with `0x25`, top row included.
 4. How pages 2 and 3 are addressed — one capture of Swarm II putting a button
    on each.
-5. Whether keystrokes from `SendInput` reach Star Citizen, and how AltGr
+5. Reading the touch and notification reports from our own code. Every tap so
+   far was seen in a capture, not read by a program of ours.
+6. Whether keystrokes from `SendInput` reach Star Citizen, and how AltGr
    chords arrive.
-6. The keyboard on Linux (hidraw nodes, feature reports, the interface 1
+7. The keyboard on Linux (hidraw nodes, feature reports, the interface 1
    stream).
 
 ## Left to the builder
