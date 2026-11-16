@@ -525,7 +525,7 @@ Byte 2 selects the kind of event. Seen so far:
 | Byte 2 | Body | Meaning | Status |
 |---|---|---|---|
 | `01` | `03 00 01 <slot> 00 00 00 00` | the active profile changed to `<slot>` | observed (`08-profile-switch-desktop-sc-1`) |
-| `31` | `03 00 31 <view> <b4> <b5> <b6> 00` | the screen has drawn a new view and wants live values: after every profile switch, about 4.9 s after plug-in, and on entering and leaving the on-screen settings. Swarm II answers each one by re-sending the mute state and volume frames. `<view>` is `20` for a profile's main page and `04` for the settings view seen so far | observed / hypothesis for the meaning |
+| `31` | `03 00 31 <view> <b4> <b5> <b6> 00` | the screen has drawn a new view and wants live values: after every profile switch, about 4.9 s after plug-in, and on entering and leaving the on-screen settings. Swarm II answers each one by re-sending the mute state and volume frames. `<view>` is `20` for a profile's main page, `04` for the settings view, and `01` for a single widget, with its position in byte 4, after a report `0x35` write | observed / hypothesis for the meaning |
 | `cc` | `03 00 cc 01 00 00 00 00` | the volume dial was turned | observed (`10-dial-volume-up-1`) |
 | `06` | `03 00 06 <down> 00 <usage> 00 06` | a screen button bound to a modifier on its own | observed (`15-screen-assign-break-1`) |
 | `fc` | `03 00 fc <down> 00 00 00 00` | the Fn key pressed (`01`) or released (`00`) | observed (`04-rgb-fn-keys-and-mic-1`) |
@@ -727,6 +727,22 @@ tile, no label, the background image shows through.
 So a custom layout can leave key positions empty and show its own artwork from
 the background image in their place. Whether the three icon buttons
 (positions 0–2) can be emptied the same way is untested.
+
+**Replayed** (`22-replay-0x35-print-1`, no Swarm II component running, report
+`0x0e` written first): the two PRINT frames above, sent on their own with
+`HidD_SetFeature` and a 12-byte buffer.
+
+```
+35 0c 01 03 01 00 00 00 00 00 46 00   ->  03 00 31 01 03 00 00 00   PRINT disappears
+35 0c 01 03 01 00 03 00 0b 00 54 00   ->  03 00 31 01 03 00 00 00   PRINT is back
+tap on PRINT                          ->  33 01 03 03 00 46 01 01 …, and the keyboard sends Print Screen itself
+```
+
+| Finding | Status |
+|---|---|
+| Report `0x35` alone empties and restores a position; report `0x29` does not have to be written with it | **confirmed** (`22-replay-0x35-print-1`) |
+| The keyboard answers each `0x35` write with `03 00 31 01 <position>`: a redraw of that one widget. `31` with view `01` is new; until now only `20` (main page) and `04` (settings) were seen | observed |
+| The restored button takes its key and label from the stored `0x29` table: the tap reported key `0x46` and Windows received Print Screen | confirmed |
 
 **A modifier button does not send a keyboard report.** Tapping the reassigned
 button produced touch report `33 01 05 05 00 00 01 01` — byte 3 now `05` — and

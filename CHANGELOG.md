@@ -36,6 +36,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
   only sends with Swarm II running; Fn and dial events were checked.
   `0e 05 00 00 00` switches them off again, and the setting is lost when the
   keyboard is unplugged.
+- Fourth command replayed: report `0x35` on its own empties and restores a
+  screen button; the keyboard redraws just that widget and the restored button
+  works as before.
 - Third command replayed: a background image uploaded from our own code, with
   framing verified byte for byte against Swarm II's before sending. The device
   sets the pace, so a full screen takes 32 seconds whoever sends it.
