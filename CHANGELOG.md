@@ -31,6 +31,15 @@ and the project uses [Semantic Versioning](https://semver.org/).
   both layouts, and the device-inventory test runs against each.
 
 ### Added
+- Hardware hints from the names and sizes of files in the Swarm II
+  installation, marked as hypotheses: a Sonix main controller and a second
+  microcontroller with its own firmware. The do-not-send list now names both
+  firmware-update paths. `firmware/` is ignored so vendor files stay local.
+- The clean-room rule stated precisely in the README, `CONTRIBUTING.md` and
+  `docs/DEVELOPMENT.md`: the protocol is derived solely from observing USB
+  traffic of hardware we own (EU Directive 2009/24/EC art. 5(3)), and Swarm II
+  binaries, firmware images and assets are not analysed, decompiled or
+  included.
 - Screen pixel order: row by row from the top left. The second, smaller image
   upload is the keyboard's thumbnail of the background, a 142 x 222 buffer with
   the image squashed into its top 142 x 148.

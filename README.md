@@ -87,7 +87,9 @@ covered by the [Code of Conduct](CODE_OF_CONDUCT.md).
 - Only commands that have been observed in captures are ever sent to the device.
   No guessing and no fuzzing of write commands.
 - Firmware update, bootloader and factory-reset commands are never implemented.
-- No Swarm II binaries, assets or code are copied into this project.
+- The protocol is derived solely from observing USB traffic of hardware we own
+  (EU Directive 2009/24/EC art. 5(3)). Swarm II binaries, firmware images and
+  assets are not analysed, decompiled or included.
 
 Using this software is at your own risk. It may void your warranty.
 

@@ -39,8 +39,9 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 - **Privacy**: raw captures are never committed. `PROTOCOL.md` contains only
   short, reviewed hex excerpts. Keystroke reports stay hidden by default in the
   tooling.
-- **Clean room**: no Swarm II binaries, assets or decompiled code enter this
-  repository.
+- **Clean room**: the protocol is derived solely from observing USB traffic of
+  hardware we own (EU Directive 2009/24/EC art. 5(3)). Swarm II binaries,
+  firmware images and assets are not analysed, decompiled or included.
 - **Knowledge discipline**: every claim in `PROTOCOL.md` carries a status tag
   (`confirmed` / `observed` / `hypothesis` / `unknown`) and names the capture(s)
   it rests on.

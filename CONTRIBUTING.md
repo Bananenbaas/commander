@@ -72,9 +72,10 @@ someone's privacy:
 - **Firmware update, bootloader entry and factory reset are never implemented.**
   If you identify such a command, add it to the do-not-send list in
   `docs/PROTOCOL.md` and leave it there.
-- **No Swarm II binaries, assets or decompiled code** in the repository, in
-  issues or in pull requests. This is a clean-room project: work from observed
-  traffic on hardware you own.
+- **Clean room.** The protocol is derived solely from observing USB traffic of
+  hardware we own (EU Directive 2009/24/EC art. 5(3)). Swarm II binaries,
+  firmware images and assets are not analysed, decompiled or included — not in
+  the repository, not in issues and not in pull requests.
 - **No raw captures in public**, ever.
 
 Security- or privacy-sensitive findings go to [`SECURITY.md`](SECURITY.md)

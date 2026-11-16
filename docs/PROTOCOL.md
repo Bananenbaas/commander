@@ -33,6 +33,24 @@ Every entry names the capture(s) it is based on.
 | Swarm II version used | — | unknown |
 | Physical connection | the supplied **USB-A** connectors, on an AMD xHCI root hub, behind the keyboard's own hub. The keyboard also has a single **USB-C** port, so far untested | observed (`00-descriptors`, `01-plug-in-1`, `-2`, `00-idle-1`) |
 
+### Hints from the Swarm II installation
+
+Not from captures, and not from file contents: these rest only on the folder
+names, file names and file sizes of the Swarm II installation. No file is
+opened, analysed or reproduced. Every row is a hypothesis about the hardware
+unless a capture or the USB descriptors confirm it, and none of it is used to
+derive protocol.
+
+| Hint | Source | Status |
+|---|---|---|
+| Swarm II keeps the KB7 firmware in a folder named after the VID:PID and version, `Firmware\COMMAND_KB7\10F5_5038\139\` — the same `10f5:5038` and `0x0139` the device reports | folder name | consistent with `00-descriptors` |
+| The main controller is probably a **Sonix** part: Swarm II ships a `Turtle Beach Sonix Updater` and a `SonixUSBClassSwitchTool` in `Thirdparty\Sonix\` | file and folder names | hypothesis |
+| The main firmware image is about 23.6 MB, large for keyboard firmware alone, which fits the screen drawing its own pages from stored graphics | file size | hypothesis |
+| A **second microcontroller** exists, with its own firmware file `MCU2\AP_AT423_V1.15.bin` (17 KB); the name suggests an Artery AT32F423. Which part of the keyboard it drives is unknown | file name and size | hypothesis |
+
+These matter mainly for the do-not-send list: a firmware update exists as a
+mechanism, with a dedicated updater, for two separate chips.
+
 ## Interfaces and endpoints
 
 All four interfaces are HID with a single alternate setting, and every endpoint
@@ -1035,7 +1053,19 @@ same reports.
 Commands identified as firmware update, bootloader entry or factory reset.
 These are never replayed and never implemented in the library.
 
-_None identified yet._
+_No command identified yet._
+
+Known to exist, and never to be triggered from this project:
+
+- **Firmware update of the main controller.** Swarm II carries the 1.39 image
+  and a separate Sonix updater, plus a Sonix USB class-switch tool, which
+  suggests the keyboard is switched into a different USB mode for flashing.
+  Any report seen to do that goes here.
+- **Firmware update of the second microcontroller** (`MCU2`, see "Hints from
+  the Swarm II installation").
+
+No capture so far has included an update, and none should be made with a real
+update running: a failed or interrupted flash can leave the keyboard unusable.
 
 ## Open questions
 

@@ -4,6 +4,9 @@ captures/**
 *.pcap
 *.pcapng
 
+# Vendor firmware and software files stay local; this is a clean-room project.
+firmware/
+
 __pycache__/
 *.egg-info/
 build/
