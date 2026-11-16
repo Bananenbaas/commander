@@ -69,7 +69,7 @@ Naming: `<NN>-<area>-<action>[-<variant>]-<take>.pcapng`, for example
 | 03 | `03-rgb-static-<rrggbb>` | Set the whole keyboard to one static colour: `ff0000`, `00ff00`, `0000ff` | Simplest write command; colour bytes are easy to spot |
 | 04 | `04-rgb-brightness-<pct>` | Change only the brightness: `100`, `50` | Second variable in the same command family |
 | 05 | `05-touch-tap-<button>` | Tap one touchscreen button (Swarm II open), then the same with Swarm II closed | How touch input reaches the PC |
-| 06 | `06-screen-icon-<image>` | Assign one image from `docs/test-images/` to one touch button: `solid-ff0000`, `solid-0000ff`, `split-red-blue` | Upload mechanism and pixel format (solid colours make e.g. RGB565 `f800` obvious) |
+| 06 | `06-screen-background-<image>` | Upload one image from `docs/test-images/` as the screen background, then choose it on the keyboard's screen. Swarm II accepts custom images only as the background, not as button icons. `solid-ff0000` shows the pixel format, `quadrants-480x800` (the screen's exact size) the pixel order and the thumbnail layout | Upload mechanism, pixel format and order |
 | 07 | `07-screen-stats-<on/off>` | Turn the PC-performance view on or off | Does the PC stream frames, or does the device draw widgets? |
 | 08 | `08-profile-switch` | Switch to another profile | Profile storage on the device |
 

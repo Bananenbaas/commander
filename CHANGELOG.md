@@ -31,6 +31,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
   both layouts, and the device-inventory test runs against each.
 
 ### Added
+- Screen pixel order: row by row from the top left. The second, smaller image
+  upload is the keyboard's thumbnail of the background, a 142 x 222 buffer with
+  the image squashed into its top 142 x 148.
 - The keyboard without Swarm II: a plain keyboard with media keys. The dial,
   the buttons beside it and the screen's default page send ordinary Consumer
   reports, the brightness and profile keys work on the device alone, and the

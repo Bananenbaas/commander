@@ -388,6 +388,7 @@ what ties the report map to real behaviour.
 | Report `0x16` (103 B, selector `ba`) holds the names of all five profiles, see "Profiles". Not a host name, as first assumed | observed (`02-swarm-start-1`) |
 | **Byte 3 of a block is the profile slot, 0–4.** Every selector read five times returns the same block five times with byte 3 counting `00`…`04`. The lighting block `0x11` differs between slots; the screen block `0x29` is identical in all five apart from that byte | observed (`02-swarm-start-1`, reports `0x11`, `0x21`, `0x29`) |
 | Report `0x0e` is written as `0e 05 00 00 00` and `0e 05 01 00 00`, a register taking 0 and 1 — looks like enabling something before the reads | hypothesis |
+| From a cold start (`02-swarm-start-2`, the keyboard silent since the PC booted), `0e 05 01 00 00` is Swarm II's **first write**, before any selector read, and the screen redraws (`31` event) two seconds later. It is the first candidate for switching on the notifications described under "Without Swarm II"; the other write before Fn was first reported is report `0x28` (308 bytes, opening with the text `System`) | observed; the link is a hypothesis until replayed |
 
 Writing configuration does not go through the selector: Swarm II writes a
 block directly with `SET_REPORT`, with byte 3 set to the slot it is writing
@@ -729,7 +730,7 @@ a5 ff                                           end of the image
 | Byte 1 of a data frame is its payload length (`3e` = 62); `00`, `f1`, `f2`, `ff` and `40` are control values | observed |
 | The device acknowledges every data frame with a frame of `ff`, and the host waits for it: one data frame every 2.0 ms | observed |
 | No checksum is visible anywhere in the upload | observed |
-| Pixel order (row by row from the top left, or otherwise) | unknown — a solid colour cannot show it; `split-red-blue.png` would |
+| **Pixel order is row by row from the top left**, 480 pixels per row, with nothing between rows: a 480 x 800 image of four solid quadrants (red top left, green top right, blue bottom left, white bottom right) arrives as 400 rows of 240 red + 240 green, then 400 rows of 240 blue + 240 white, and the screen shows it upright | observed (`06-screen-background-quadrants-1`) |
 
 **Throughput is about 23 KiB/s**: the full-screen image took 32 seconds. Live
 full-screen video over this channel is out of the question, which is consistent
@@ -737,8 +738,18 @@ with how the volume page works — the host sends values and the device draws.
 
 **A second, smaller upload follows.** After the background, Swarm II sends
 another image opened with `a5 40` instead of `a5 00`: 63,048 bytes, which as
-RGB565 is 21,016 red pixels followed by 10,508 white ones. It may be a preview or
-thumbnail of the background; its size and purpose are unknown.
+RGB565 is 31,524 pixels. **It is the thumbnail the keyboard shows when the
+background is chosen on its screen**, and it has its own fixed format:
+
+| Finding | Status |
+|---|---|
+| The buffer is **142 pixels wide and 222 rows tall**, row by row from the top left | observed (`06-screen-background-quadrants-1`) |
+| The top **142 x 148** holds the whole background scaled down, not cropped: each quadrant of the test image arrives as 71 x 74 pixels. The scale is 480/142 horizontally and 800/148 vertically, so the thumbnail is squashed to almost square, which is how it looks on the screen | observed |
+| The remaining 74 rows are white in both uploads so far | observed (`06-screen-background-ff0000-1`, `-quadrants-1`) |
+| Whether those rows are padding or are drawn somewhere | unknown |
+
+Swarm II offers no animated formats: its file picker allows only `.png`,
+`.jpg` and `.jpeg`.
 
 Choosing the image on the screen afterwards sends no image data. It produces
 only notification events, after each of which Swarm II re-sends the live values.
