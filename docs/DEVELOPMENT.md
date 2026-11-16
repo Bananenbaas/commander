@@ -102,6 +102,16 @@ pip install -e .                            # then: kb7cap summary <capture>
   per the previous point, `3.4` is then not filtered for keystrokes at all.
   Check which address actually carries the `0x8c` reports before trusting a
   `dump` of such a capture.
+- **Writing to the keyboard: respect its busy times.** After a `0x0e` write it
+  redraws for about 2 s and does not answer on interface 1. An image upload must
+  never be abandoned once opened: a sender that gave up after a 1 s timeout left
+  the keyboard waiting inside the upload, and it stopped working as a keyboard
+  until it was unplugged. Use timeouts of several seconds, and wait 200 ms
+  between `0x29` and `0x25` as Swarm II does. See "Application buttons" in
+  `PROTOCOL.md`.
+- **A test that shows nothing needs a control in the same capture.** "No
+  report on tap" means nothing unless the same capture also shows a known
+  event getting through (for example a dial turn with `0x0e` written).
 - The `license = "GPL-2.0-or-later"` SPDX string in `pyproject.toml` requires
   setuptools ≥ 77.
 - Captures come from a Windows machine running Swarm II, with the KB7 attached

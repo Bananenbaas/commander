@@ -31,6 +31,31 @@ and the project uses [Semantic Versioning](https://semver.org/).
   both layouts, and the device-inventory test runs against each.
 
 ### Added
+- Application buttons: a screen button whose picture is uploaded by the host.
+  The upload (`a5 41`) is 142 x 148 RGB565 followed by a one-byte-per-pixel
+  alpha mask. A picture uploaded from our own code was drawn with its
+  transparency, straight on the background and without any firmware tile. Its
+  `0x29` label can be set (eleven characters were drawn in full) or left
+  empty, which draws no text. A tap is reported as `0x33` plus a new `f1`
+  notification once `0x0e` is written; the keyboard starts nothing itself.
+- A key position turned into an application button from our own code, with
+  its own picture: upload to an image slot, the slot in byte 3 of the `0x29`
+  entry, and `0x35` type `05` / `06`. Positions can share a slot. Report `0x25`
+  decoded as the page's whole type table, the same pairs as `0x35`.
+- Image slots 1–9 seen, numbered across profiles, with slot 4 written from our
+  own code; the top row's buttons can be application buttons too; each profile
+  has its own button tables; the host switches the active profile with report
+  `0x06`. Swarm II and our own code conflict over slots and labels, so only
+  one of them should manage the buttons.
+- The CPU temperature widget: `0x35` type `39`, drawn by the firmware, with the
+  value pushed by the host as a number in an `a3` frame. The top row's buttons
+  change type like any other position.
+- Macro buttons: binding kind `07` in `0x29` and widget type `05` in `0x35`,
+  drawn as a fixed "M" icon with the `0x29` label; Swarm II cuts the label to
+  ten characters before sending it.
+- Three upload pitfalls: the keyboard does not answer on interface 1 for about
+  2 s after a `0x0e` write; an upload left open stops it working as a keyboard
+  until it is unplugged; and `0x25` has to wait 200 ms after `0x29`.
 - Second command replayed to the hardware: writing feature report `0x0e` as
   `0e 05 01 00 00` switches on the notifications that the keyboard otherwise
   only sends with Swarm II running; Fn and dial events were checked.
@@ -54,8 +79,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
   binaries, firmware images and assets are not analysed, decompiled or
   included.
 - Screen pixel order: row by row from the top left. The second, smaller image
-  upload is the keyboard's thumbnail of the background, a 142 x 222 buffer with
-  the image squashed into its top 142 x 148.
+  upload is the keyboard's thumbnail of the background: the image squashed to
+  142 x 148, followed by what is most likely a fully opaque alpha mask.
 - The keyboard without Swarm II: a plain keyboard with media keys. The dial,
   the buttons beside it and the screen's default page send ordinary Consumer
   reports, the brightness and profile keys work on the device alone, and the

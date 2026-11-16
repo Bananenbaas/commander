@@ -457,6 +457,12 @@ Bytes 4–5 distinguish frame types. Seen so far:
 | `06 0e` | `00 64 64 00 64 64 00` | same body as `03 0e`; sent next to it after every profile switch. Possibly the second application, with `03 0e` the first | hypothesis (`08-profile-switch-desktop-sc-1`) |
 | `01 02 02` | `<muted>` then zeros | mute state: byte 6 is `01` while muted and `00` otherwise. Sent at startup with `00` | observed (`02-swarm-start-1`, `05-touch-tap-volumeicon-1`) |
 | `01 02 04` | `00 00 02 00 00 0c` | unknown | unknown |
+| `01 02 0b` | `00 00 <value> 00` | CPU temperature in °C for the widget at position 2: `10` = 16, drawn as "16 °C". Sent once in 3.5 minutes, so change-driven like the rest; with no host sending, the widget shows 0 °C after a redraw | observed (`15-screen-assign-app3-cputemp-1`, screen) |
+
+Read with the last two rows, bytes 4–5 of the `01 …` frames look like
+`<position> <kind>`: the speaker sits at position 2, which carries the mute
+state (`02`) — and, after the CPU temperature widget was dropped there, the
+temperature (`0b`). A hypothesis with two data points.
 
 **This answers open question 2.** Live PC data is pushed as **numbers**, not as
 rendered images: the host sends a percentage and the device draws the volume page
@@ -533,6 +539,7 @@ Byte 2 selects the kind of event. Seen so far:
 | `0c` | `03 00 0c <percent> 00 00 00 00` | the LED brightness changed, in steps of ten from 20 to 100 | observed |
 | `11` | `03 00 11 <off> 00 00 00 00` | the RGB on/off button: `01` when it switched the LEDs off, `00` when back on | observed |
 | `f1` | `03 00 f1 08 57 11 <down> 00` | sent alongside the Microphone Off button's own `02` event | observed; meaning unknown |
+| `f1` | `03 00 f1 01 <id> <down> 00` | an application button touched (`01`) or released (`00`), alongside its `0x33`. `<id>` is 16-bit little-endian and follows the position, not the image slot: `5f 12` at position 3, `61 12` at 5, `62 12` at 6, i.e. `0x125c` + position | observed (`27-touch-app-swarm-1`, `28-touch-app-0e-1`, `32-convert-ins-slot3-1`) |
 | `fa` | `03 00 fa …` | hundreds per second while Fn is held; bytes 3–5 change as other keys are pressed | observed; meaning unknown |
 
 **What `04-rgb-fn-keys-and-mic-1` shows about who does what.** Swarm II was
@@ -674,9 +681,24 @@ entry, the slot byte and the checksum changed. Each button is a 16-byte entry,
 |---|---|---|
 | 0 | modifier, as a HID keyboard usage | `e2` Left Alt; `00` for a plain key |
 | 1 | key, as a HID keyboard usage | `46` Print Screen, `47` Scroll Lock, `48` Pause |
-| 2 | kind of binding: `0c` a key, `06` a modifier on its own | |
-| 3 | `00` | |
-| 4–15 | label shown on the button, ASCII, NUL-terminated | `PRINT`, `SCR LK` |
+| 2 | kind of binding: `0c` a key, `06` a modifier on its own, `07` a macro, `0b` an application | |
+| 3 | `00` for keys, modifiers and macros; for an application, its **image slot** | |
+| 4–15 | label, ASCII, NUL-terminated. Drawn only for macro and application buttons, see below | `PRINT`, `SCR LK` |
+
+Two more kinds, set from Swarm II:
+
+```
+macro        01 00 07 00  "<10 chars>"   position 3  (15-screen-assign-macro-1)
+application  00 01 0b 01  "app1"         position 3  (15-screen-assign-app-1)
+application  00 01 0b 02  "app2"         position 4  (15-screen-assign-app-2)
+application  00 01 0b 03  "app3"         position 5  (15-screen-assign-app3-cputemp-1)
+```
+
+For a macro, byte 0 is `01`, meaning unknown. For an application, byte 1 is
+`01` every time (meaning unknown) and byte 3 is the image slot, numbered as the
+upload opener `a5 41`, `42`, `43`. The macro's name was eleven characters long in
+Swarm II, which wrote only the first ten; the keyboard draws eleven when
+given eleven, so the cut is Swarm II's.
 
 The `DESKTOP` page as stored:
 
@@ -710,7 +732,44 @@ already stored, label `PRINT` included; only `0x35` changed:
 BREAK -> ALT   35 0c 01 05 01 00 05 00 01 00 4e 00   (15-screen-assign-break-1)
 PRINT deleted  35 0c 01 03 01 00 00 00 00 00 46 00
 PRINT restored 35 0c 01 03 01 00 03 00 0b 00 54 00
+PRINT -> macro 35 0c 01 03 01 00 05 00 02 00 4d 00   (15-screen-assign-macro-1)
 ```
+
+The macro button is drawn as a large hexagonal "M" icon with the `0x29` label
+under it. Setting an application did not write `0x35` at all; Swarm II wrote
+report `0x25` instead, the same information for the whole page (below).
+Dropping the CPU temperature widget on the speaker button
+(`15-screen-assign-app3-cputemp-1`) wrote:
+
+```
+CPU temp       35 0c 01 02 01 00 39 00 00 00 7e 00   position 2, type 39
+```
+
+so the three icon buttons of the top row take a type like any other position.
+
+**Report `0x25` is the page's whole type table.** 164 bytes: a 10-byte header
+`25 a4 00 00 00 00 01 00 00 00`, then four bytes per position from offset 10,
+`<type> 00 <value> 00` — bytes 6 and 8 of a `0x35` frame — and the same 16-bit
+sum at bytes 162–163. As stored after three applications had been set:
+
+```
+pos  0-2    3b 00 00 00 | 3e 00 00 00 | 48 00 00 00   lock, snipping, speaker
+pos  3-5    05 00 06 00  x3                           applications
+pos  6-11   03 00 0e 00 … 03 00 13 00                 INS … PGDOWN, keys
+pos 12-37   further entries, meaning unknown
+```
+
+| Type | Value | Widget | Seen in |
+|---|---|---|---|
+| `00` | `00` | empty slot | `0x35` |
+| `03` | key number (`0b` PRINT, `0c` SCR LK, `0d` BREAK, …) | a key | `0x35`, `0x25` |
+| `05` | `01` | a modifier on its own | `0x35` |
+| `05` | `02` | a macro | `0x35` |
+| `05` | `06` | an application | `0x25`; written as `0x35` from our own code |
+| `39` | `00` | CPU temperature | `0x35` |
+| `3b`, `3e`, `48` | `00` | the top row's lock, snipping and speaker buttons; `48` is also byte 3 of the speaker's touch report | `0x25` |
+
+The type is also byte 3 of the touch report `0x33`.
 
 With the type set to `00` the keyboard draws **nothing** at that position: no
 tile, no label, the background image shows through.
@@ -721,7 +780,7 @@ tile, no label, the background image shows through.
 | Byte 6 is the widget type, with the same values as byte 3 of touch report `0x33`: `03` a key, `05` a modifier on its own, and `00` an **empty slot** | observed |
 | An empty slot is not drawn; the background shows through. The slot's label stays in `0x29` | observed (`15-screen-remove-print-1`, and on the screen) |
 | Bytes 10–11 are the 16-bit sum of bytes 0–9, little-endian, as in `0x11` and `0x29` | confirmed by arithmetic on three frames |
-| Byte 8 is `0b` for the restored PRINT key and `01` for Left Alt — not a HID usage. Its meaning is unknown | observed / unknown |
+| Byte 8 is `0b` for the restored PRINT key and `01` for Left Alt — not a HID usage. It is the value that goes with the type: a key's internal number, or the subtype of type `05` (see the type table under report `0x25`) | observed |
 | Bytes 2 and 4 (`01` in every frame) | unknown — byte 2 may be the page |
 
 So a custom layout can leave key positions empty and show its own artwork from
@@ -742,7 +801,15 @@ tap on PRINT                          ->  33 01 03 03 00 46 01 01 …, and the k
 |---|---|
 | Report `0x35` alone empties and restores a position; report `0x29` does not have to be written with it | **confirmed** (`22-replay-0x35-print-1`) |
 | The keyboard answers each `0x35` write with `03 00 31 01 <position>`: a redraw of that one widget. `31` with view `01` is new; until now only `20` (main page) and `04` (settings) were seen | observed |
-| The restored button takes its key and label from the stored `0x29` table: the tap reported key `0x46` and Windows received Print Screen | confirmed |
+| The restored button takes its key from the stored `0x29` table: the tap reported key `0x46` and Windows received Print Screen | confirmed |
+| **An empty slot does not report touch.** With PRINT emptied, several taps on that spot produced no report `0x33`, no notification and no key | observed (`24-touch-empty-slot-1`), but without a control: nothing in that capture shows the notifications were still on. `0x0e` had been written 13 minutes earlier with no unplug in between, so they probably were |
+| **The label of a key widget is not taken from `0x29`.** Writing the stored `0x29` block back unchanged was accepted; writing it with only PRINT's label changed to `TEST` (checksum recomputed) was accepted too, but the screen kept showing `PRINT`, also after re-sending the `0x35` frame. Likewise the position bound to Left Alt still shows `BREAK`, though `0x29` holds `ALT`. The firmware draws its own label and graphic for the widget | observed (`23-replay-0x29-label-1`, screen) |
+
+**Consequence for a custom screen.** Key, modifier and macro buttons are drawn
+by the firmware in its own style, and an empty slot shows the background but
+(probably) ignores touch. The way to a custom screen is the **application
+button**: its picture is uploaded from the host, its label can be set or left
+empty, and its touch is reported — see "Application buttons" below.
 
 **A modifier button does not send a keyboard report.** Tapping the reassigned
 button produced touch report `33 01 05 05 00 00 01 01` — byte 3 now `05` — and
@@ -765,8 +832,10 @@ unknown.
 
 ### Touchscreen: image upload — `a5` frames
 
-Swarm II only lets a custom image be used as the **background**, not as a
-button icon, and the keyboard holds **one** such image. Setting it is two steps:
+Swarm II only lets a custom image file be used as the **background**, and the
+keyboard holds **one** such image. (It also uploads a picture for every
+application button, taken from the program's icon — see "Application
+buttons".) Setting it is two steps:
 the image is uploaded from Swarm II, and then chosen on the keyboard's own
 screen.
 
@@ -790,7 +859,7 @@ a5 ff                                           end of the image
 | **The screen is 480 x 800 pixels, portrait.** The first upload is exactly 768,000 bytes, i.e. 384,000 pixels at two bytes each | observed |
 | **Pixels are RGB565, little-endian**: the red image arrives as `00 f8` throughout, i.e. `0xF800` | observed |
 | Data moves in blocks of 4096 bytes (66 frames of 62 bytes plus one of 4); the final block is shorter (2048 bytes for the background) | observed |
-| Byte 1 of a data frame is its payload length (`3e` = 62); `00`, `f1`, `f2`, `ff` and `40` are control values | observed |
+| Byte 1 of a data frame is its payload length (`3e` = 62); `00`, `40`, `41`, `f1`, `f2` and `ff` are control values. The openers seen: `00` background, `40` its thumbnail, `41` an application button's picture | observed |
 | The device acknowledges every data frame with a frame of `ff`, and the host waits for it: one data frame every 2.0 ms | observed |
 | No checksum is visible anywhere in the upload | observed |
 | **Pixel order is row by row from the top left**, 480 pixels per row, with nothing between rows: a 480 x 800 image of four solid quadrants (red top left, green top right, blue bottom left, white bottom right) arrives as 400 rows of 240 red + 240 green, then 400 rows of 240 blue + 240 white, and the screen shows it upright | observed (`06-screen-background-quadrants-1`) |
@@ -833,16 +902,175 @@ background is chosen on its screen**, and it has its own fixed format:
 
 | Finding | Status |
 |---|---|
-| The buffer is **142 pixels wide and 222 rows tall**, row by row from the top left | observed (`06-screen-background-quadrants-1`) |
-| The top **142 x 148** holds the whole background scaled down, not cropped: each quadrant of the test image arrives as 71 x 74 pixels. The scale is 480/142 horizontally and 800/148 vertically, so the thumbnail is squashed to almost square, which is how it looks on the screen | observed |
-| The remaining 74 rows are white in both uploads so far | observed (`06-screen-background-ff0000-1`, `-quadrants-1`) |
-| Whether those rows are padding or are drawn somewhere | unknown |
+| The first 42,032 bytes are **142 x 148 pixels**, row by row from the top left | observed (`06-screen-background-quadrants-1`) |
+| They hold the whole background scaled down, not cropped: each quadrant of the test image arrives as 71 x 74 pixels. The scale is 480/142 horizontally and 800/148 vertically, so the thumbnail is squashed to almost square, which is how it looks on the screen | observed |
+| The remaining 21,016 bytes are all `ff` in both uploads so far | observed (`06-screen-background-ff0000-1`, `-quadrants-1`) |
+| Those bytes are a one-byte-per-pixel alpha mask of the 142 x 148 image, here fully opaque. The application-button upload has the same layout, where the mask is confirmed | hypothesis for the thumbnail |
 
 Swarm II offers no animated formats: its file picker allows only `.png`,
 `.jpg` and `.jpeg`.
 
 Choosing the image on the screen afterwards sends no image data. It produces
 only notification events, after each of which Swarm II re-sends the live values.
+
+### Touchscreen: application buttons — an image per button
+
+`15-screen-assign-app-1`: in Swarm II I set the PRINT position of the `DESKTOP`
+page to "start application", with a program of my choice. The keyboard then showed the
+program's icon with the name under it, and **no tile**: the icon sits straight
+on the background image. Swarm II wrote, in this order:
+
+```
+a5 41 ... a5 ff        image upload, opener 41, 63,048 bytes   (2.7 s)
+SET_REPORT 0x29        position 3 -> 00 01 0b 01 "app1"
+SET_REPORT 0x25        164 bytes, 200 ms after 0x29
+```
+
+No `0x35`. The keyboard answered with a `31` redraw about 2 s later.
+
+**The upload is the button's picture, with an alpha mask.** The 63,048 bytes are
+two parts:
+
+| Bytes | Content |
+|---|---|
+| 0 – 42,031 | 142 x 148 pixels, RGB565 little-endian, row by row from the top left |
+| 42,032 – 63,047 | 142 x 148 alpha values, one byte per pixel: `00` transparent, `ff` opaque |
+
+In Swarm II's upload the alpha is above zero on exactly the 5,135 pixels that
+form the icon, and zero on the 15,873 black pixels around it; 8 dark pixels on
+the icon's edge also have alpha. Many alpha values lie between `00` and `ff`,
+which smooths the icon's edge.
+
+**Touch.** Tapping the button sends a touch report and a notification, and
+nothing else; with Swarm II running, Swarm II then starts the program on the
+PC and sends nothing back to the keyboard:
+
+```
+33 01 03 05 00 00 01 01    report 0x33: position 03, kind 05, touched
+03 00 f1 01 5f 12 01 00    notification f1, touched
+33 01 03 05 00 00 01 00    released
+03 00 f1 01 5f 12 00 00    released
+```
+
+The keyboard starts nothing itself: with the notifications off, a tap sends
+nothing at all (`26-touch-app-noswarm-1`).
+
+#### Replayed: our own picture on a button
+
+With no Swarm II component running except its session monitor, which sent
+nothing in any capture. Before sending, the framing was checked by re-framing
+Swarm II's own pixels: all 1065 frames were byte-identical.
+
+| Finding | Status |
+|---|---|
+| Report `0x0e` from our own code is enough: with it written, every tap gave the `0x33` and `f1` events above, and the dial its `cc` events as a control | **confirmed** (`28-touch-app-0e-1`) |
+| An `a5 41` upload of our own picture, followed by the `0x29` block Swarm II wrote, is stored and drawn on the button: a test picture with an opaque border in four colours, an opaque black square and a white square with alpha `ff` on its left half and `80` on its right half appeared exactly so, with the background showing everywhere else | **confirmed** (`30-replay-app-icon-alpha-1`, screen) |
+| Black is not transparent by itself; only the alpha decides | confirmed |
+| The alpha mask is honoured per pixel: a first test picture had magenta (`1f f8`) in the mask, and showed vertical stripes of alternately 12% and 97% opacity | observed (`29-replay-app-icon-2`, screen) |
+| The new picture appears at the button's next redraw: after a tap, also with the notifications off, or after unplugging | observed |
+| The picture survives unplugging | observed |
+| The label is drawn from `0x29` in a thin font, inside the 142 x 148 area near its bottom edge. Eleven characters (`ABCDEFGHIJK`) were drawn in full | **confirmed** (`31-replay-app-label-1`, screen) |
+| **An empty label (twelve `00` bytes) draws no text at all**, leaving only the uploaded picture | **confirmed** (`31-replay-app-label-1`, screen) |
+| Report `0x25` was not needed for any of the above | observed |
+
+So an application button is fully the host's: its own pixels with transparency,
+its own label or none, no firmware graphics, and its touch reported to the host,
+which decides what happens.
+
+Three things went wrong on the way, and each is a rule now:
+
+- **After writing `0x0e`, wait for its redraw.** The keyboard redraws the
+  screen for about 2 s and does not answer on interface 1 meanwhile: an
+  `a5 41` sent 3 ms after `0x0e` was echoed only after 2 s
+  (`25-replay-app-icon-1`).
+- **Never leave an upload open.** In that attempt the sender gave up after 1 s,
+  so the keyboard was left waiting inside an upload and stopped working as a
+  keyboard until it was unplugged. Opening the upload without sending data did
+  not clear the stored picture.
+- **Wait 200 ms between `0x29` and `0x25`**, as Swarm II does. Sent 1 ms after
+  `0x29`, the `0x25` control transfer was not accepted and Windows cancelled it
+  after 5 s; a retry was stalled. The keyboard kept working
+  (`29-replay-app-icon-2`).
+
+| Open | Status |
+|---|---|
+| How many image slots exist | open: 1–9 seen, see below |
+| The `0x25` header and its entries past position 11 | unknown |
+| Byte 1 of an application's `0x29` entry (`01`), and the `01` before the id in `f1` | unknown |
+
+#### More buttons, and one made from our own code
+
+Two more applications from Swarm II (`15-screen-assign-app-2`,
+`15-screen-assign-app3-cputemp-1`) followed the same pattern: upload opener
+`a5 42`, then `a5 43`, with the matching slot in byte 3 of the `0x29` entry and
+type `05` / `06` in `0x25`. Starting Swarm II did not re-upload any picture;
+our picture in slot 1 stayed. Its next `0x29` write did put its own label,
+`app1`, back.
+
+Then, with Swarm II closed (`32-convert-ins-slot3-1`), INS was turned into an
+application button from our own code, sharing slot 3 with the `app3` button:
+
+```
+a5 43 ... a5 ff                        new picture in slot 3
+SET_REPORT 0x29                        position 6 -> 00 01 0b 03 "slot3"
+(200 ms)
+SET_REPORT 0x35                        35 0c 01 06 01 00 05 00 06 00 54 00
+                                       -> 03 00 31 01 06   redraw of position 6
+SET_REPORT 0x0e                        notifications on
+```
+
+| Finding | Status |
+|---|---|
+| `0x29` plus `0x35` turn any key position into an application button; `0x25` is not needed | **confirmed** (`32-convert-ins-slot3-1`, screen) |
+| INS showed the new picture and its label at once; the `app3` button showed the same picture after the next full redraw: **positions can share a slot** | confirmed (screen) |
+| Taps on both are reported: `33 01 06 05 …` with `f1 … 62 12` for INS, `33 01 05 05 …` with `f1 … 61 12` for `app3` | **confirmed** |
+
+The full recipe for a button of our own, every step measured:
+
+1. Upload the picture: `a5 4<slot>`, 142 x 148 RGB565 plus the alpha mask.
+2. `0x29`: the position's entry `00 01 0b <slot> <label, or twelve 00>`.
+3. Wait 200 ms, then `0x35`: `35 0c 01 <position> 01 00 05 00 06 00 <sum>`.
+4. Write `0x0e` once after plugging in; taps then arrive as `0x33` with the
+   position, and the host decides what they do.
+
+#### Slots 4–9, the top row, and a second profile
+
+`33-convert-home-slot4-1`, from our own code: HOME became an application button
+with a new picture in slot 4 (`a5 44`), shown with its label, and its taps
+reported as `33 01 07 05 …` with `f1 01 63 12 …` — the id `0x125c` + 7, as
+predicted.
+
+`15-screen-assign-apps-toprow-profile-1`, from Swarm II: applications on PGUP,
+DEL, END and PGDN, one on the lock button at the top left, then a switch to
+profile 1 (`SC`) and one application there.
+
+```
+PGUP   a5 44   00 01 0b 04 "app4"         03 00 12 00 -> 05 00 06 00
+DEL    a5 45   00 01 0b 05 "app5"         03 00 11 00 -> 05 00 06 00
+END    a5 46   00 01 0b 06 "app6"         03 00 10 00 -> 05 00 06 00
+PGDN   a5 47   00 01 0b 07 "<10 chars>"   03 00 13 00 -> 05 00 06 00
+lock   a5 48   00 01 0b 08 "app8"         3b 00 00 00 -> 05 00 06 00
+SET_REPORT 0x06   06 04 01 05             -> 03 00 01 01, 03 00 31 20 …   profile 1
+SCR LK a5 49   00 01 0b 09 "app9"         (tables of profile 1)
+SET_REPORT 0x06   06 04 00 05             -> 03 00 01 00, 03 00 31 20 …   profile 0
+```
+
+| Finding | Status |
+|---|---|
+| Slots 1–9 exist (`a5 41`–`a5 49`); slots 1–4 have been written from our own code. The highest slot is unknown | observed |
+| **Slots are numbered across profiles**: the first application on profile 1 got slot 9. Each profile has its own `0x29` and `0x25` tables, with the profile in byte 3 of the `0x29` header and byte 2 of the `0x25` header | observed |
+| **The top row can hold application buttons**: the lock button (position 0) became one, showing its picture without a tile | observed (screen) |
+| **The host can switch the active profile**: `SET_REPORT 0x06`, `06 04 <profile> 05`. The keyboard announces the switch as when the profile name is tapped | observed |
+| An application button with slot `00` is drawn with the firmware's default "Open App" icon inside a tile | observed (screen) |
+| A picture whose alpha is zero everywhere shows only the label: Swarm II uploaded such a picture for `app4`, presumably failing to read that program's icon | observed (`a5 44` upload, screen) |
+| Swarm II cuts labels to ten characters (`app7`'s longer name) | observed |
+
+**Swarm II and our own code must not both manage the buttons.** Swarm II hands
+out slots from its own count, so it gave slot 4 — already in use by our HOME
+button — to `app4`. It also reads the button table at startup and, on writing
+it back, turned the two positions it did not know (INS and HOME) into
+application buttons with slot `00` and an empty label. Whoever writes last
+wins.
 
 ### The volume dial: a complete round trip
 
@@ -936,7 +1164,7 @@ The second tap was the same apart from the LED value and a 94 ms hold.
 | Byte 5 is the button's assigned key, as a HID keyboard usage: `0x47` is Scroll Lock | observed |
 | **The keyboard sends the keystroke itself**, on the boot-keyboard interface, within a millisecond of the touch. Windows sees an ordinary Scroll Lock key press; Swarm II does not translate the touch | observed |
 | Byte 2 is the button's **position** on the page, counted row by row from 0 in the 3-column grid | observed — predicted before tapping BREAK (`05`) and the speaker button (`02`), and right both times |
-| Byte 3 is the kind of action: `03` for a button bound to a keyboard key, `48` for the speaker button, which mutes | observed; the full list of values is unknown |
+| Byte 3 is the kind of action: `03` for a button bound to a keyboard key, `05` for a modifier on its own and for an application button, `48` for the speaker button, which mutes | observed; the full list of values is unknown |
 | Bytes 1, 4 and 6 (`01`, `00`, `01` in every tap so far) | unknown — byte 1 may be the page, byte 4 the modifier keys of a shortcut |
 
 Three buttons on the `DESKTOP` page, side by side:
@@ -1065,14 +1293,16 @@ data or leftover content, as in the `ALT\0K` button label, is unknown.
 | Finding | Status |
 |---|---|
 | Five profile slots, with their names in report `0x16` | observed (`02-swarm-start-1`) |
-| The lighting differs per slot; the screen button table is the same in all five | observed |
+| The lighting differs per slot. The screen button tables were the same in all five at first; each profile has its own, and they differ once one is changed (see "Slots 4–9, the top row, and a second profile") | observed |
 | The keyboard switches profiles **itself**: tapping the profile name on the screen steps through the five slots in order and wraps around | observed (`08-profile-switch-desktop-sc-1`) |
 | Each switch is announced with notification `03 00 01 <slot>`, followed by the `03 00 31 20 …` "profile loaded" event | observed |
 | Swarm II writes and reads nothing on a switch. It only follows: the `a1` lighting stream changes to the new profile's colours, and it re-sends the mute state, both application volumes and the system volume | observed |
 
 So the slots are complete profiles held on the device, and the host's only job
-on a switch is to resume streaming for the new one. Whether Swarm II can switch
-the active profile from the PC side has not been seen.
+on a switch is to resume streaming for the new one. **The host can switch too**:
+choosing another profile in Swarm II wrote `06 04 <profile> 05` as report
+`0x06`, and the keyboard announced the switch exactly as when the name is
+tapped (`15-screen-assign-apps-toprow-profile-1`).
 
 ### Without Swarm II
 
@@ -1167,8 +1397,9 @@ update running: a failed or interrupted flash can leave the keyboard unusable.
    percentage rather than a pushed image. **Largely answered by
    `06-screen-background-ff0000-1`**: the screen renders on its own, and raw
    pixels are accepted only as a stored background image, 480 x 800 in RGB565,
-   at about 23 KiB/s. Whether button icons or other regions can be uploaded the
-   same way is still open — Swarm II offers no way to do it.
+   at about 23 KiB/s. **Button pictures can be uploaded too**: an application
+   button shows a 142 x 148 picture with an alpha mask, sent by the host, and
+   our own picture is drawn the same way (`30-replay-app-icon-alpha-1`).
 2. ~~Are live PC stats pushed as rendered images, as numbers, or not at all?~~
    **Answered for volume**: as numbers. An `a3` frame carries a plain percentage
    and the device renders the page itself (`09-volume-50-1`). Whether the
