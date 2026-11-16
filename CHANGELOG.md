@@ -31,6 +31,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
   both layouts, and the device-inventory test runs against each.
 
 ### Added
+- Report `0x35` sets the widget type of one screen position; type `00` leaves
+  the position empty, so the background image shows through.
 - Hardware hints from the names and sizes of files in the Swarm II
   installation, marked as hypotheses: a Sonix main controller and a second
   microcontroller with its own firmware. The do-not-send list now names both

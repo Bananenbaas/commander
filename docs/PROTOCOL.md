@@ -696,8 +696,37 @@ the `K` left over from `BREAK`. Harmless, since the label is NUL-terminated.
 | Report `0x29` holds the screen page's button bindings and labels, 16 bytes per position | observed (`02-swarm-start-1`, `15-screen-assign-break-1`) |
 | Header: `29 48 02 <slot>`; offsets 199–581 hold 30 further non-zero bytes of unknown meaning | observed / unknown |
 | The trailer is the same 16-bit sum as report `0x11`: `sum(bytes[0:582]) & 0xffff`, little-endian at 582–583 | **confirmed by arithmetic** on six frames |
-| Report `0x35` follows the table write and names position `05`; what it does — apply, redraw — is unknown | hypothesis |
+| Report `0x35` sets the **widget type of one position**, see below | observed (`15-screen-assign-break-1`, `15-screen-remove-print-1`) |
 | Where the three icon buttons (positions 0–2) get their actions | unknown |
+
+**Report `0x35` decides whether a position is drawn at all.**
+`15-screen-remove-print-1`: in Swarm II I deleted the PRINT button from the
+`DESKTOP` page, and after a pause put it back. Each time Swarm II wrote report
+`0x29` and then report `0x35`. Both `0x29` writes were byte for byte the table
+already stored, label `PRINT` included; only `0x35` changed:
+
+```
+                   pos     type       value   sum
+BREAK -> ALT   35 0c 01 05 01 00 05 00 01 00 4e 00   (15-screen-assign-break-1)
+PRINT deleted  35 0c 01 03 01 00 00 00 00 00 46 00
+PRINT restored 35 0c 01 03 01 00 03 00 0b 00 54 00
+```
+
+With the type set to `00` the keyboard draws **nothing** at that position: no
+tile, no label, the background image shows through.
+
+| Finding | Status |
+|---|---|
+| Byte 3 is the position, numbered as in touch report `0x33` (PRINT `03`, BREAK `05`) | observed |
+| Byte 6 is the widget type, with the same values as byte 3 of touch report `0x33`: `03` a key, `05` a modifier on its own, and `00` an **empty slot** | observed |
+| An empty slot is not drawn; the background shows through. The slot's label stays in `0x29` | observed (`15-screen-remove-print-1`, and on the screen) |
+| Bytes 10–11 are the 16-bit sum of bytes 0–9, little-endian, as in `0x11` and `0x29` | confirmed by arithmetic on three frames |
+| Byte 8 is `0b` for the restored PRINT key and `01` for Left Alt — not a HID usage. Its meaning is unknown | observed / unknown |
+| Bytes 2 and 4 (`01` in every frame) | unknown — byte 2 may be the page |
+
+So a custom layout can leave key positions empty and show its own artwork from
+the background image in their place. Whether the three icon buttons
+(positions 0–2) can be emptied the same way is untested.
 
 **A modifier button does not send a keyboard report.** Tapping the reassigned
 button produced touch report `33 01 05 05 00 00 01 01` — byte 3 now `05` — and
