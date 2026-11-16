@@ -31,6 +31,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
   both layouts, and the device-inventory test runs against each.
 
 ### Added
+- The keyboard without Swarm II: a plain keyboard with media keys. The dial,
+  the buttons beside it and the screen's default page send ordinary Consumer
+  reports, the brightness and profile keys work on the device alone, and the
+  extra notifications (Fn, brightness level, dial, active profile, touch
+  positions) stay off until Swarm II is running. The full Consumer bitmap is
+  listed from the report descriptor.
+- Development notes: injected descriptors can name the wrong device address
+  after a reboot, which leaves that device's traffic unfiltered.
 - `kb7cap` capture toolkit (stdlib only): pcap/pcapng reader, USBPcap and
   Linux usbmon transfer pairing, device/configuration/string/HID report
   descriptor parsing, and `summary`, `dump` and `diff` commands.

@@ -94,6 +94,13 @@ pip install -e .                            # then: kb7cap summary <capture>
   device with no configuration descriptor in the capture is not recognised as
   HID and is not filtered. Treat the filter as a safety net, not a guarantee:
   review output before sharing it.
+- **Injected descriptors can carry the wrong device address.** After a reboot
+  of the PC, `--inject-descriptors` labelled the KB7 as device `3.5` while all
+  of its traffic came from `3.4`. `summary` then shows `3.5` with descriptors
+  and no traffic, and `3.4` with traffic but "(no device descriptor)" — and,
+  per the previous point, `3.4` is then not filtered for keystrokes at all.
+  Check which address actually carries the `0x8c` reports before trusting a
+  `dump` of such a capture.
 - The `license = "GPL-2.0-or-later"` SPDX string in `pyproject.toml` requires
   setuptools ≥ 77.
 - Captures come from a Windows machine running Swarm II, with the KB7 attached

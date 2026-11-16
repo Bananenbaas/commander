@@ -778,7 +778,32 @@ ep 0x0d   a3 00 01 00 00 0d <level> 00 01 00 <level> 00
 | Round-trip latency from the device's report to the host's first `a3` frame: median **10.5 ms**, at least 3.5 ms | observed (`10-dial-volume-up-1`) |
 | Bit `0x40` of report `0x01` is volume up, bit `0x20` volume down: of 56 clicks, the level rose after 31 of the 42 `0x40` presses and fell after 10 of the 14 `0x20` presses, the rest falling at 100% or at a change of direction | observed (`10-dial-volume-up-1`) |
 | Bit `0x10` of report `0x01` is Mute: the on-screen speaker button sends it (`05-touch-tap-volumeicon-1`) | observed |
-| What the remaining bits of report `0x01` are | unknown |
+| The full bitmap, from the Consumer collection in interface 2's report descriptor: 18 one-bit fields in this order | read from the descriptor (`01-plug-in-1`) |
+| Bits `0x01` Play/Pause, `0x04` Scan Previous and `0x08` Scan Next match the presses in `18-standalone-media-1` | observed |
+
+The Consumer bitmap, bit by bit (byte 1, then byte 2, then the low two bits of
+byte 3; usages on page `0x0c`):
+
+| Bit | Usage | Function | Seen from |
+|---|---|---|---|
+| `01 00 00` | `0xcd` | Play/Pause | dial press, screen button |
+| `02 00 00` | `0xb7` | Stop | — |
+| `04 00 00` | `0xb6` | Scan Previous Track | button left of the dial, screen button |
+| `08 00 00` | `0xb5` | Scan Next Track | button right of the dial, screen button |
+| `10 00 00` | `0xe2` | Mute | screen speaker button |
+| `20 00 00` | `0xea` | Volume Decrement | dial, screen button |
+| `40 00 00` | `0xe9` | Volume Increment | dial, screen button |
+| `80 00 00` | `0x183` | AL Consumer Control Configuration (media player) | — |
+| `00 01 00` | `0x18a` | AL Email Reader | — |
+| `00 02 00` | `0x192` | AL Calculator | — |
+| `00 04 00` | `0x194` | AL Local Machine Browser | — |
+| `00 08 00` | `0x221` | AC Search | — |
+| `00 10 00` | `0x223` | AC Home | — |
+| `00 20 00` | `0x224` | AC Back | — |
+| `00 40 00` | `0x225` | AC Forward | — |
+| `00 80 00` | `0x226` | AC Stop | — |
+| `00 00 01` | `0x227` | AC Refresh | — |
+| `00 00 02` | `0x22a` | AC Bookmarks | — |
 
 **What this means for the project.** The screen is a slave display for host-side
 state: the keyboard does not know its own volume. Any replacement for Swarm II
@@ -947,6 +972,52 @@ data or leftover content, as in the `ALT\0K` button label, is unknown.
 So the slots are complete profiles held on the device, and the host's only job
 on a switch is to resume streaming for the new one. Whether Swarm II can switch
 the active profile from the PC side has not been seen.
+
+### Without Swarm II
+
+Three captures after a cold start of the PC, with Swarm II, its device service
+and its session monitor not running at all:
+
+- `16-standalone-keys-1`: Fn + Down and Fn + Up, Fn + Right and Fn + Left, the
+  RGB on/off button off and on, and five taps on the profile name to step
+  through all five slots and back to `DESKTOP`.
+- `17-standalone-dial-1`: the volume dial turned both ways, then the volume
+  buttons on the screen's default page.
+- `18-standalone-media-1`: the dial pressed twice, the buttons left and right
+  of the dial twice each, then Play/Pause, Previous and Next on the screen
+  twice each.
+
+**The bus is silent until something is operated.** In a 5-second idle capture
+the keyboard sent nothing at all, and the host sent nothing to it.
+
+**What the keyboard sent:**
+
+```
+dial, one click            01 40 00 00  /  01 20 00 00, released within 1 ms
+screen volume buttons      01 40 00 00  /  01 20 00 00, held 60-100 ms
+dial press, screen play    01 01 00 00
+left of dial, screen prev  01 04 00 00
+right of dial, screen next 01 08 00 00
+RGB on/off (by order)      03 00 02 83 01 ... / 03 00 02 83 00 ...
+each profile switch        03 00 31 20 <b4> <b5> <b6> 0f
+```
+
+| Finding | Status |
+|---|---|
+| Without Swarm II the keyboard is a plain keyboard with media keys: the dial, the media buttons next to it and the screen's default media buttons all send ordinary Consumer reports, and Windows acts on them | observed (`17`, `18`) |
+| The screen's default page draws its own media buttons and a banner asking to connect Swarm II for the full volume mixer, and it shows a volume level while the dial is turned | observed on the screen |
+| No touch event (report `0x33`) is sent for the default page's buttons; a screen button produces only its Consumer report, held for about as long as the finger stays down | observed (`17`, `18`) |
+| The dial sends no `cc` notification, Fn sends no `fc`, and Fn + Up/Down sends neither a key event nor the `0c` brightness level. The brightness still changes on the keyboard | observed (`16`) |
+| The RGB on/off button is reported as key `83`, where it was `58` with Swarm II running, and the `11` "LEDs off/on" event is not sent. That this pair of events is the RGB button follows from the order of the actions only | observed (`16`) |
+| Fn + Left/Right do nothing visible without Swarm II either | observed (`16`) |
+| A profile switch changes the screen and the lighting to what the slot holds, and sends only the `31` event; the `01 <slot>` notification is missing | observed (`16`) |
+| Bytes 4–6 of the `31` event rose across the five switches (`af c5 cb` … `26 29 ce`) and byte 7 was `0f` each time | observed; meaning still unknown |
+
+So the extra notifications are not sent by default; something Swarm II does
+switches them on. Candidates are the selector writes of its startup exchange,
+the `a1`/`a3` streams, or its device service merely opening the interface.
+Finding which one is the next step, since a replacement for Swarm II needs the
+same reports.
 
 ## Do-not-send list
 
