@@ -1,0 +1,347 @@
+// Package keyboard performs the operations kb7screen needs on the KB7 and
+// keeps to the rules the protocol sets: one frame at a time with its
+// acknowledgement, a pause after a button table is written, and no retry of a
+// frame whose effect is unknown.
+package keyboard
+
+import (
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+)
+
+var (
+	// ErrOpenerRefused means the keyboard answered the opening frame of a
+	// picture upload with something else than its echo. Nothing else was
+	// sent and the keyboard is still in its normal state.
+	ErrOpenerRefused = errors.New("keyboard: the keyboard refused to start the picture upload")
+
+	// ErrUploadLeftOpen means a picture upload stopped half way, or without
+	// knowing whether it started, so the keyboard may be waiting for the rest.
+	ErrUploadLeftOpen = errors.New("keyboard: the picture upload was interrupted and the keyboard may be left in upload mode; unplug the keyboard and plug it back in")
+)
+
+const (
+	ackTimeout     = 5 * time.Second        // wait for the acknowledgement of one upload frame
+	drainTimeout   = time.Millisecond       // wait when emptying stale frames or reports
+	maxDrain       = 64                     // most stale frames or reports dropped
+	selectDelay    = 150 * time.Millisecond // between a Select frame and reading the table
+	writeGap       = 200 * time.Millisecond // after a 0x29 write before the next report
+	profileTimeout = 3 * time.Second
+	redrawTimeout  = 5 * time.Second
+	redrawAll      = 0x20 // Redraw view that follows enabling notifications
+
+	namesID    = 0x16
+	namesLen   = 104
+	nameFields = 5
+	nameSize   = 20
+	nameBase   = 2
+)
+
+// KB is an open keyboard. It is not safe for concurrent use.
+type KB struct {
+	d     device.Device
+	now   func() time.Time
+	sleep func(time.Duration)
+
+	wroteButtons bool
+	lastButtons  time.Time
+}
+
+// New returns a KB that uses d and the real clock.
+func New(d device.Device) *KB { return newKB(d, time.Now, time.Sleep) }
+
+func newKB(d device.Device, now func() time.Time, sleep func(time.Duration)) *KB {
+	return &KB{d: d, now: now, sleep: sleep}
+}
+
+// Close closes the device.
+func (k *KB) Close() error { return k.d.Close() }
+
+// NextEvent returns the next input report that proto.ParseReport understands,
+// skipping the others. It returns device.ErrTimeout if none arrives within
+// timeout; other device errors are returned as they are.
+func (k *KB) NextEvent(timeout time.Duration) (any, error) {
+	deadline := k.now().Add(timeout)
+	for {
+		remaining := deadline.Sub(k.now())
+		if remaining <= 0 {
+			return nil, device.ErrTimeout
+		}
+		r, err := k.d.ReadInput(remaining)
+		if err != nil {
+			return nil, err
+		}
+		if ev, ok := proto.ParseReport(r); ok {
+			return ev, nil
+		}
+	}
+}
+
+// drainInput drops reports that arrived earlier, so that they are not taken
+// for the answer to what is sent next.
+func (k *KB) drainInput() error {
+	for i := 0; i < maxDrain; i++ {
+		if _, err := k.d.ReadInput(drainTimeout); err != nil {
+			if errors.Is(err, device.ErrTimeout) {
+				return nil
+			}
+			return fmt.Errorf("keyboard: dropping old input: %w", err)
+		}
+	}
+	return nil
+}
+
+// drainStream drops stale stream frames.
+func (k *KB) drainStream() error {
+	for i := 0; i < maxDrain; i++ {
+		if _, err := k.d.ReadStream(drainTimeout); err != nil {
+			if errors.Is(err, device.ErrTimeout) {
+				return nil
+			}
+			return fmt.Errorf("keyboard: dropping old frames: %w", err)
+		}
+	}
+	return nil
+}
+
+// readAck waits up to ackTimeout for the next frame that is an a5 frame or
+// 64 bytes of ff. Anything else is ignored; the deadline does not move.
+func (k *KB) readAck() ([64]byte, error) {
+	deadline := k.now().Add(ackTimeout)
+	for {
+		remaining := deadline.Sub(k.now())
+		if remaining <= 0 {
+			return [64]byte{}, device.ErrTimeout
+		}
+		fr, err := k.d.ReadStream(remaining)
+		if err != nil {
+			return fr, err
+		}
+		if isAck(fr) {
+			return fr, nil
+		}
+	}
+}
+
+func isAck(fr [64]byte) bool {
+	if fr[0] == 0xa5 {
+		return true
+	}
+	for _, b := range fr {
+		if b != 0xff {
+			return false
+		}
+	}
+	return true
+}
+
+// Upload sends a picture (proto.PictureSize bytes) to slot. Each frame is
+// sent only after the previous one was acknowledged, and none is repeated.
+//
+// If the keyboard refuses the opening frame, ErrOpenerRefused is returned and
+// nothing else was sent. Once the opening frame may have been accepted, any
+// failure returns ErrUploadLeftOpen, wrapping the cause where there is one.
+func (k *KB) Upload(slot byte, data []byte) error {
+	frames, err := proto.UploadFrames(slot, data)
+	if err != nil {
+		return fmt.Errorf("keyboard: upload: %w", err)
+	}
+	if err := k.drainStream(); err != nil {
+		return err
+	}
+	for i, f := range frames {
+		if err := k.d.WriteStream(f.Out); err != nil {
+			if i == 0 {
+				return fmt.Errorf("keyboard: starting the upload: %w", err)
+			}
+			return leftOpen(i, len(frames), err)
+		}
+		ack, err := k.readAck()
+		switch {
+		case err != nil:
+			return leftOpen(i, len(frames), err)
+		case ack != f.Ack && i == 0:
+			return ErrOpenerRefused
+		case ack != f.Ack:
+			return leftOpen(i, len(frames), errors.New("unexpected acknowledgement"))
+		}
+	}
+	return nil
+}
+
+func leftOpen(i, n int, cause error) error {
+	return fmt.Errorf("%w (frame %d of %d: %w)", ErrUploadLeftOpen, i+1, n, cause)
+}
+
+// selectTable asks for a table of a profile and checks the keyboard is ready.
+func (k *KB) selectTable(profile, selector byte) error {
+	if err := k.d.SetFeature(proto.Select(profile, selector)); err != nil {
+		return fmt.Errorf("keyboard: selecting table: %w", err)
+	}
+	k.sleep(selectDelay)
+	r, err := k.d.GetFeature(0x05, 4)
+	if err != nil {
+		return fmt.Errorf("keyboard: reading ready reply: %w", err)
+	}
+	if len(r) < 2 || r[0] != 0x05 || r[1] != 0x01 {
+		n := min(len(r), 4)
+		return fmt.Errorf("keyboard: ready reply % x, want 05 01", r[:n])
+	}
+	return nil
+}
+
+// ReadButtons reads the button table (report 0x29) of profile p.
+func (k *KB) ReadButtons(p byte) (*proto.Table29, error) {
+	if err := k.selectTable(p, proto.SelButtons); err != nil {
+		return nil, err
+	}
+	b, err := k.d.GetFeature(0x29, 584)
+	if err != nil {
+		return nil, fmt.Errorf("keyboard: reading button table: %w", err)
+	}
+	t, err := proto.ParseTable29(b)
+	if err != nil {
+		return nil, fmt.Errorf("keyboard: %w", err)
+	}
+	if t.Profile() != p {
+		return nil, fmt.Errorf("keyboard: button table is for profile %d, asked for %d", t.Profile(), p)
+	}
+	return t, nil
+}
+
+// ReadTypes reads the widget type table (report 0x25) of profile p.
+func (k *KB) ReadTypes(p byte) (*proto.Table25, error) {
+	if err := k.selectTable(p, proto.SelTypes); err != nil {
+		return nil, err
+	}
+	b, err := k.d.GetFeature(0x25, 164)
+	if err != nil {
+		return nil, fmt.Errorf("keyboard: reading type table: %w", err)
+	}
+	t, err := proto.ParseTable25(b)
+	if err != nil {
+		return nil, fmt.Errorf("keyboard: %w", err)
+	}
+	if t.Profile() != p {
+		return nil, fmt.Errorf("keyboard: type table is for profile %d, asked for %d", t.Profile(), p)
+	}
+	return t, nil
+}
+
+// ProfileNames reads the names of the five profiles.
+func (k *KB) ProfileNames() ([5]string, error) {
+	var names [nameFields]string
+	if err := k.selectTable(0, proto.SelNames); err != nil {
+		return names, err
+	}
+	b, err := k.d.GetFeature(namesID, namesLen)
+	if err != nil {
+		return names, fmt.Errorf("keyboard: reading profile names: %w", err)
+	}
+	if len(b) != namesLen || b[0] != namesID {
+		return names, fmt.Errorf("keyboard: profile names reply is %d bytes starting 0x%02x", len(b), firstByte(b))
+	}
+	for i := range names {
+		f := b[nameBase+i*nameSize : nameBase+(i+1)*nameSize]
+		n := 0
+		for n < len(f) && f[n] != 0 {
+			n++
+		}
+		names[i] = string(f[:n])
+	}
+	return names, nil
+}
+
+func firstByte(b []byte) byte {
+	if len(b) == 0 {
+		return 0
+	}
+	return b[0]
+}
+
+// SwitchProfile makes p the active profile and waits up to 3 s for the
+// keyboard to say so. Input that is already queued is dropped first, and
+// other events that arrive while waiting are discarded.
+func (k *KB) SwitchProfile(p byte) error {
+	if err := k.drainInput(); err != nil {
+		return err
+	}
+	if err := k.d.SetFeature(proto.SwitchProfile(p)); err != nil {
+		return fmt.Errorf("keyboard: switching profile: %w", err)
+	}
+	return k.waitFor(profileTimeout, "profile change", func(ev any) bool {
+		c, ok := ev.(proto.ProfileChanged)
+		return ok && c.Profile == p
+	})
+}
+
+// EnableNotifications switches touch notifications on and waits up to 5 s for
+// the keyboard's redraw request. Other events that arrive meanwhile are
+// discarded.
+func (k *KB) EnableNotifications() error {
+	if err := k.d.SetFeature(proto.Notifications(true)); err != nil {
+		return fmt.Errorf("keyboard: enabling notifications: %w", err)
+	}
+	return k.waitFor(redrawTimeout, "redraw request", func(ev any) bool {
+		r, ok := ev.(proto.Redraw)
+		return ok && r.View == redrawAll
+	})
+}
+
+// waitFor reads events until match accepts one or timeout passes.
+func (k *KB) waitFor(timeout time.Duration, what string, match func(any) bool) error {
+	deadline := k.now().Add(timeout)
+	for {
+		remaining := deadline.Sub(k.now())
+		ev, err := k.NextEvent(remaining)
+		if err != nil {
+			return fmt.Errorf("keyboard: waiting for the %s: %w", what, err)
+		}
+		if match(ev) {
+			return nil
+		}
+	}
+}
+
+// WriteButtons writes a button table. The keyboard needs 200 ms before the
+// next report, which WriteType and WriteTypes wait for.
+func (k *KB) WriteButtons(t *proto.Table29) error {
+	if err := k.d.SetFeature(t.Bytes()); err != nil {
+		return fmt.Errorf("keyboard: writing button table: %w", err)
+	}
+	k.wroteButtons = true
+	k.lastButtons = k.now()
+	return nil
+}
+
+// settle sleeps out the rest of the 200 ms after the last button table write.
+func (k *KB) settle() {
+	if !k.wroteButtons {
+		return
+	}
+	if rest := writeGap - k.now().Sub(k.lastButtons); rest > 0 {
+		k.sleep(rest)
+	}
+}
+
+// WriteType sets the widget type of the button at pos.
+func (k *KB) WriteType(pos byte, te proto.TypeEntry) error {
+	k.settle()
+	if err := k.d.SetFeature(proto.WidgetType(pos, te.Type, te.Value)); err != nil {
+		return fmt.Errorf("keyboard: writing widget type: %w", err)
+	}
+	return nil
+}
+
+// WriteTypes writes a whole widget type table.
+func (k *KB) WriteTypes(t *proto.Table25) error {
+	k.settle()
+	if err := k.d.SetFeature(t.Bytes()); err != nil {
+		return fmt.Errorf("keyboard: writing type table: %w", err)
+	}
+	return nil
+}
