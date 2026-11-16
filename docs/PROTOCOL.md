@@ -783,6 +783,33 @@ a5 ff                                           end of the image
 full-screen video over this channel is out of the question, which is consistent
 with how the volume page works — the host sends values and the device draws.
 
+**The framing in full** (`06-screen-background-quadrants-1`): a block holds up
+to 4096 bytes, split into data frames of 62 bytes and one shorter frame for the
+remainder (`3e` x 66 + `04` for a full block). Unused bytes of a frame are zero.
+The background is 187 full blocks plus one of 2048 bytes; the thumbnail 15 full
+blocks plus one of 1608. Control frames (`a5 00`, `a5 40`, `a5 f1`, `a5 f2`,
+`a5 ff`) are echoed back unchanged, data frames are answered with 64 bytes of
+`ff`. The device answers a data frame within about 2 ms and an `a5 f2` (end of
+block) after about 34 ms.
+
+#### Replayed: a background uploaded from our own code
+
+`20-replay-background-stripes-1`, with no Swarm II component running: a test
+pattern of eight horizontal colour bands (red, orange, yellow, green, cyan,
+blue, purple, white) uploaded as background and thumbnail, framed exactly as
+above. Before sending anything, the framing was checked by re-framing the
+image from `06-screen-background-quadrants-1` and comparing: all 14,006 frames
+were byte-identical to Swarm II's.
+
+| Finding | Status |
+|---|---|
+| The upload works from our own code; every frame was acknowledged as expected, and the thumbnail appeared in the keyboard's background picker | **confirmed** |
+| The bands appear on the screen in the order sent, top to bottom | confirmed |
+| The upload alone does not change the screen; the new background has to be chosen on the keyboard, as with Swarm II | observed |
+| Choosing it is handled entirely by the keyboard: the host only sees the `31` redraw events (`04` on entering the settings view, `20` on returning to the main page) | observed |
+| **The speed is set by the device**: sending each frame as soon as the previous one is acknowledged gave 23.2 KiB/s, the same as Swarm II. A full screen takes 32 seconds whoever sends it | observed |
+| The background survives unplugging the keyboard: it is stored on the device | observed (`21-replug-0e-persist-1`) |
+
 **A second, smaller upload follows.** After the background, Swarm II sends
 another image opened with `a5 40` instead of `a5 00`: 63,048 bytes, which as
 RGB565 is 31,524 pixels. **It is the thumbnail the keyboard shows when the
@@ -1090,8 +1117,8 @@ then               Fn three times                 03 00 fc 01 / 03 00 fc 00, wit
 | Writing `0e 05 01 00 00` turns on the extended notifications: Fn (`fc`, `fa`) and the dial (`cc`) report from then on, where the same actions before the write sent nothing | **confirmed** (`19-replay-0e-1`) |
 | The screen redraws about two seconds after the write, as it does when Swarm II starts | observed |
 | Nothing else is needed: no selector read, no stream, no other write | confirmed |
-| `0e 05 00 00 00`, also seen from Swarm II, presumably switches them off again | hypothesis |
-| Whether the setting survives unplugging the keyboard or a reboot of the PC | unknown — after the reboot before this capture it was off |
+| `0e 05 00 00 00`, also seen from Swarm II, switches them off again: Fn pressed three times after it sent nothing, and `0e 05 01 00 00` turned them back on. The screen redraws after either write | **confirmed** (`19-replay-0e-off-1`) |
+| The setting is **not kept** across a power cycle: after unplugging and reconnecting the keyboard it announced its boot (`31` event, about 5 s after enumeration) and Fn sent nothing. A host has to write it after every connection, as Swarm II does at startup | observed (`21-replug-0e-persist-1`) |
 
 This is the first step of any replacement for Swarm II: one feature report, and
 the keyboard reports everything Swarm II gets.

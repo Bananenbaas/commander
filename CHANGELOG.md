@@ -34,6 +34,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Second command replayed to the hardware: writing feature report `0x0e` as
   `0e 05 01 00 00` switches on the notifications that the keyboard otherwise
   only sends with Swarm II running; Fn and dial events were checked.
+  `0e 05 00 00 00` switches them off again, and the setting is lost when the
+  keyboard is unplugged.
+- Third command replayed: a background image uploaded from our own code, with
+  framing verified byte for byte against Swarm II's before sending. The device
+  sets the pace, so a full screen takes 32 seconds whoever sends it.
 - Report `0x35` sets the widget type of one screen position; type `00` leaves
   the position empty, so the background image shows through.
 - Hardware hints from the names and sizes of files in the Swarm II
