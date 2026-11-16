@@ -228,6 +228,47 @@ func hidGetFeature(h windows.Handle, buf []byte) error {
 // errStopped means Close interrupted an operation.
 var errStopped = errors.New("device: stopped")
 
+// gone reports whether a Windows error means the keyboard went away:
+//
+//   - ERROR_DEVICE_NOT_CONNECTED and ERROR_DEVICE_REMOVED say so;
+//   - ERROR_BAD_COMMAND is STATUS_INVALID_DEVICE_STATE, what HID requests
+//     on a surprise-removed device fail with;
+//   - ERROR_FILE_NOT_FOUND is STATUS_NO_SUCH_DEVICE;
+//   - ERROR_GEN_FAILURE counts only for reads and writes (transfer): a
+//     feature request can also get it from a live keyboard that refuses
+//     the report.
+//
+// ERROR_INVALID_HANDLE is left out: the handles stay valid until Close, so
+// it would mean a fault here, not an unplugged keyboard.
+func gone(err error, transfer bool) bool {
+	var errno syscall.Errno
+	if !errors.As(err, &errno) {
+		return false
+	}
+	switch errno {
+	case windows.ERROR_DEVICE_NOT_CONNECTED, windows.ERROR_DEVICE_REMOVED,
+		windows.ERROR_BAD_COMMAND, windows.ERROR_FILE_NOT_FOUND:
+		return true
+	case windows.ERROR_GEN_FAILURE:
+		return transfer
+	}
+	return false
+}
+
+// ioErr names the operation that failed and sorts the error into
+// ErrTimeout, ErrClosed, ErrDisconnected or anything else.
+func ioErr(op string, err error, transfer bool) error {
+	switch {
+	case errors.Is(err, ErrTimeout):
+		return ErrTimeout
+	case errors.Is(err, errStopped):
+		return ErrClosed
+	case gone(err, transfer):
+		return disconnected(op, err)
+	}
+	return fmt.Errorf("device: %s: %w", op, err)
+}
+
 // overlapped is one overlapped operation's state. It lives on the heap and
 // stays put while Windows holds a pointer to it.
 type overlapped struct {
@@ -400,7 +441,7 @@ func (d *winDevice) readInput(h windows.Handle, o *overlapped) {
 			return
 		}
 		if err != nil {
-			d.in.fail(fmt.Errorf("device: read input: %w", err))
+			d.in.fail(ioErr("read input", err, true))
 			return
 		}
 		r := append([]byte(nil), o.buf[:n]...)
@@ -433,9 +474,10 @@ func (d *winDevice) SetFeature(b []byte) error {
 	}
 	defer d.ioMu.Unlock()
 	err := d.setFeature(d.feature, append([]byte(nil), b...))
-	if err != nil && len(b) < d.featureLen {
+	if err != nil && len(b) < d.featureLen && !gone(err, false) {
 		// A buffer of exactly the report's length is what worked on the
-		// keyboard; the collection's full length is the fallback.
+		// keyboard; the collection's full length is the fallback. A keyboard
+		// that has gone away is not asked again.
 		full := make([]byte, d.featureLen)
 		copy(full, b)
 		if d.setFeature(d.feature, full) == nil {
@@ -443,7 +485,7 @@ func (d *winDevice) SetFeature(b []byte) error {
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("device: set feature report 0x%02x: %w", b[0], err)
+		return ioErr(fmt.Sprintf("set feature report 0x%02x", b[0]), err, false)
 	}
 	return nil
 }
@@ -459,7 +501,7 @@ func (d *winDevice) GetFeature(id byte, n int) ([]byte, error) {
 	buf := make([]byte, n)
 	buf[0] = id
 	err := d.getFeature(d.feature, buf)
-	if err != nil && n < d.featureLen {
+	if err != nil && n < d.featureLen && !gone(err, false) {
 		full := make([]byte, d.featureLen)
 		full[0] = id
 		if d.getFeature(d.feature, full) == nil {
@@ -468,7 +510,7 @@ func (d *winDevice) GetFeature(id byte, n int) ([]byte, error) {
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("device: get feature report 0x%02x: %w", id, err)
+		return nil, ioErr(fmt.Sprintf("get feature report 0x%02x", id), err, false)
 	}
 	return buf, nil
 }
@@ -482,7 +524,7 @@ func (d *winDevice) WriteStream(f [64]byte) error {
 	copy(d.streamOut.buf[1:], f[:])
 	n, err := d.streamOut.do(d.stream, true, uint32(millis(streamWriteTimeout, maxWaitMillis)), d.stop)
 	if err != nil {
-		return streamErr("write", err)
+		return ioErr("write stream", err, true)
 	}
 	if n != streamReportLen {
 		return fmt.Errorf("device: wrote %d of %d stream bytes", n, streamReportLen)
@@ -498,23 +540,13 @@ func (d *winDevice) ReadStream(timeout time.Duration) ([64]byte, error) {
 	defer d.ioMu.Unlock()
 	n, err := d.streamIn.do(d.stream, false, uint32(millis(timeout, maxWaitMillis)), d.stop)
 	if err != nil {
-		return f, streamErr("read", err)
+		return f, ioErr("read stream", err, true)
 	}
 	if n != streamReportLen {
 		return f, fmt.Errorf("device: stream report of %d bytes, want %d", n, streamReportLen)
 	}
 	copy(f[:], d.streamIn.buf[1:])
 	return f, nil
-}
-
-func streamErr(op string, err error) error {
-	switch {
-	case errors.Is(err, ErrTimeout):
-		return ErrTimeout
-	case errors.Is(err, errStopped):
-		return ErrClosed
-	}
-	return fmt.Errorf("device: %s stream: %w", op, err)
 }
 
 func (d *winDevice) ReadInput(timeout time.Duration) ([]byte, error) {

@@ -235,6 +235,22 @@ func TestFakeFailAt(t *testing.T) {
 	}
 }
 
+func TestFakeDisconnected(t *testing.T) {
+	var f Fake
+	f.QueueInput([]byte{0x33}, []byte{0x03})
+	f.FailAt(OpReadInput, 2, disconnected("read input", nil))
+	f.FailAt(OpWriteStream, 1, ErrDisconnected)
+	if _, err := f.ReadInput(0); err != nil {
+		t.Fatalf("first ReadInput: %v", err)
+	}
+	if _, err := f.ReadInput(0); !errors.Is(err, ErrDisconnected) {
+		t.Fatalf("second ReadInput: %v, want ErrDisconnected", err)
+	}
+	if err := f.WriteStream(frame(0xa5, 0x41)); !errors.Is(err, ErrDisconnected) {
+		t.Fatalf("WriteStream: %v, want ErrDisconnected", err)
+	}
+}
+
 func TestFakeFailAtUnknownOp(t *testing.T) {
 	defer func() {
 		if recover() == nil {

@@ -28,8 +28,41 @@ const (
 	readBufLen = 256
 )
 
-// errDisconnected is wrapped by the callers of read.
-var errDisconnected = errors.New("keyboard disconnected")
+// errHangup is the node reporting a hang-up or error through poll, or an
+// end of file; ioErr turns it into ErrDisconnected.
+var errHangup = errors.New("hang-up")
+
+// readiness interprets the poll events of a hidraw node. Reports still
+// buffered are read before a hang-up counts: hidraw keeps POLLIN set for
+// them after the keyboard is gone. POLLNVAL means the descriptor is not
+// open, a fault here rather than an unplugged keyboard.
+func readiness(revents int16) (readable bool, err error) {
+	switch {
+	case revents&unix.POLLIN != 0:
+		return true, nil
+	case revents&(unix.POLLERR|unix.POLLHUP) != 0:
+		return false, errHangup
+	case revents&unix.POLLNVAL != 0:
+		return false, unix.EBADF
+	}
+	return false, nil
+}
+
+// ioErr names the operation that failed and sorts the error into
+// ErrTimeout, ErrClosed, ErrDisconnected or anything else. The kernel
+// reports a removed hidraw device with EIO (read) or ENODEV (write, ioctl),
+// and a USB transfer that got no answer with ETIMEDOUT.
+func ioErr(op string, err error) error {
+	switch {
+	case errors.Is(err, ErrTimeout), errors.Is(err, unix.ETIMEDOUT):
+		return ErrTimeout
+	case errors.Is(err, ErrClosed):
+		return ErrClosed
+	case errors.Is(err, errHangup), errors.Is(err, unix.EIO), errors.Is(err, unix.ENODEV):
+		return disconnected(op, err)
+	}
+	return fmt.Errorf("device: %s: %w", op, err)
+}
 
 // Open finds the KB7's hidraw nodes for interfaces 1 and 2 and opens them.
 // The user needs read and write access to both, normally through a udev
@@ -103,7 +136,7 @@ func (d *linuxDevice) readInput() {
 			return
 		}
 		if err != nil {
-			d.in.fail(fmt.Errorf("device: read input: %w", err))
+			d.in.fail(ioErr("read input", err))
 			return
 		}
 		var r []byte
@@ -118,8 +151,8 @@ func (d *linuxDevice) readInput() {
 }
 
 // read waits until fd has a report, then reads it into buf. A negative
-// timeout waits without limit. It returns ErrTimeout, or ErrClosed once
-// Close has been called.
+// timeout waits without limit. It returns ErrTimeout, ErrClosed once Close
+// has been called, errHangup, or the error of poll or read.
 func (d *linuxDevice) read(fd int, buf []byte, timeout time.Duration) (int, error) {
 	deadline := time.Now().Add(timeout)
 	for {
@@ -137,9 +170,11 @@ func (d *linuxDevice) read(fd int, buf []byte, timeout time.Duration) (int, erro
 		if fds[1].Revents != 0 {
 			return 0, ErrClosed
 		}
-		ev := fds[0].Revents
-		switch {
-		case ev&unix.POLLIN != 0:
+		readable, err := readiness(fds[0].Revents)
+		if err != nil {
+			return 0, err
+		}
+		if readable {
 			n, err := unix.Read(fd, buf)
 			switch {
 			case errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EINTR):
@@ -147,11 +182,9 @@ func (d *linuxDevice) read(fd int, buf []byte, timeout time.Duration) (int, erro
 			case err != nil:
 				return 0, err
 			case n == 0:
-				return 0, errDisconnected
+				return 0, errHangup
 			}
 			return n, nil
-		case ev&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0:
-			return 0, errDisconnected
 		}
 		if timeout >= 0 && !time.Now().Before(deadline) {
 			return 0, ErrTimeout
@@ -181,14 +214,6 @@ func ioctl(fd int, req uint32, buf []byte) (int, error) {
 	return int(r), nil
 }
 
-// linuxErr turns the kernel's USB timeout into ErrTimeout.
-func linuxErr(err error) error {
-	if errors.Is(err, unix.ETIMEDOUT) {
-		return ErrTimeout
-	}
-	return err
-}
-
 func (d *linuxDevice) SetFeature(b []byte) error {
 	if err := checkFeatureLen(len(b), maxIoctlLen); err != nil {
 		return err
@@ -199,10 +224,7 @@ func (d *linuxDevice) SetFeature(b []byte) error {
 	defer d.ioMu.Unlock()
 	buf := append([]byte(nil), b...)
 	if _, err := ioctl(d.ctrl, hidioc(hidiocSFeature, len(buf)), buf); err != nil {
-		if err = linuxErr(err); err == ErrTimeout {
-			return err
-		}
-		return fmt.Errorf("device: set feature report 0x%02x: %w", b[0], err)
+		return ioErr(fmt.Sprintf("set feature report 0x%02x", b[0]), err)
 	}
 	return nil
 }
@@ -218,10 +240,7 @@ func (d *linuxDevice) GetFeature(id byte, n int) ([]byte, error) {
 	buf := make([]byte, n)
 	buf[0] = id
 	if _, err := ioctl(d.ctrl, hidioc(hidiocGFeature, n), buf); err != nil {
-		if err = linuxErr(err); err == ErrTimeout {
-			return nil, err
-		}
-		return nil, fmt.Errorf("device: get feature report 0x%02x: %w", id, err)
+		return nil, ioErr(fmt.Sprintf("get feature report 0x%02x", id), err)
 	}
 	return buf, nil
 }
@@ -244,14 +263,11 @@ func (d *linuxDevice) WriteStream(f [64]byte) error {
 				return ErrTimeout
 			}
 			if err := d.waitWritable(deadline); err != nil {
-				return err
+				return ioErr("write stream", err)
 			}
 			continue
 		case err != nil:
-			if err = linuxErr(err); err == ErrTimeout {
-				return err
-			}
-			return fmt.Errorf("device: write stream: %w", err)
+			return ioErr("write stream", err)
 		case n != len(buf):
 			return fmt.Errorf("device: wrote %d of %d stream bytes", n, len(buf))
 		}
@@ -263,10 +279,13 @@ func (d *linuxDevice) WriteStream(f [64]byte) error {
 func (d *linuxDevice) waitWritable(deadline time.Time) error {
 	fds := []unix.PollFd{{Fd: int32(d.stream), Events: unix.POLLOUT}, {Fd: int32(d.wake), Events: unix.POLLIN}}
 	if _, err := unix.Poll(fds, int(millis(time.Until(deadline), maxPollMillis))); err != nil && !errors.Is(err, unix.EINTR) {
-		return fmt.Errorf("device: write stream: %w", err)
+		return err
 	}
 	if fds[1].Revents != 0 {
 		return ErrClosed
+	}
+	if fds[0].Revents&(unix.POLLERR|unix.POLLHUP) != 0 {
+		return errHangup
 	}
 	return nil
 }
@@ -283,10 +302,8 @@ func (d *linuxDevice) ReadStream(timeout time.Duration) ([64]byte, error) {
 	buf := make([]byte, readBufLen)
 	n, err := d.read(d.stream, buf, timeout)
 	switch {
-	case errors.Is(err, ErrTimeout) || errors.Is(err, ErrClosed):
-		return f, err
 	case err != nil:
-		return f, fmt.Errorf("device: read stream: %w", err)
+		return f, ioErr("read stream", err)
 	case n != frameLen:
 		return f, fmt.Errorf("device: stream report of %d bytes, want %d", n, frameLen)
 	}

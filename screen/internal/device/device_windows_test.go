@@ -252,7 +252,9 @@ func TestWinCloseInterrupts(t *testing.T) {
 }
 
 // A keyboard that goes away ends ReadInput and ReadStream with an error,
-// not with endless timeouts.
+// not with endless timeouts. A closed pipe fails with ERROR_BROKEN_PIPE,
+// which is not a HID removal code, so this checks the error path, and
+// TestWinGone the mapping onto ErrDisconnected.
 func TestWinDisconnect(t *testing.T) {
 	k := newTestKB(t)
 	k.touch.close()
@@ -270,20 +272,94 @@ func TestWinDisconnect(t *testing.T) {
 }
 
 // featureCalls replaces HidD_SetFeature or HidD_GetFeature: it records the
-// buffer of every call and fails the calls whose length is in fail.
+// buffer of every call and fails the calls whose length is in fail, with
+// err (ERROR_INVALID_PARAMETER if nil).
 type featureCalls struct {
 	bufs  [][]byte
 	fail  map[int]bool
+	err   error
 	reply []byte // copied into the buffer of a successful call
 }
 
 func (f *featureCalls) call(_ windows.Handle, buf []byte) error {
 	f.bufs = append(f.bufs, bytes.Clone(buf))
 	if f.fail[len(buf)] {
+		if f.err != nil {
+			return f.err
+		}
 		return windows.ERROR_INVALID_PARAMETER
 	}
 	copy(buf, f.reply)
 	return nil
+}
+
+func TestWinGone(t *testing.T) {
+	for _, tc := range []struct {
+		err               error
+		transfer, feature bool // gone for a read or write, for a feature request
+	}{
+		{windows.ERROR_DEVICE_NOT_CONNECTED, true, true},
+		{windows.ERROR_DEVICE_REMOVED, true, true},
+		{windows.ERROR_BAD_COMMAND, true, true},
+		{windows.ERROR_FILE_NOT_FOUND, true, true},
+		{windows.ERROR_GEN_FAILURE, true, false},
+		{fmt.Errorf("wrapped: %w", windows.ERROR_DEVICE_NOT_CONNECTED), true, true},
+		{windows.ERROR_INVALID_HANDLE, false, false},
+		{windows.ERROR_INVALID_PARAMETER, false, false},
+		{windows.ERROR_OPERATION_ABORTED, false, false},
+		{windows.ERROR_BROKEN_PIPE, false, false},
+		{errors.New("not an errno"), false, false},
+	} {
+		if got := gone(tc.err, true); got != tc.transfer {
+			t.Errorf("gone(%v, read/write) = %v, want %v", tc.err, got, tc.transfer)
+		}
+		if got := gone(tc.err, false); got != tc.feature {
+			t.Errorf("gone(%v, feature) = %v, want %v", tc.err, got, tc.feature)
+		}
+	}
+}
+
+func TestWinIoErr(t *testing.T) {
+	err := ioErr("read input", windows.ERROR_DEVICE_NOT_CONNECTED, true)
+	if !errors.Is(err, ErrDisconnected) || !errors.Is(err, windows.ERROR_DEVICE_NOT_CONNECTED) {
+		t.Fatalf("unplugged: %v, want ErrDisconnected carrying the errno", err)
+	}
+	if err := ioErr("set feature report 0x29", windows.ERROR_GEN_FAILURE, false); errors.Is(err, ErrDisconnected) || !errors.Is(err, windows.ERROR_GEN_FAILURE) {
+		t.Fatalf("refused feature report: %v, want a plain error", err)
+	}
+	if err := ioErr("read stream", windows.ERROR_GEN_FAILURE, true); !errors.Is(err, ErrDisconnected) {
+		t.Fatalf("failed read: %v, want ErrDisconnected", err)
+	}
+	if err := ioErr("read stream", ErrTimeout, true); err != ErrTimeout {
+		t.Fatalf("timeout: %v", err)
+	}
+	if err := ioErr("read stream", errStopped, true); err != ErrClosed {
+		t.Fatalf("stopped: %v", err)
+	}
+	if err := ioErr("read stream", windows.ERROR_BROKEN_PIPE, true); errors.Is(err, ErrDisconnected) || errors.Is(err, ErrTimeout) || err == nil {
+		t.Fatalf("other error: %v", err)
+	}
+}
+
+// A keyboard that has gone away is not asked again with the full length.
+func TestWinFeatureNoFallbackWhenGone(t *testing.T) {
+	k := newTestKB(t)
+	set := &featureCalls{fail: map[int]bool{5: true, 1044: true}, err: windows.ERROR_DEVICE_NOT_CONNECTED}
+	k.d.setFeature = set.call
+	if err := k.d.SetFeature([]byte{0x0e, 0x05, 0x01, 0x00, 0x00}); !errors.Is(err, ErrDisconnected) {
+		t.Fatalf("SetFeature: %v, want ErrDisconnected", err)
+	}
+	if got := set.lens(); fmt.Sprint(got) != "[5]" {
+		t.Fatalf("SetFeature buffer lengths %v, want one exact-length call", got)
+	}
+	get := &featureCalls{fail: map[int]bool{4: true, 1044: true}, err: windows.ERROR_DEVICE_REMOVED}
+	k.d.getFeature = get.call
+	if _, err := k.d.GetFeature(0x05, 4); !errors.Is(err, ErrDisconnected) {
+		t.Fatalf("GetFeature: %v, want ErrDisconnected", err)
+	}
+	if got := get.lens(); fmt.Sprint(got) != "[4]" {
+		t.Fatalf("GetFeature buffer lengths %v, want one exact-length call", got)
+	}
 }
 
 func (f *featureCalls) lens() []int {

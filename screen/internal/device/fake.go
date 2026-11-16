@@ -91,7 +91,8 @@ func (f *Fake) QueueInput(reports ...[]byte) {
 }
 
 // FailAt makes the nth call (counting from 1) of op return err instead of
-// doing anything. A failed Close still closes the Fake.
+// doing anything. A failed Close still closes the Fake. To play an
+// unplugged keyboard, fail with ErrDisconnected (or an error wrapping it).
 func (f *Fake) FailAt(op Op, n int, err error) {
 	switch op {
 	case OpSetFeature, OpGetFeature, OpWriteStream, OpReadStream, OpReadInput, OpClose:

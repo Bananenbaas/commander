@@ -7,9 +7,12 @@ import (
 )
 
 // kb7Collections is the KB7's top-level collections as Windows lists them:
-// usage page, usage and input/output/feature lengths. The vendor
-// collections carry the lengths Windows reports; the lengths of the
-// keyboard, consumer and system control collections are illustrative.
+// usage page, usage and input/output/feature lengths, report-ID byte
+// included. The vendor collections carry what Windows reports (0xff90
+// 65/65/65, 0xff00 usage 0x0001 65/65/0, 0xff01 input 8, 0xff02 input 12,
+// 0xff03 feature 1044). Not recorded, and only placeholders here: the
+// usages of 0xff01-0xff03 (not checked by roleOf) and the lengths of the
+// keyboard, consumer and system control collections.
 var kb7Collections = []collection{
 	{UsagePage: 0xff90, Usage: 0xff00, InputLen: 65, OutputLen: 65, FeatureLen: 65}, // interface 0
 	{UsagePage: 0xff00, Usage: 0x0001, InputLen: 65, OutputLen: 65},                 // stream
@@ -52,17 +55,71 @@ func TestPickCollectionsMissing(t *testing.T) {
 
 func TestPickCollectionsTwoKeyboards(t *testing.T) {
 	cs := append(append([]collection(nil), kb7Collections...), kb7Collections...)
-	if _, err := pickCollections(cs); !errors.Is(err, errMultiple) {
-		t.Fatalf("err = %v, want errMultiple", err)
+	_, err := pickCollections(cs)
+	if !errors.Is(err, ErrNotFound) || !errors.Is(err, errMultiple) {
+		t.Fatalf("err = %v, want ErrNotFound for more than one KB7", err)
 	}
 }
 
-func TestRoleOfStreamNeedsFullReports(t *testing.T) {
-	if r := roleOf(collection{UsagePage: 0xff00, InputLen: 65, OutputLen: 0}); r != roleNone {
-		t.Fatalf("0xff00 without output reports: role %d, want none", r)
+// A collection on the right usage page but laid out differently from what
+// was measured is not used, so Open reports ErrNotFound.
+func TestPickCollectionsExactLayout(t *testing.T) {
+	changes := map[string]func(*collection){
+		"input length +1":   func(c *collection) { c.InputLen++ },
+		"output length +1":  func(c *collection) { c.OutputLen++ },
+		"feature length +1": func(c *collection) { c.FeatureLen++ },
+		"input length -1": func(c *collection) {
+			if c.InputLen > 0 {
+				c.InputLen--
+			} else {
+				c.InputLen = 64
+			}
+		},
+		"feature length -1": func(c *collection) {
+			if c.FeatureLen > 0 {
+				c.FeatureLen--
+			} else {
+				c.FeatureLen = 1043
+			}
+		},
 	}
-	if r := roleOf(collection{UsagePage: 0xff03, FeatureLen: 0}); r != roleNone {
-		t.Fatalf("0xff03 without feature reports: role %d, want none", r)
+	for i, c := range kb7Collections {
+		r := roleOf(c)
+		if r == roleNone {
+			continue
+		}
+		for name, change := range changes {
+			cs := append([]collection(nil), kb7Collections...)
+			change(&cs[i])
+			if _, err := pickCollections(cs); !errors.Is(err, ErrNotFound) {
+				t.Errorf("%s with %s: err = %v, want ErrNotFound", roleNames[r], name, err)
+			}
+		}
+	}
+
+	cs := append([]collection(nil), kb7Collections...)
+	cs[1].Usage = 0x0002 // the stream's usage is checked
+	if _, err := pickCollections(cs); !errors.Is(err, ErrNotFound) {
+		t.Errorf("stream with usage 0x0002: err = %v, want ErrNotFound", err)
+	}
+	cs = append([]collection(nil), kb7Collections...)
+	cs[7].Usage = 0x0002 // the others' usages are not recorded, so not checked
+	if _, err := pickCollections(cs); err != nil {
+		t.Errorf("feature collection with another usage: %v", err)
+	}
+}
+
+func TestDisconnected(t *testing.T) {
+	cause := errors.New("cause")
+	err := disconnected("read input", cause)
+	if !errors.Is(err, ErrDisconnected) || !errors.Is(err, cause) {
+		t.Fatalf("%v does not carry ErrDisconnected and its cause", err)
+	}
+	if got, want := err.Error(), "device: keyboard disconnected: read input: cause"; got != want {
+		t.Fatalf("message %q, want %q", got, want)
+	}
+	if err := disconnected("read stream", nil); !errors.Is(err, ErrDisconnected) || err.Error() != "device: keyboard disconnected: read stream" {
+		t.Fatalf("without cause: %v", err)
 	}
 }
 

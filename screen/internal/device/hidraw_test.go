@@ -178,8 +178,8 @@ func TestPickNodes(t *testing.T) {
 		t.Fatalf("no stream node: %v, want ErrNotFound", err)
 	}
 	two := []hidrawNode{{"hidraw1", 1}, {"hidraw2", 2}, {"hidraw5", 1}, {"hidraw6", 2}}
-	if _, _, err := pickNodes(two); !errors.Is(err, errMultiple) {
-		t.Fatalf("two keyboards: %v, want errMultiple", err)
+	if _, _, err := pickNodes(two); !errors.Is(err, ErrNotFound) || !errors.Is(err, errMultiple) {
+		t.Fatalf("two keyboards: %v, want ErrNotFound for more than one KB7", err)
 	}
 }
 

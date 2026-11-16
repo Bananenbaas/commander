@@ -3,6 +3,7 @@ package device
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -184,18 +185,77 @@ func TestLinuxCloseInterrupts(t *testing.T) {
 	}
 }
 
-// A keyboard that goes away ends ReadInput and ReadStream with an error,
-// not with endless timeouts.
+// A keyboard that goes away ends ReadInput and ReadStream with
+// ErrDisconnected, not with endless timeouts. A closed socket shows a
+// hang-up or end of file, as hidraw does.
 func TestLinuxDisconnect(t *testing.T) {
 	k := newLinuxTestKB(t)
 	k.ctrl.close()
-	_, err := k.d.ReadInput(5 * time.Second)
-	if err == nil || errors.Is(err, ErrTimeout) || errors.Is(err, ErrClosed) {
-		t.Fatalf("ReadInput after unplug: %v, want a read error", err)
+	if _, err := k.d.ReadInput(5 * time.Second); !errors.Is(err, ErrDisconnected) {
+		t.Fatalf("ReadInput after unplug: %v, want ErrDisconnected", err)
+	}
+	if _, err := k.d.ReadInput(0); !errors.Is(err, ErrDisconnected) {
+		t.Fatalf("second ReadInput after unplug: %v, want ErrDisconnected", err)
 	}
 	k.stream.close()
-	if _, err := k.d.ReadStream(5 * time.Second); err == nil || errors.Is(err, ErrTimeout) {
-		t.Fatalf("ReadStream after unplug: %v, want a read error", err)
+	if _, err := k.d.ReadStream(5 * time.Second); !errors.Is(err, ErrDisconnected) {
+		t.Fatalf("ReadStream after unplug: %v, want ErrDisconnected", err)
+	}
+}
+
+func TestLinuxReadiness(t *testing.T) {
+	for _, tc := range []struct {
+		revents  int16
+		readable bool
+		err      error
+	}{
+		{0, false, nil},
+		{unix.POLLIN, true, nil},
+		{unix.POLLIN | unix.POLLHUP | unix.POLLERR, true, nil}, // buffered reports first
+		{unix.POLLHUP, false, errHangup},
+		{unix.POLLERR, false, errHangup},
+		{unix.POLLOUT | unix.POLLERR | unix.POLLHUP, false, errHangup},
+		{unix.POLLNVAL, false, unix.EBADF},
+	} {
+		readable, err := readiness(tc.revents)
+		if readable != tc.readable || err != tc.err {
+			t.Errorf("readiness(%#x) = %v, %v; want %v, %v", tc.revents, readable, err, tc.readable, tc.err)
+		}
+	}
+}
+
+func TestLinuxIoErr(t *testing.T) {
+	for _, tc := range []struct {
+		err          error
+		disconnected bool
+	}{
+		{errHangup, true},
+		{unix.EIO, true},
+		{unix.ENODEV, true},
+		{fmt.Errorf("wrapped: %w", unix.ENODEV), true},
+		{unix.EPIPE, false},  // the keyboard refused a request
+		{unix.EBADF, false},  // a fault here
+		{unix.EINVAL, false}, // a bad request
+	} {
+		err := ioErr("read input", tc.err)
+		if errors.Is(err, ErrDisconnected) != tc.disconnected {
+			t.Errorf("ioErr(%v) = %v, disconnected %v", tc.err, err, !tc.disconnected)
+		}
+		if !errors.Is(err, tc.err) {
+			t.Errorf("ioErr(%v) = %v, lost the cause", tc.err, err)
+		}
+		if errors.Is(err, ErrTimeout) || errors.Is(err, ErrClosed) {
+			t.Errorf("ioErr(%v) = %v", tc.err, err)
+		}
+	}
+	if err := ioErr("get feature report 0x05", unix.ETIMEDOUT); err != ErrTimeout {
+		t.Errorf("ETIMEDOUT: %v, want ErrTimeout", err)
+	}
+	if err := ioErr("read stream", ErrTimeout); err != ErrTimeout {
+		t.Errorf("ErrTimeout: %v", err)
+	}
+	if err := ioErr("read stream", ErrClosed); err != ErrClosed {
+		t.Errorf("ErrClosed: %v", err)
 	}
 }
 

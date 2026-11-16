@@ -35,8 +35,12 @@ var (
 	ErrTimeout = errors.New("device: timed out")
 	// ErrClosed is returned by every call on a Device after Close.
 	ErrClosed = errors.New("device: closed")
+	// ErrDisconnected is returned, wrapped with the operation and the
+	// operating system's error, when the keyboard has gone away.
+	ErrDisconnected = errors.New("device: keyboard disconnected")
 
-	errMultiple = errors.New("device: more than one KB7 connected")
+	// errMultiple refuses two keyboards rather than mixing them.
+	errMultiple = fmt.Errorf("%w: more than one KB7 connected", ErrNotFound)
 )
 
 // Device is an open KB7.
@@ -44,6 +48,13 @@ var (
 // Its methods may be called from several goroutines. Calls that send or
 // read on the stream or the feature reports run one at a time; ReadInput
 // runs alongside them. Close interrupts calls that are waiting.
+//
+// Errors, to be told apart with errors.Is:
+//
+//   - ErrTimeout: nothing arrived in time; the device is still usable.
+//   - ErrDisconnected: the keyboard went away; Close it and Open again.
+//   - ErrClosed: Close has been called.
+//   - anything else: treat the device as unusable.
 type Device interface {
 	// SetFeature sends feature report b; b[0] is the report ID.
 	SetFeature(b []byte) error
@@ -80,6 +91,15 @@ func isInputReport(r []byte) bool {
 // handles it on Windows: the report ID 0 followed by the 64-byte frame.
 const streamReportLen = 65
 
+// disconnected reports that the keyboard went away during op, with the
+// operating system's error if there is one.
+func disconnected(op string, cause error) error {
+	if cause == nil {
+		return fmt.Errorf("%w: %s", ErrDisconnected, op)
+	}
+	return fmt.Errorf("%w: %s: %w", ErrDisconnected, op, cause)
+}
+
 // checkFeatureLen checks the length of a feature report against the largest
 // one the open device can move.
 func checkFeatureLen(n, max int) error {
@@ -104,7 +124,8 @@ func millis(d time.Duration, max int64) int64 {
 }
 
 // collection is one HID top-level collection as Windows describes it.
-// Report lengths include the report-ID byte.
+// Report lengths include the report-ID byte; 0 means the collection has no
+// report of that kind.
 type collection struct {
 	UsagePage, Usage                uint16
 	InputLen, OutputLen, FeatureLen int
@@ -124,19 +145,28 @@ const (
 
 var roleNames = [numRoles]string{"stream (0xff00)", "feature (0xff03)", "notification (0xff01)", "touch (0xff02)"}
 
-// roleOf returns the role of a KB7 collection, or roleNone for the
-// collections this package leaves alone (interface 0 on 0xff90, keyboard,
-// consumer and system control).
+// kb7Layout is each role's collection exactly as Windows reports it on the
+// KB7 (PROTOCOL.md, "HID reports"): the stream on interface 1 has input and
+// output reports only, the notification and touch collections input
+// reports only, the feature collection feature reports only. Usage 0 means
+// the usage is not checked; only the stream's has been recorded.
+var kb7Layout = [numRoles]collection{
+	roleStream:  {UsagePage: 0xff00, Usage: 0x0001, InputLen: streamReportLen, OutputLen: streamReportLen},
+	roleFeature: {UsagePage: 0xff03, FeatureLen: 1044},
+	roleNotify:  {UsagePage: 0xff01, InputLen: 8},
+	roleTouch:   {UsagePage: 0xff02, InputLen: 12},
+}
+
+// roleOf returns the role of a KB7 collection that matches kb7Layout
+// exactly, or roleNone for the collections this package leaves alone
+// (interface 0 on 0xff90, keyboard, consumer and system control) and for
+// any collection laid out differently from what was measured.
 func roleOf(c collection) role {
-	switch {
-	case c.UsagePage == 0xff00 && c.InputLen == streamReportLen && c.OutputLen == streamReportLen:
-		return roleStream
-	case c.UsagePage == 0xff03 && c.FeatureLen > 1:
-		return roleFeature
-	case c.UsagePage == 0xff01 && c.InputLen > 1:
-		return roleNotify
-	case c.UsagePage == 0xff02 && c.InputLen > 1:
-		return roleTouch
+	for r, w := range kb7Layout {
+		if c.UsagePage == w.UsagePage && (w.Usage == 0 || c.Usage == w.Usage) &&
+			c.InputLen == w.InputLen && c.OutputLen == w.OutputLen && c.FeatureLen == w.FeatureLen {
+			return role(r)
+		}
 	}
 	return roleNone
 }
