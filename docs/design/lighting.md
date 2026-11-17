@@ -87,8 +87,9 @@ Not measured, needed before relying on it:
    N, B, H, J, F, LShift and LAlt+N all arrived, in order. A held key repeats
    its key-down until it is released (LShift and A were seen four times in a
    row), so repeats must be ignored. During Alt+Tab only the Tab key-up
-   arrived. Still open: whether presses on another keyboard are kept out by
-   the device filter, and whether Fn-layer keys show up.
+   arrived. Typing on a second keyboard in the same run produced nothing, so
+   the device filter keeps other keyboards out. Still open: whether Fn-layer
+   keys show up.
 4. **The brightness level at start-up**: read from `0x11` byte 6 through the
    selector (`05 <profile> b0 00`), as Swarm II does at start. Reading this
    block from our own code has not been done; `b8`, `b9` and `ba` have.
