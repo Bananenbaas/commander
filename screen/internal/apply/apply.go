@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 // Package apply puts the configured layouts on the keyboard and gives the
 // positions kb7screen has taken over back their original contents.
 //

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 // Package procs reports whether named programs are currently running.
 package procs
 

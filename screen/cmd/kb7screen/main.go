@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 // Command kb7screen puts your own buttons on the touchscreen of the Turtle
 // Beach Command Series KB7 and carries out their actions on this computer.
 package main

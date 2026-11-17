@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 // Package action defines key names and the steps a button can carry out.
 package action
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 package device
 
 // Helpers for the Linux hidraw implementation that need no Linux kernel:

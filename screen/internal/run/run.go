@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 // Package run carries out the buttons' actions while the keyboard is in use.
 //
 // Run reads the taps on the keyboard, follows the active profile, switches

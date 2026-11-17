@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 // Package layout loads the configuration folder: one TOML file per profile.
 package layout
 

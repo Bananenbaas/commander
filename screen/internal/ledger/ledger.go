@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 // Package ledger remembers what each picture slot on the keyboard holds, so
 // unchanged pictures are never uploaded twice, and keeps the original table
 // entries of every position kb7screen has taken over.

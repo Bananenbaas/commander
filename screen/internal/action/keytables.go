@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 package action
 
 // keyCodes holds, for every key ParseKey accepts, the Windows set-1 scan code

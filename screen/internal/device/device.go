@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 // Package device is the only code that talks to the operating system's HID
 // stack. It finds the KB7, opens the parts of it kb7screen uses and moves
 // feature reports, stream frames and input reports; it does not know what

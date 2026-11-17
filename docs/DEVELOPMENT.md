@@ -25,7 +25,9 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 - **Language**: everything in the repository is English — code, comments,
   documentation, commit messages.
 - **License**: GPL-2.0-or-later, for compatibility with OpenRGB. Every source
-  file starts with `# SPDX-License-Identifier: GPL-2.0-or-later`.
+  file starts with `# SPDX-License-Identifier: GPL-2.0-or-later`; in Go files
+  it is `// SPDX-License-Identifier: GPL-2.0-or-later`, followed by a blank
+  line so it does not become the package comment.
 - **Dependencies**: the toolkit is **stdlib only**. No pyshark or tshark
   dependency; Python 3.10 is the minimum.
 - **No deployment pipeline**: CI runs the tests and nothing else.

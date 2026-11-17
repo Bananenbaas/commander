@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 // Package proto builds and parses the frames the KB7 speaks over its
 // vendor-defined HID reports, as documented in docs/PROTOCOL.md.
 package proto

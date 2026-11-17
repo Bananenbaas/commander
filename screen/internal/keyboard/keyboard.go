@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 // Package keyboard performs the operations kb7screen needs on the KB7 and
 // keeps to the rules the protocol sets: one frame at a time with its
 // acknowledgement, a pause after a button table is written, and no retry of a

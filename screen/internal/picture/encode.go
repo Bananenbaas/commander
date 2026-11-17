@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 // Package picture turns a button into the bytes the keyboard stores for a
 // picture: 142 x 148 pixels as RGB565 little-endian followed by one straight
 // alpha byte per pixel.

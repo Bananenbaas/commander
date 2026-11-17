@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 package proto
 
 // Touch is a touch or release on a widget, from input report 0x33.
