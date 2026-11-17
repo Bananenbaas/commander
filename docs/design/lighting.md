@@ -71,7 +71,7 @@ report `0x11`", "LED map" and "Device notifications":
 | Stored colours | report `0x11`, 348 bytes, written as a feature report; with nobody streaming, a written table appears and stays. Header bytes 3 and 7 unknown, byte 6 brightness |
 | Brightness | the host scales the colours it streams. Fn + Up/Down: the keyboard reports the new level as `03 00 0c <percent>` (only after `0x0e`, which `run` writes) in steps of ten from 20 to 100. The exact curve Swarm II uses is unknown; nine points are known |
 | RGB on/off | the keyboard switches its LEDs off and on itself and reports `03 00 11 <off>` |
-| Key positions | LED index of 94 keys and lights, rows of fourteen; Escape is 0, WASD are 29, 43, 44, 45, H and J are 48 and 49 |
+| Key positions | LED index of 94 keys and lights, rows of fourteen; Escape is 0, WASD are 30, 43, 44, 45, H and J are 48 and 49 |
 | Key presses | the keyboard sends ordinary keyboard reports to the operating system; not read by our code so far |
 
 Not measured, needed before relying on it:
