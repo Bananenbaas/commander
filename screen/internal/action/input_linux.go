@@ -67,6 +67,15 @@ func ioctl(fd uintptr, req, arg uintptr) error {
 	return nil
 }
 
+// ioctlPtr converts the pointer inside the Syscall argument list so that it
+// stays alive and valid for the duration of the call.
+func ioctlPtr(fd uintptr, req uintptr, arg unsafe.Pointer) error {
+	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, fd, req, uintptr(arg)); errno != 0 {
+		return errno
+	}
+	return nil
+}
+
 func (u *uinputInjector) create() error {
 	fd := u.f.Fd()
 	if err := ioctl(fd, uiSetEvBit, evKey); err != nil {
@@ -80,7 +89,7 @@ func (u *uinputInjector) create() error {
 	const name = "kb7screen virtual keyboard"
 	setup := uinputSetup{bustype: busUSB, vendor: 0x1209, product: 0x0001, version: 1}
 	copy(setup.name[:], name)
-	if err := ioctl(fd, uiDevSetup, uintptr(unsafe.Pointer(&setup))); err != nil {
+	if err := ioctlPtr(fd, uiDevSetup, unsafe.Pointer(&setup)); err != nil {
 		// Older kernels lack UI_DEV_SETUP: describe the device by writing
 		// the legacy structure instead.
 		dev := uinputUserDev{bustype: busUSB, vendor: setup.vendor, product: setup.product, version: 1}

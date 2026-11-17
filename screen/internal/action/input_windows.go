@@ -2,6 +2,7 @@ package action
 
 import (
 	"fmt"
+	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -31,6 +32,15 @@ type winInput struct {
 	_   [inputStructPadBytes]byte
 }
 
+// Compile-time check that winInput has the size of INPUT (40 bytes on 64-bit,
+// 28 on 32-bit Windows).
+const winInputSize = 28 + 12*(unsafe.Sizeof(uintptr(0))/8)
+
+var (
+	_ [winInputSize - unsafe.Sizeof(winInput{})]byte
+	_ [unsafe.Sizeof(winInput{}) - winInputSize]byte
+)
+
 var procSendInput = windows.NewLazySystemDLL("user32.dll").NewProc("SendInput")
 
 type winInjector struct{}
@@ -53,6 +63,9 @@ func send(k Key, flags uint32) error {
 	in := winInput{typ: inputKeyboard, ki: keybdInput{scan: uint16(code), flags: flags}}
 	n, _, err := procSendInput.Call(1, uintptr(unsafe.Pointer(&in)), unsafe.Sizeof(in))
 	if n != 1 {
+		if e, ok := err.(syscall.Errno); !ok || e == 0 {
+			err = windows.GetLastError()
+		}
 		return fmt.Errorf("SendInput injected %d of 1 events: %w", n, err)
 	}
 	return nil

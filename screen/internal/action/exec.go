@@ -119,10 +119,17 @@ func (e *Executor) HoldDown(c Chord) error {
 func (e *Executor) HoldUp(c Chord) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for _, k := range c.Keys {
-		e.forget(k)
+	var first error
+	for i := len(c.Keys) - 1; i >= 0; i-- {
+		if err := e.In.Up(c.Keys[i]); err != nil {
+			if first == nil {
+				first = err
+			}
+			continue // stays held so ReleaseAll can retry
+		}
+		e.forget(c.Keys[i])
 	}
-	return e.release(c.Keys)
+	return first
 }
 
 func (e *Executor) forget(k Key) {

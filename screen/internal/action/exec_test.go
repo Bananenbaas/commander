@@ -13,6 +13,8 @@ type recorder struct {
 	log     []string
 	failDn  Key
 	failing bool
+	failUp  Key
+	upFails bool
 }
 
 func (r *recorder) Down(k Key) error {
@@ -24,6 +26,9 @@ func (r *recorder) Down(k Key) error {
 }
 
 func (r *recorder) Up(k Key) error {
+	if r.upFails && k == r.failUp {
+		return errors.New("release failed")
+	}
 	r.log = append(r.log, fmt.Sprintf("up %#x", uint16(k)))
 	return nil
 }
@@ -126,4 +131,23 @@ func TestReleaseAllReleasesOnlyHeld(t *testing.T) {
 	r.log = nil
 	_ = e.ReleaseAll()
 	check(t, r)
+}
+
+func TestHoldUpFailedUpStaysHeld(t *testing.T) {
+	r := &recorder{}
+	e := newExec(r)
+	c := Chord{Keys: []Key{LCtrl, A}}
+	_ = e.HoldDown(c)
+	r.log = nil
+	r.upFails, r.failUp = true, A
+	if err := e.HoldUp(c); err == nil {
+		t.Fatal("expected an error")
+	}
+	check(t, r, "up 0xe0")
+	r.upFails = false
+	r.log = nil
+	if err := e.ReleaseAll(); err != nil {
+		t.Fatal(err)
+	}
+	check(t, r, "up 0x4")
 }
