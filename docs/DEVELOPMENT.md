@@ -23,7 +23,7 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 | `screen/internal/runlock/` | The lock file `.kb7screen-run.lock` that makes `apply` and `restore` refuse while `run` runs |
 | `screen/internal/supervisor/` | Starts, stops and restarts `run` inside Commander, and the apply pause |
 | `screen/internal/request/` | The `stop` and `reload` requests a running `run` answers (`kb7screen stop \| reload <folder>`) |
-| `screen/internal/access/` | Who owns the keyboard: the per-user lock and the run status reports |
+| `screen/internal/access/` | What the commands that use the keyboard share: the Swarm II check, opening the keyboard, the ledger of a folder |
 | `screen/internal/tray/` | The notification-area icon, menu, tooltip and balloons (Windows) |
 | `screen/internal/autostart/` | Start with Windows (the per-user Run key) |
 | `screen/internal/appdata/` | Settings (`%APPDATA%\Commander\settings.toml`) and the log (`%LOCALAPPDATA%\Commander\commander.log`) |
