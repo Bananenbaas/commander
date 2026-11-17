@@ -9,13 +9,13 @@ import (
 )
 
 func TestIsKB7(t *testing.T) {
-	if !isKB7(`\?\HID#VID_10F5&PID_5038&MI_00#7&abc&0&0000#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}`) {
+	if !isKB7(`\\?\HID#VID_10F5&PID_5038&MI_00#7&abc&0&0000#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}`) {
 		t.Error("KB7 not recognised")
 	}
-	if !isKB7(`\?\hid#vid_10f5&pid_5038&mi_02&col01#x`) {
+	if !isKB7(`\\?\hid#vid_10f5&pid_5038&mi_02&col01#x`) {
 		t.Error("case must not matter")
 	}
-	if isKB7(`\?\HID#VID_046D&PID_C31C&MI_00#x`) {
+	if isKB7(`\\?\HID#VID_046D&PID_C31C&MI_00#x`) {
 		t.Error("other keyboard accepted")
 	}
 }

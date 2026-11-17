@@ -102,8 +102,8 @@ type rawKeyboard struct {
 // listener is the state the window procedure works on. Only one Listen runs at
 // a time; a second call is refused.
 type listener struct {
-	out   chan Event
-	names map[uintptr]bool // device handle -> is the KB7
+	out      chan Event
+	isKB7Dev map[uintptr]bool // device handle -> is the KB7
 }
 
 var (
@@ -116,7 +116,7 @@ var (
 // the keys this program sends itself are not reported. The channel is closed
 // when ctx ends; events are dropped when the reader falls behind.
 func Listen(ctx context.Context) (<-chan Event, error) {
-	l := &listener{out: make(chan Event, chanSize), names: map[uintptr]bool{}}
+	l := &listener{out: make(chan Event, chanSize), isKB7Dev: map[uintptr]bool{}}
 	if !active.CompareAndSwap(nil, l) {
 		return nil, errors.New("the key reader is already running")
 	}
@@ -127,11 +127,13 @@ func Listen(ctx context.Context) (<-chan Event, error) {
 		err    error
 	}
 	ready := make(chan started, 1)
+	done := make(chan struct{}) // closed when the listener goroutine ends
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
-		defer active.Store(nil)
 		defer close(l.out)
+		defer active.Store(nil)
+		defer close(done)
 		thread := windows.GetCurrentThreadId()
 		cleanup, err := l.setup()
 		ready <- started{thread, err}
@@ -154,8 +156,11 @@ func Listen(ctx context.Context) (<-chan Event, error) {
 		return nil, s.err
 	}
 	go func() {
-		<-ctx.Done()
-		procPostThreadMessage.Call(uintptr(s.thread), wmQuit, 0, 0)
+		select {
+		case <-ctx.Done():
+			procPostThreadMessage.Call(uintptr(s.thread), wmQuit, 0, 0)
+		case <-done:
+		}
 	}()
 	return l.out, nil
 }
@@ -231,7 +236,7 @@ func (l *listener) handle(hRawInput uintptr) {
 
 // isKB7Handle looks up, once per device handle, whether it is the KB7.
 func (l *listener) isKB7Handle(h uintptr) bool {
-	if v, ok := l.names[h]; ok {
+	if v, ok := l.isKB7Dev[h]; ok {
 		return v
 	}
 	var n uint32
@@ -245,6 +250,6 @@ func (l *listener) isKB7Handle(h uintptr) bool {
 		return false
 	}
 	v := isKB7(windows.UTF16ToString(buf))
-	l.names[h] = v
+	l.isKB7Dev[h] = v
 	return v
 }
