@@ -338,8 +338,27 @@ Lights its keys in a colour while a named on/off state is on. Needs `keys`.
 A state is an on/off switch that lights keys, for example the landing gear.
 It is flipped by the key chord in `toggle`, which matches when its last key
 goes down while exactly its modifiers are held (`N` does not match LAlt+N). The
-keys before the last must be modifiers, so `toggle = "A+B"` is refused. Key-up
-and how long a key is held play no part.
+keys before the last must be modifiers, so `toggle = "A+B"` is refused. By
+default the state flips as the key goes down and how long it is held plays no
+part.
+
+With `hold` the state flips only when the toggle key is released after being
+held at least that long; a shorter press does nothing. The modifiers are
+checked when the key goes down. This suits a mode the game switches by holding
+a key, such as quantum travel on B (a short tap of B does something else). A
+key-up the keyboard never reported does not flip the state. A screen button
+still flips such a state at once, as it sends a tap, and switching profiles
+drops a press in progress. `hold` without `toggle` is refused.
+
+```toml
+[[light.layer]]
+effect = "state"
+name = "quantum"
+toggle = "B"
+hold = "400ms"
+keys = ["B"]
+color = "#40A0FF"
+```
 
 A button flips a state with `state = "gear"`; the name must be a `state` layer
 of the same profile's `[light]`, or the file is refused when it is loaded. With an `action` it sends the

@@ -122,6 +122,7 @@ func (e *Engine) Key(k action.Key, down bool, at time.Time) {
 		e.count++
 		e.prune(at)
 	}
+	e.dropPendingOf(k)
 	mods := map[action.Key]bool{}
 	for d := range e.down {
 		if d != k && modifiers[d] {
@@ -145,6 +146,18 @@ func (e *Engine) holdToggles(k action.Key, mods map[action.Key]bool, at time.Tim
 	}
 }
 
+// dropPendingOf forgets every pending hold whose trigger is k: a fresh down of
+// k means an earlier press of it lost its key-up.
+func (e *Engine) dropPendingOf(k action.Key) {
+	kept := e.pending[:0]
+	for _, h := range e.pending {
+		if h.trigger != k {
+			kept = append(kept, h)
+		}
+	}
+	e.pending = kept
+}
+
 func (e *Engine) dropPending(p byte, name string) {
 	for i, h := range e.pending {
 		if h.profile == p && h.name == name {
@@ -154,8 +167,8 @@ func (e *Engine) dropPending(p byte, name string) {
 	}
 }
 
-// release flips the hold toggles whose trigger k went up after being held
-// long enough, and forgets the presses of k.
+// release flips each pending hold toggle whose trigger is k if it was held at
+// least the toggle's hold time, and clears every pending press of k.
 func (e *Engine) release(k action.Key, at time.Time) {
 	kept := e.pending[:0]
 	for _, h := range e.pending {

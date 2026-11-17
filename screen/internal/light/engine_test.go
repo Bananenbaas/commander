@@ -453,3 +453,43 @@ func TestEngineHoldDroppedOnProfileSwitch(t *testing.T) {
 		t.Error("a press started before a profile switch flipped")
 	}
 }
+
+func TestEngineHoldLostKeyUpThenModifiedPress(t *testing.T) {
+	e := holdStack(t)
+	e.Key(action.B, true, at(time.Second)) // key-up lost
+	e.Key(action.LAlt, true, at(5*time.Second))
+	e.Key(action.B, true, at(5*time.Second)) // LAlt+B matches no toggle
+	e.Key(action.B, false, at(6*time.Second))
+	if lit(t, e, action.B, at(7*time.Second)) {
+		t.Error("a stale press flipped on the release of LAlt+B")
+	}
+}
+
+func TestEnginePlainAndHoldToggleOnOneKey(t *testing.T) {
+	hold := stateLayer("slow", "B", "off", "M", "#00FF00")
+	hold.Settings["hold"] = "400ms"
+	s := build(t, Config{Layers: []LayerConfig{
+		staticLayer("#000000"),
+		stateLayer("fast", "B", "off", "N", "#00FF00"),
+		hold,
+	}})
+	e := NewEngine(map[byte]*Stack{1: s}, engineStart)
+	e.SetActive(1)
+
+	e.Key(action.B, true, at(time.Second))
+	e.Key(action.B, false, at(time.Second+100*time.Millisecond))
+	if !lit(t, e, action.N, at(2*time.Second)) || lit(t, e, action.M, at(2*time.Second)) {
+		t.Error("a tap did not flip only the plain toggle")
+	}
+	e.Key(action.B, true, at(3*time.Second))
+	if lit(t, e, action.N, at(3*time.Second)) {
+		t.Error("the plain toggle did not flip on key-down")
+	}
+	if lit(t, e, action.M, at(3*time.Second)) {
+		t.Error("the hold toggle flipped on key-down")
+	}
+	e.Key(action.B, false, at(3*time.Second+500*time.Millisecond))
+	if !lit(t, e, action.M, at(4*time.Second)) {
+		t.Error("the hold toggle did not flip on key-up")
+	}
+}
