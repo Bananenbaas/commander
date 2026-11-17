@@ -41,7 +41,9 @@ func Select(profile, selector byte) []byte {
 
 // WidgetType builds the frame that sets the widget type and value of the
 // button at position, followed by the 16-bit byte sum of the first ten
-// bytes, little-endian.
+// bytes, little-endian. The frame names no profile and the keyboard queues
+// it, so it changes whichever profile is active when the keyboard gets to it;
+// kb7screen writes whole 0x25 tables instead and does not send it.
 func WidgetType(position, typ, value byte) []byte {
 	f := []byte{0x35, 0x0c, 0x01, position, 0x01, 0x00, typ, 0x00, value, 0x00}
 	s := Sum16(f)

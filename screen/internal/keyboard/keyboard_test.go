@@ -337,30 +337,27 @@ func TestEnableNotificationsTimeout(t *testing.T) {
 	}
 }
 
-func TestWriteTypeWaitsRemainder(t *testing.T) {
+func TestWriteTypesWaitsRemainder(t *testing.T) {
 	f := &device.Fake{}
 	kb, c := newTest(f)
 	tb, _ := proto.ParseTable29(blank29(0))
+	t25, _ := proto.ParseTable25(blank25(0))
 	if err := kb.WriteButtons(tb); err != nil {
 		t.Fatal(err)
 	}
 	c.t = c.t.Add(50 * time.Millisecond)
-	if err := kb.WriteType(2, proto.AppType); err != nil {
+	if err := kb.WriteTypes(t25); err != nil {
 		t.Fatal(err)
 	}
 	if len(c.sleeps) != 1 || c.sleeps[0] != 150*time.Millisecond {
 		t.Fatalf("sleeps %v", c.sleeps)
 	}
 	// 200 ms have now passed: no more waiting.
-	if err := kb.WriteType(3, proto.AppType); err != nil {
+	if err := kb.WriteTypes(t25); err != nil {
 		t.Fatal(err)
 	}
 	if len(c.sleeps) != 1 {
 		t.Fatalf("sleeps %v", c.sleeps)
-	}
-	want := proto.WidgetType(2, proto.AppType.Type, proto.AppType.Value)
-	if got := f.Features(); !bytes.Equal(got[1], want) {
-		t.Fatalf("%x", got[1])
 	}
 }
 
@@ -381,10 +378,11 @@ func TestWriteTypesWaits(t *testing.T) {
 	}
 }
 
-func TestWriteTypeWithoutButtonsDoesNotWait(t *testing.T) {
+func TestWriteTypesWithoutButtonsDoesNotWait(t *testing.T) {
 	f := &device.Fake{}
 	kb, c := newTest(f)
-	if err := kb.WriteType(1, proto.AppType); err != nil {
+	t25, _ := proto.ParseTable25(blank25(0))
+	if err := kb.WriteTypes(t25); err != nil {
 		t.Fatal(err)
 	}
 	if len(c.sleeps) != 0 {
@@ -486,5 +484,118 @@ func TestReadDisconnected(t *testing.T) {
 	kb, _ := newTest(f)
 	if _, err := kb.ReadButtons(0); !errors.Is(err, device.ErrDisconnected) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// switcher answers profile switches as the keyboard does: a switch to
+// another profile is confirmed, a switch to the active one is not.
+type switcher struct {
+	*device.Fake
+	active byte
+}
+
+func (s *switcher) SetFeature(b []byte) error {
+	err := s.Fake.SetFeature(b)
+	if len(b) == 4 && b[0] == 0x06 {
+		if p := b[2]; p != s.active {
+			s.active = p
+			s.Fake.QueueInput([]byte{0x03, 0x00, 0x01, p})
+		}
+	}
+	return err
+}
+
+func TestSwitchToTheActiveProfileIsNotConfirmed(t *testing.T) {
+	s := &switcher{Fake: &device.Fake{}, active: 2}
+	kb, _ := newTest(s)
+	if err := kb.SwitchProfile(2); !errors.Is(err, device.ErrTimeout) {
+		t.Fatalf("got %v, want a timeout", err)
+	}
+}
+
+func TestSwitchProfileFresh(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		active, p     byte
+		first, second byte
+	}{
+		{"to the active profile", 2, 2, 3, 2},
+		{"to another profile", 0, 2, 3, 2},
+		{"to the last profile", 4, 4, 0, 4},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s := &switcher{Fake: &device.Fake{}, active: c.active}
+			kb, _ := newTest(s)
+			if err := kb.SwitchProfileFresh(c.p); err != nil {
+				t.Fatal(err)
+			}
+			got := s.Fake.Features()
+			if len(got) != 2 || !bytes.Equal(got[0], proto.SwitchProfile(c.first)) || !bytes.Equal(got[1], proto.SwitchProfile(c.second)) {
+				t.Fatalf("frames %x", got)
+			}
+			if s.active != c.p {
+				t.Fatalf("profile %d is active, want %d", s.active, c.p)
+			}
+		})
+	}
+}
+
+func TestSwitchProfileFreshStopsWhenTheFirstSwitchFails(t *testing.T) {
+	f := &device.Fake{}
+	kb, _ := newTest(f)
+	if err := kb.SwitchProfileFresh(1); !errors.Is(err, device.ErrTimeout) {
+		t.Fatalf("got %v", err)
+	}
+	if got := f.Features(); len(got) != 1 || !bytes.Equal(got[0], proto.SwitchProfile(2)) {
+		t.Fatalf("frames %x", got)
+	}
+}
+
+func TestSwitchProfileFreshRefusesUnknownProfile(t *testing.T) {
+	f := &device.Fake{}
+	kb, _ := newTest(f)
+	if err := kb.SwitchProfileFresh(5); err == nil {
+		t.Fatal("no error")
+	}
+	if got := f.Features(); len(got) != 0 {
+		t.Fatalf("frames %x", got)
+	}
+}
+
+func TestWaitRedraw(t *testing.T) {
+	f := &device.Fake{}
+	f.QueueInput(
+		[]byte{0x03, 0x00, 0x31, 0x01, 0x03}, // one position: not the answer
+		[]byte{0x03, 0x00, 0x31, 0x20},
+	)
+	s := &spy{Fake: f}
+	kb, _ := newTest(s)
+	if err := kb.WaitRedraw(5 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if s.inputTimeouts[0] != 5*time.Second {
+		t.Fatalf("waited %v", s.inputTimeouts[0])
+	}
+}
+
+func TestWaitRedrawTimeout(t *testing.T) {
+	f := &device.Fake{}
+	f.QueueInput([]byte{0x03, 0x00, 0x31, 0x01, 0x03})
+	kb, _ := newTest(f)
+	if err := kb.WaitRedraw(5 * time.Second); !errors.Is(err, device.ErrTimeout) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestWriteTypesDropsOldInput(t *testing.T) {
+	f := &device.Fake{}
+	f.QueueInput([]byte{0x03, 0x00, 0x31, 0x20}) // an older redraw request
+	kb, _ := newTest(f)
+	t25, _ := proto.ParseTable25(blank25(1))
+	if err := kb.WriteTypes(t25); err != nil {
+		t.Fatal(err)
+	}
+	if err := kb.WaitRedraw(5 * time.Second); !errors.Is(err, device.ErrTimeout) {
+		t.Fatalf("the older redraw request was taken for the answer: %v", err)
 	}
 }

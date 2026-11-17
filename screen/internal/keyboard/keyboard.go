@@ -34,7 +34,8 @@ const (
 	writeGap       = 200 * time.Millisecond // after a 0x29 write before the next report
 	profileTimeout = 3 * time.Second
 	redrawTimeout  = 5 * time.Second
-	redrawAll      = 0x20 // Redraw view that follows enabling notifications
+	redrawAll      = 0x20 // Redraw view of the whole screen
+	profiles       = 5
 
 	namesID    = 0x16
 	namesLen   = 104
@@ -288,6 +289,20 @@ func (k *KB) SwitchProfile(p byte) error {
 	})
 }
 
+// SwitchProfileFresh makes p the active profile even when it already is: the
+// keyboard does not confirm a switch to the active profile, so it first
+// switches to the next profile and waits for that, then to p and waits for
+// that. Use it when the active profile is not known.
+func (k *KB) SwitchProfileFresh(p byte) error {
+	if p >= profiles {
+		return fmt.Errorf("keyboard: profile %d: profiles are 0 to %d", p, profiles-1)
+	}
+	if err := k.SwitchProfile((p + 1) % profiles); err != nil {
+		return err
+	}
+	return k.SwitchProfile(p)
+}
+
 // EnableNotifications switches touch notifications on and waits up to 5 s for
 // the keyboard's redraw request. Other events that arrive meanwhile are
 // discarded.
@@ -296,7 +311,15 @@ func (k *KB) EnableNotifications() error {
 	if err := k.d.SetFeature(proto.Notifications(true)); err != nil {
 		return fmt.Errorf("keyboard: enabling notifications: %w", err)
 	}
-	return k.waitFor(redrawTimeout, "redraw request", func(ev any) bool {
+	return k.WaitRedraw(redrawTimeout)
+}
+
+// WaitRedraw reads events until the keyboard asks for a redraw of the whole
+// screen, or timeout passes. The keyboard asks for it once notifications are
+// enabled and once it has taken over a written type table. Other events that
+// arrive meanwhile are discarded.
+func (k *KB) WaitRedraw(timeout time.Duration) error {
+	return k.waitFor(timeout, "redraw request", func(ev any) bool {
 		r, ok := ev.(proto.Redraw)
 		return ok && r.View == redrawAll
 	})
@@ -339,18 +362,18 @@ func (k *KB) settle() {
 	}
 }
 
-// WriteType sets the widget type of the button at pos.
-func (k *KB) WriteType(pos byte, te proto.TypeEntry) error {
-	k.settle()
-	if err := k.d.SetFeature(proto.WidgetType(pos, te.Type, te.Value)); err != nil {
-		return fmt.Errorf("keyboard: writing widget type: %w", err)
-	}
-	return nil
-}
-
-// WriteTypes writes a whole widget type table.
+// WriteTypes writes a whole widget type table. The keyboard takes it over
+// some time later and then asks for a redraw of the whole screen; until it
+// has, a profile switch may move the change to the profile switched to, so
+// the caller waits with WaitRedraw. (The per-position type report 0x35 is not
+// sent: it names no profile and is queued in the same way.) Input that is already queued
+// is dropped first, so that an older redraw request is not taken for the
+// keyboard's answer to this table; see WaitRedraw.
 func (k *KB) WriteTypes(t *proto.Table25) error {
 	k.settle()
+	if err := k.drainInput(); err != nil {
+		return err
+	}
 	if err := k.d.SetFeature(t.Bytes()); err != nil {
 		return fmt.Errorf("keyboard: writing type table: %w", err)
 	}

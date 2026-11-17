@@ -25,8 +25,14 @@ import (
 )
 
 // fakeKB models the keyboard: a 0x29 and a 0x25 table per profile, the
-// picture slots, the active profile and the input waiting to be read. Writes
-// go to the active profile, and every call but NextEvent is recorded.
+// picture slots, the active profile and the input waiting to be read. Every
+// call but NextEvent is recorded.
+//
+// A 0x29 table goes to the profile it names, which must be active. Type
+// writes are queued, as the keyboard queues them: each changes the profile
+// that is active when the fake gets to it, which is at the next switch (after
+// the switch has taken effect), table read or redraw wait. A redraw wait
+// succeeds once a queued type table was taken over since the last one.
 type fakeKB struct {
 	t         *testing.T
 	b29       map[byte]*proto.Table29
@@ -40,6 +46,24 @@ type fakeKB struct {
 	hook      func(call string)     // called with every recorded call
 	uploadErr func(slot byte) error // after the upload is recorded
 	switchErr func(p byte) error
+	redrawErr error // returned by WaitRedraw instead of the redraw
+
+	queue  []func(p byte) error // type writes not yet taken over
+	redraw bool                 // a type table was taken over since the last redraw wait
+}
+
+// process takes the queued type writes over into the active profile.
+func (f *fakeKB) process() {
+	for _, w := range f.queue {
+		if f.active < 0 {
+			f.t.Error("fake: widget type taken over before a profile switch")
+			continue
+		}
+		if err := w(byte(f.active)); err != nil {
+			f.t.Error(err)
+		}
+	}
+	f.queue = nil
 }
 
 var (
@@ -103,7 +127,7 @@ func (f *fakeKB) record(format string, args ...any) {
 func (f *fakeKB) switches(n int) int {
 	count := 0
 	for _, c := range f.calls[n:] {
-		if strings.HasPrefix(c, "switch ") {
+		if strings.HasPrefix(c, "switch ") || strings.HasPrefix(c, "fresh ") {
 			count++
 		}
 	}
@@ -131,8 +155,20 @@ func (f *fakeKB) EnableNotifications() error {
 }
 
 // SwitchProfile drops the waiting input first, as the keyboard package does.
+// A switch to the active profile is not confirmed, as on the keyboard.
 func (f *fakeKB) SwitchProfile(p byte) error {
 	f.record("switch %d", p)
+	return f.doSwitch(p, false)
+}
+
+// SwitchProfileFresh goes through another profile, so it is confirmed even
+// when p is already active.
+func (f *fakeKB) SwitchProfileFresh(p byte) error {
+	f.record("fresh %d", p)
+	return f.doSwitch(p, true)
+}
+
+func (f *fakeKB) doSwitch(p byte, fresh bool) error {
 	f.events = nil
 	if !f.notified {
 		return errors.New("fake: no profile notification without 0x0e")
@@ -142,7 +178,25 @@ func (f *fakeKB) SwitchProfile(p byte) error {
 			return err
 		}
 	}
+	if !fresh && f.active == int(p) {
+		return fmt.Errorf("fake: switch to the active profile %d not confirmed: %w", p, device.ErrTimeout)
+	}
 	f.active = int(p)
+	f.process()
+	return nil
+}
+
+func (f *fakeKB) WaitRedraw(time.Duration) error {
+	f.record("redraw %d", f.active)
+	if f.redrawErr != nil {
+		return f.redrawErr
+	}
+	f.process()
+	f.events = nil
+	if !f.redraw {
+		return fmt.Errorf("fake: no redraw: %w", device.ErrTimeout)
+	}
+	f.redraw = false
 	return nil
 }
 
@@ -161,11 +215,13 @@ func (f *fakeKB) NextEvent(time.Duration) (any, error) {
 
 func (f *fakeKB) ReadButtons(p byte) (*proto.Table29, error) {
 	f.record("read29 %d", p)
+	f.process()
 	return proto.ParseTable29(f.b29[p].Bytes())
 }
 
 func (f *fakeKB) ReadTypes(p byte) (*proto.Table25, error) {
 	f.record("read25 %d", p)
+	f.process()
 	return proto.ParseTable25(f.b25[p].Bytes())
 }
 
@@ -196,24 +252,31 @@ func (f *fakeKB) WriteButtons(t *proto.Table29) error {
 	return nil
 }
 
+// WriteType is the per-position type report (0x35), which apply no longer
+// sends; the fake keeps it to show why. It names no profile and is queued.
 func (f *fakeKB) WriteType(pos byte, te proto.TypeEntry) error {
 	f.record("type %d", pos)
-	if f.active < 0 {
-		return errors.New("fake: widget type written before a profile switch")
-	}
-	return f.b25[byte(f.active)].SetType(int(pos), te)
+	f.queue = append(f.queue, func(p byte) error { return f.b25[p].SetType(int(pos), te) })
+	return nil
 }
 
+// WriteTypes queues a whole type table; the types it holds go to the profile
+// active when the fake takes it over.
 func (f *fakeKB) WriteTypes(t *proto.Table25) error {
 	f.record("write25 %d", t.Profile())
-	if int(t.Profile()) != f.active {
-		return fmt.Errorf("fake: type table of profile %d written while %d is active", t.Profile(), f.active)
-	}
 	c, err := proto.ParseTable25(t.Bytes())
 	if err != nil {
 		return err
 	}
-	f.b25[t.Profile()] = c
+	f.queue = append(f.queue, func(p byte) error {
+		for i := 0; i < 38; i++ {
+			if err := f.b25[p].SetType(i, c.Type(i)); err != nil {
+				return err
+			}
+		}
+		f.redraw = true
+		return nil
+	})
 	return nil
 }
 
@@ -307,9 +370,9 @@ func TestApplyOrder(t *testing.T) {
 	rep := mustApply(t, f, cfg, l, false)
 
 	checkCalls(t, f, 0, "notify, "+
-		"switch 0, read29 0, read25 0, switch 1, read29 1, read25 1, "+
-		"switch 0, upload 1, write29 0, type 0, "+
-		"switch 1, upload 2, upload 3, write29 1, type 3, type 4, "+
+		"fresh 0, read29 0, read25 0, switch 1, read29 1, read25 1, "+
+		"switch 0, upload 1, write29 0, write25 0, redraw 0, "+
+		"switch 1, upload 2, upload 3, write29 1, write25 1, redraw 1, "+
 		"switch 0")
 	checkEntry(t, f, 0, 0, proto.AppEntry(1, ""))
 	checkEntry(t, f, 1, 3, proto.AppEntry(2, ""))
@@ -341,15 +404,15 @@ func TestSavePoints(t *testing.T) {
 	// The originals are saved before anything is overwritten, and the
 	// slots after every profile.
 	checkCalls(t, f, 0, "notify, "+
-		"switch 0, read29 0, read25 0, switch 1, read29 1, read25 1, save, "+
-		"switch 0, upload 1, write29 0, type 0, save, "+
-		"switch 1, upload 2, write29 1, type 3, save, "+
+		"fresh 0, read29 0, read25 0, switch 1, read29 1, read25 1, save, "+
+		"switch 0, upload 1, write29 0, write25 0, redraw 0, save, "+
+		"switch 1, upload 2, write29 1, write25 1, redraw 1, save, "+
 		"switch 0")
 	n := len(f.calls)
 	if _, err := Restore(context.Background(), f, l, 1, f.save); err != nil {
 		t.Fatal(err)
 	}
-	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, write29 1, write25 1, save")
+	checkCalls(t, f, n, "notify, fresh 1, read29 1, read25 1, write29 1, write25 1, redraw 1, save")
 }
 
 func TestSaveErrorStops(t *testing.T) {
@@ -361,14 +424,14 @@ func TestSaveErrorStops(t *testing.T) {
 	if _, err := Apply(context.Background(), f, cfg, l, false, nothingRuns, failing); !errors.Is(err, disk) {
 		t.Fatalf("err = %v, want the save error", err)
 	}
-	checkCalls(t, f, 0, "notify, switch 1, read29 1, read25 1, save")
+	checkCalls(t, f, 0, "notify, fresh 1, read29 1, read25 1, save")
 
 	mustApply(t, f, cfg, l, false)
 	n := len(f.calls)
 	if _, err := Restore(context.Background(), f, l, 1, failing); !errors.Is(err, disk) {
 		t.Fatalf("Restore err = %v, want the save error", err)
 	}
-	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, write29 1, write25 1, save")
+	checkCalls(t, f, n, "notify, fresh 1, read29 1, read25 1, write29 1, write25 1, redraw 1, save")
 }
 
 func TestLabelIsWritten(t *testing.T) {
@@ -402,7 +465,7 @@ func TestUnchangedSecondApply(t *testing.T) {
 	mustApply(t, f, cfg, l, false)
 	n := len(f.calls)
 	rep := mustApply(t, f, cfg, l, false)
-	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1")
+	checkCalls(t, f, n, "notify, fresh 1, read29 1, read25 1")
 	sameOwners(t, "Uploaded", rep.Uploaded, nil)
 	sameOwners(t, "Skipped", rep.Skipped, []ledger.Owner{own(1, 3), own(1, 4)})
 	if len(rep.Notes) != 0 {
@@ -417,7 +480,7 @@ func TestFullUploadsEverything(t *testing.T) {
 	mustApply(t, f, cfg, l, false)
 	n := len(f.calls)
 	rep := mustApply(t, f, cfg, l, true)
-	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, upload 1, upload 2, type 3, type 4")
+	checkCalls(t, f, n, "notify, fresh 1, read29 1, read25 1, upload 1, upload 2, write25 1, redraw 1")
 	sameOwners(t, "Uploaded", rep.Uploaded, []ledger.Owner{own(1, 3), own(1, 4)})
 	// The ledger knows the pictures again afterwards.
 	n = len(f.calls)
@@ -432,8 +495,8 @@ func TestIdenticalPicturesShareSlot(t *testing.T) {
 	l := &ledger.Ledger{}
 	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "Same"), btn(5, "Same"), btn(4, "Other")))
 	rep := mustApply(t, f, cfg, l, false)
-	checkCalls(t, f, 0, "notify, switch 1, read29 1, read25 1, "+
-		"upload 1, upload 2, write29 1, type 3, type 4, type 5")
+	checkCalls(t, f, 0, "notify, fresh 1, read29 1, read25 1, "+
+		"upload 1, upload 2, write29 1, write25 1, redraw 1")
 	checkEntry(t, f, 1, 3, proto.AppEntry(1, ""))
 	checkEntry(t, f, 1, 4, proto.AppEntry(2, ""))
 	checkEntry(t, f, 1, 5, proto.AppEntry(1, ""))
@@ -451,8 +514,8 @@ func TestSlotSharedAcrossProfilesIsRedrawn(t *testing.T) {
 	mustApply(t, f, cfg, l, true)
 	// Slot 1 is sent once, in profile 0; profile 1 shows it too and is
 	// redrawn.
-	checkCalls(t, f, n, "notify, switch 0, read29 0, read25 0, switch 1, read29 1, read25 1, "+
-		"switch 0, upload 1, type 0, switch 1, type 3, switch 0")
+	checkCalls(t, f, n, "notify, fresh 0, read29 0, read25 0, switch 1, read29 1, read25 1, "+
+		"switch 0, upload 1, write25 0, redraw 0, switch 1, write25 1, redraw 1, switch 0")
 }
 
 // swarmEntry is what Swarm II leaves at a position it does not know.
@@ -468,7 +531,7 @@ func TestPositionChangedBySwarm(t *testing.T) {
 	}
 	n := len(f.calls)
 	rep := mustApply(t, f, cfg, l, false)
-	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, upload 1, write29 1, type 3")
+	checkCalls(t, f, n, "notify, fresh 1, read29 1, read25 1, upload 1, write29 1, write25 1, redraw 1")
 	checkEntry(t, f, 1, 3, proto.AppEntry(1, ""))
 	sameOwners(t, "Uploaded", rep.Uploaded, []ledger.Owner{own(1, 3)})
 	sameOwners(t, "Skipped", rep.Skipped, []ledger.Owner{own(1, 4)})
@@ -489,7 +552,7 @@ func TestPositionChangedBySwarmSharedSlot(t *testing.T) {
 	mustApply(t, f, cfg, l, false)
 	// The slot may have been reused, so it is sent again once, and both
 	// positions that show it are redrawn.
-	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, upload 1, write29 1, type 3, type 5")
+	checkCalls(t, f, n, "notify, fresh 1, read29 1, read25 1, upload 1, write29 1, write25 1, redraw 1")
 	checkEntry(t, f, 1, 5, proto.AppEntry(1, ""))
 }
 
@@ -507,8 +570,8 @@ func TestSharedSlotIsNotTakenFromAnotherProfile(t *testing.T) {
 	}
 	// Profile 0 keeps slot 1 and, as its content is no longer trusted, sends
 	// it again; profile 1's new picture gets a slot of its own.
-	checkCalls(t, f, n, "notify, switch 0, read29 0, read25 0, switch 1, read29 1, read25 1, "+
-		"switch 0, upload 1, type 0, switch 1, upload 2, write29 1, type 3, switch 0")
+	checkCalls(t, f, n, "notify, fresh 0, read29 0, read25 0, switch 1, read29 1, read25 1, "+
+		"switch 0, upload 1, write25 0, redraw 0, switch 1, upload 2, write29 1, write25 1, redraw 1, switch 0")
 }
 
 func TestFirstTakeoverRecordsOriginal(t *testing.T) {
@@ -536,7 +599,7 @@ func TestRemovedButtonGetsOriginalBack(t *testing.T) {
 	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(4, "Two"))), l, false)
 	n := len(f.calls)
 	rep := mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"))), l, false)
-	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, write29 1, write25 1")
+	checkCalls(t, f, n, "notify, fresh 1, read29 1, read25 1, write29 1, write25 1, redraw 1")
 	checkEntry(t, f, 1, 4, keyEntry(4))
 	checkType(t, f, 1, 4, keyType(4))
 	checkEntry(t, f, 1, 3, proto.AppEntry(1, ""))
@@ -604,8 +667,8 @@ func TestRemovedProfileGetsOriginalsBack(t *testing.T) {
 	), l, false)
 	n := len(f.calls)
 	rep := mustApply(t, f, cfgOf(prof(0, "desktop.toml", "", btn(0, "Zero"))), l, false)
-	checkCalls(t, f, n, "notify, switch 0, read29 0, read25 0, "+
-		"switch 2, read29 2, read25 2, write29 2, write25 2, switch 0")
+	checkCalls(t, f, n, "notify, fresh 0, read29 0, read25 0, "+
+		"switch 2, read29 2, read25 2, write29 2, write25 2, redraw 2, switch 0")
 	checkEntry(t, f, 2, 3, keyEntry(3))
 	checkType(t, f, 2, 3, keyType(3))
 	sameOwners(t, "Restored", rep.Restored, []ledger.Owner{own(2, 3)})
@@ -706,18 +769,18 @@ func TestSwitchAgainAfterAProfileChange(t *testing.T) {
 		want  string
 	}{
 		{"changed on the keyboard", func(f *fakeKB) { f.userSwitch(0) },
-			"notify, switch 1, read29 1, read25 1, switch 1, upload 1, write29 1, type 3"},
+			"notify, fresh 1, read29 1, read25 1, switch 1, upload 1, write29 1, write25 1, redraw 1"},
 		{"changed there and back", func(f *fakeKB) { f.userSwitch(3); f.userSwitch(1) },
-			"notify, switch 1, read29 1, read25 1, upload 1, write29 1, type 3"},
+			"notify, fresh 1, read29 1, read25 1, upload 1, write29 1, write25 1, redraw 1"},
 		{"other input only", func(f *fakeKB) { f.events = append(f.events, proto.Redraw{View: 0x20}) },
-			"notify, switch 1, read29 1, read25 1, upload 1, write29 1, type 3"},
+			"notify, fresh 1, read29 1, read25 1, upload 1, write29 1, write25 1, redraw 1"},
 		{"input unreadable", func(f *fakeKB) { f.eventErr = errors.New("read failed") },
-			"notify, switch 1, read29 1, read25 1, switch 1, upload 1, write29 1, type 3"},
+			"notify, fresh 1, read29 1, read25 1, fresh 1, upload 1, write29 1, write25 1, redraw 1"},
 		{"too much input", func(f *fakeKB) {
 			for range maxEvents {
 				f.events = append(f.events, proto.Redraw{View: 0x20})
 			}
-		}, "notify, switch 1, read29 1, read25 1, switch 1, upload 1, write29 1, type 3"},
+		}, "notify, fresh 1, read29 1, read25 1, fresh 1, upload 1, write29 1, write25 1, redraw 1"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -833,7 +896,7 @@ func TestUploadLeftOpenStops(t *testing.T) {
 	if !strings.Contains(err.Error(), "unplug") || !strings.Contains(err.Error(), "position 4") {
 		t.Errorf("error %q lost the advice or the position", err)
 	}
-	checkCalls(t, f, 0, "notify, switch 1, read29 1, read25 1, upload 1, upload 2")
+	checkCalls(t, f, 0, "notify, fresh 1, read29 1, read25 1, upload 1, upload 2")
 	// The position stays managed, and its slot is not trusted.
 	if s, ok := l.SlotOf(own(1, 4)); !ok || s != 2 {
 		t.Errorf("SlotOf(position 4) = %d, %v; want 2, true", s, ok)
@@ -898,7 +961,7 @@ func TestErrorAfterAnUploadDistrustsUploadedSlots(t *testing.T) {
 	n := len(f.calls)
 	mustApply(t, f, cfg, l, false)
 	got := f.since(n)
-	if strings.Count(got, "upload") != 2 || !strings.Contains(got, "type 3") || !strings.Contains(got, "type 4") {
+	if strings.Count(got, "upload") != 2 || !strings.Contains(got, "write25 1, redraw 1") {
 		t.Fatalf("second apply: %s, want both pictures uploaded and both positions redrawn", got)
 	}
 }
@@ -945,7 +1008,7 @@ func TestSwitchFailureBeforeUploadIsNotTrusted(t *testing.T) {
 	if _, err := Apply(context.Background(), f, cfg, l, true, nothingRuns, nil); !errors.Is(err, timeout) {
 		t.Fatalf("err = %v, want the switch error", err)
 	}
-	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, switch 1")
+	checkCalls(t, f, n, "notify, fresh 1, read29 1, read25 1, switch 1")
 	// Slot 1 was to be sent again but was not, while position 3 shows it:
 	// the next apply sends it.
 	f.switchErr, f.hook = nil, nil
@@ -1021,6 +1084,105 @@ func TestPictureAndSymbolFiles(t *testing.T) {
 	}
 }
 
+// The per-position type report names no profile and is queued: a switch
+// sent right after it moves the change to the other profile. This is what
+// the keyboard did with apply's earlier sequence.
+func TestQueuedTypeWriteFollowsTheSwitch(t *testing.T) {
+	f := newFake(t)
+	f.notified = true
+	if err := f.SwitchProfile(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.WriteType(3, proto.AppType); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SwitchProfile(0); err != nil {
+		t.Fatal(err)
+	}
+	checkType(t, f, 0, 3, proto.AppType)
+	checkType(t, f, 1, 3, keyType(3))
+}
+
+// Apply writes each profile's type table and waits for the redraw before
+// anything else is sent, so every change stays on its own profile.
+func TestTypeTableIsTakenOverBeforeTheNextSwitch(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	mustApply(t, f, cfgOf(prof(0, "desktop.toml", "", btn(0, "Zero")), prof(2, "sc.toml", "", btn(3, "One"), btn(4, "Two"))), l, false)
+	// Profile 2 loses a button and profile 1 gains one: a restore in the
+	// first pass and two type tables in the second.
+	cfg := cfgOf(prof(0, "desktop.toml", "", btn(0, "Zero")), prof(1, "a.toml", "", btn(5, "Five")), prof(2, "sc.toml", "", btn(3, "One")))
+	n := len(f.calls)
+	mustApply(t, f, cfg, l, false)
+	calls := f.calls[n:]
+	for i, c := range calls {
+		if p, ok := strings.CutPrefix(c, "write25 "); ok {
+			if i+1 >= len(calls) || calls[i+1] != "redraw "+p {
+				t.Fatalf("%s is not followed by the redraw wait: %s", c, f.since(n))
+			}
+		}
+	}
+	if !strings.Contains(f.since(n), "write25 2, redraw 2") || !strings.Contains(f.since(n), "write25 1, redraw 1") {
+		t.Fatalf("calls: %s", f.since(n))
+	}
+	if strings.Contains(f.since(n), "type ") {
+		t.Fatalf("a per-position type report was sent: %s", f.since(n))
+	}
+	checkType(t, f, 0, 0, proto.AppType)
+	checkType(t, f, 0, 5, keyType(5))
+	checkType(t, f, 1, 5, proto.AppType)
+	checkType(t, f, 1, 0, keyType(0))
+	checkType(t, f, 2, 3, proto.AppType)
+	checkType(t, f, 2, 4, keyType(4))
+	checkType(t, f, 2, 5, keyType(5))
+	shows(t, f, 1, 5, "Five")
+}
+
+func TestRedrawTimeoutStopsBeforeTheNextSwitch(t *testing.T) {
+	f := newFake(t)
+	f.redrawErr = fmt.Errorf("keyboard: waiting for the redraw request: %w", device.ErrTimeout)
+	l := &ledger.Ledger{}
+	cfg := cfgOf(prof(0, "desktop.toml", "", btn(0, "Zero")), prof(1, "sc.toml", "", btn(3, "One")))
+	_, err := Apply(context.Background(), f, cfg, l, false, nothingRuns, nil)
+	if !errors.Is(err, device.ErrTimeout) || !strings.Contains(err.Error(), "profile 0") {
+		t.Fatalf("err = %v, want the redraw timeout of profile 0", err)
+	}
+	checkCalls(t, f, 0, "notify, fresh 0, read29 0, read25 0, switch 1, read29 1, read25 1, "+
+		"switch 0, upload 1, write29 0, write25 0, redraw 0")
+	// The next apply writes the tables again.
+	f.redrawErr = nil
+	f.process()
+	n := len(f.calls)
+	mustApply(t, f, cfg, l, false)
+	if got := f.since(n); !strings.Contains(got, "write25 0, redraw 0") {
+		t.Fatalf("type table of profile 0 not written again: %s", got)
+	}
+	shows(t, f, 0, 0, "Zero")
+	shows(t, f, 1, 3, "One")
+}
+
+// The first switch goes through another profile, so it is confirmed when the
+// keyboard is already on the profile.
+func TestFirstSwitchToTheActiveProfile(t *testing.T) {
+	f := newFake(t)
+	f.active = 1
+	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"))), &ledger.Ledger{}, false)
+	shows(t, f, 1, 3, "One")
+	if _, err := Restore(context.Background(), f, &ledger.Ledger{}, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRestoreRedrawTimeoutKeepsPositionsManaged(t *testing.T) {
+	f, l, _ := restoreSetup(t, "Home")
+	f.redrawErr = fmt.Errorf("keyboard: waiting for the redraw request: %w", device.ErrTimeout)
+	if _, err := Restore(context.Background(), f, l, 1, nil); !errors.Is(err, device.ErrTimeout) {
+		t.Fatalf("err = %v, want the redraw timeout", err)
+	}
+	checkCalls(t, f, 0, "notify, fresh 1, read29 1, read25 1, write29 1, write25 1, redraw 1")
+	sameOwners(t, "Owners(1)", l.Owners(1), []ledger.Owner{own(1, 3), own(1, 4)})
+}
+
 func TestKeyboardErrorStops(t *testing.T) {
 	f := newFake(t)
 	l := &ledger.Ledger{}
@@ -1031,7 +1193,7 @@ func TestKeyboardErrorStops(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "profile 1") {
 		t.Fatalf("err = %v", err)
 	}
-	checkCalls(t, f, 0, "switch 1")
+	checkCalls(t, f, 0, "fresh 1")
 }
 
 // noNotify drops EnableNotifications, so the following switch fails.
@@ -1069,7 +1231,7 @@ func TestRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkCalls(t, f, 0, "notify, switch 1, read29 1, read25 1, write29 1, write25 1")
+	checkCalls(t, f, 0, "notify, fresh 1, read29 1, read25 1, write29 1, write25 1, redraw 1")
 	checkEntry(t, f, 1, 3, orig.Entry)
 	checkType(t, f, 1, 3, orig.Type)
 	checkEntry(t, f, 1, 4, proto.Entry29{})
@@ -1186,7 +1348,7 @@ func TestStopAfterTheFirstPicture(t *testing.T) {
 	wantStopped(t, err)
 	// The picture being sent is finished, no other is started, and the
 	// position that shows it is written.
-	checkCalls(t, f, 0, "notify, switch 1, read29 1, read25 1, save, upload 1, write29 1, type 3")
+	checkCalls(t, f, 0, "notify, fresh 1, read29 1, read25 1, save, upload 1, write29 1, write25 1, redraw 1")
 	shows(t, f, 1, 3, "One")
 	for _, pos := range []int{4, 5} {
 		checkEntry(t, f, 1, pos, keyEntry(pos))
@@ -1202,7 +1364,7 @@ func TestStopAfterTheFirstPicture(t *testing.T) {
 	f.hook = nil
 	n := len(f.calls)
 	rep = mustApply(t, f, cfg, l, false)
-	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, upload 2, upload 3, write29 1, type 4, type 5")
+	checkCalls(t, f, n, "notify, fresh 1, read29 1, read25 1, upload 2, upload 3, write29 1, write25 1, redraw 1")
 	sameOwners(t, "Skipped", rep.Skipped, []ledger.Owner{own(1, 3)})
 	shows(t, f, 1, 3, "One")
 	shows(t, f, 1, 4, "Two")
@@ -1214,11 +1376,11 @@ func TestStopBetweenProfiles(t *testing.T) {
 	cases := []struct {
 		name, at, want string
 	}{
-		{"first pass", "read25 0", "notify, switch 0, read29 0, read25 0"},
-		{"second pass", "type 0", "notify, switch 0, read29 0, read25 0, switch 1, read29 1, read25 1, " +
-			"switch 0, upload 1, write29 0, type 0"},
-		{"before the final switch", "type 3", "notify, switch 0, read29 0, read25 0, switch 1, read29 1, read25 1, " +
-			"switch 0, upload 1, write29 0, type 0, switch 1, upload 2, write29 1, type 3"},
+		{"first pass", "read25 0", "notify, fresh 0, read29 0, read25 0"},
+		{"second pass", "redraw 0", "notify, fresh 0, read29 0, read25 0, switch 1, read29 1, read25 1, " +
+			"switch 0, upload 1, write29 0, write25 0, redraw 0"},
+		{"before the final switch", "redraw 1", "notify, fresh 0, read29 0, read25 0, switch 1, read29 1, read25 1, " +
+			"switch 0, upload 1, write29 0, write25 0, redraw 0, switch 1, upload 2, write29 1, write25 1, redraw 1"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1270,10 +1432,10 @@ func TestStopDistrustsSlotsOfPendingPositions(t *testing.T) {
 		want string
 	}{
 		{"same profile", cfgOf(prof(1, "sc.toml", "", btn(3, "Same"), btn(5, "Same"))), "upload 1",
-			"notify, switch 1, read29 1, read25 1, upload 1, type 3, type 5"},
-		{"later profile", cfgOf(prof(0, "desktop.toml", "", btn(0, "X")), prof(1, "sc.toml", "", btn(3, "X"))), "type 0",
-			"notify, switch 0, read29 0, read25 0, switch 1, read29 1, read25 1, " +
-				"switch 0, upload 1, type 0, switch 1, type 3, switch 0"},
+			"notify, fresh 1, read29 1, read25 1, upload 1, write25 1, redraw 1"},
+		{"later profile", cfgOf(prof(0, "desktop.toml", "", btn(0, "X")), prof(1, "sc.toml", "", btn(3, "X"))), "redraw 0",
+			"notify, fresh 0, read29 0, read25 0, switch 1, read29 1, read25 1, " +
+				"switch 0, upload 1, write25 0, redraw 0, switch 1, write25 1, redraw 1, switch 0"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -36,13 +36,14 @@ import (
 type Keyboard interface {
 	EnableNotifications() error
 	SwitchProfile(p byte) error
+	SwitchProfileFresh(p byte) error
 	NextEvent(timeout time.Duration) (any, error)
 	ReadButtons(p byte) (*proto.Table29, error)
 	ReadTypes(p byte) (*proto.Table25, error)
 	Upload(slot byte, data []byte) error
 	WriteButtons(t *proto.Table29) error
-	WriteType(pos byte, te proto.TypeEntry) error
 	WriteTypes(t *proto.Table25) error
+	WaitRedraw(timeout time.Duration) error
 }
 
 // ErrStopped is returned, wrapping the context's error, when Apply or Restore
@@ -72,13 +73,15 @@ const (
 	noProfile = -1               // the active profile is not known
 	eventWait = time.Millisecond // longest wait for one report of waiting input
 	maxEvents = 64               // most waiting reports read before a switch is left out
+
+	redrawTimeout = 5 * time.Second // wait for the redraw that follows a type table
 )
 
 // session is the keyboard during one Apply or Restore. It remembers the
 // profile the keyboard last confirmed, so that a switch to the profile that
-// is already active is not sent: whether the keyboard confirms such a switch
-// is not measured. The first switch is always sent, as the active profile
-// cannot be read.
+// is already active is not sent: the keyboard does not confirm such a switch.
+// While the active profile is not known, as at the first switch, the switch
+// goes through another profile first (SwitchProfileFresh).
 type session struct {
 	kb     Keyboard
 	active int // the profile the keyboard last confirmed, or noProfile
@@ -96,8 +99,15 @@ func (s *session) switchTo(p byte) error {
 			return nil
 		}
 	}
+	known := s.active != noProfile
 	s.active = noProfile
-	if err := s.kb.SwitchProfile(p); err != nil {
+	var err error
+	if known {
+		err = s.kb.SwitchProfile(p)
+	} else {
+		err = s.kb.SwitchProfileFresh(p)
+	}
+	if err != nil {
 		return fmt.Errorf("profile %d: %w", p, err)
 	}
 	s.active = int(p)
@@ -134,7 +144,8 @@ type job struct {
 }
 
 // tables are a profile's tables as read in the first pass, with the
-// restored positions already written into them.
+// restored positions already written into them. The second pass writes the
+// whole type table back, so the restored positions keep their originals.
 type tables struct {
 	t29 *proto.Table29
 	t25 *proto.Table25
@@ -154,9 +165,12 @@ func where(o ledger.Owner) string {
 // back, records the originals of positions taken over for the first time and
 // stops trusting the slot of a position that no longer shows it. The second
 // pass assigns slots, sends the pictures and writes the tables, profile by
-// profile. Removed positions have freed their slots before any is assigned,
-// and a slot shared with a lower profile is never given to another picture
-// while that profile still shows it. With full, every picture is sent again.
+// profile: the 0x29 table if an entry changed, then the whole 0x25 table,
+// after which Apply waits for the keyboard's redraw before it switches to
+// another profile. Removed positions have freed their slots before any is
+// assigned, and a slot shared with a lower profile is never given to another
+// picture while that profile still shows it. With full, every picture is sent
+// again.
 //
 // When it succeeds, Apply ends on the profile the run command would choose:
 // the first one whose program is running, otherwise the desktop profile.
@@ -420,8 +434,9 @@ func prepare(s *session, l *ledger.Ledger, p byte, jobs []job, rep *Report) (tab
 
 // send is the second pass over one profile: it assigns the slots, sends the
 // pictures that are not in them, writes the 0x29 table once if an entry
-// changed and the type of every position to redraw. It switches to the
-// profile only when there is something to send. uploaded collects the slots
+// changed and the whole 0x25 table when a position is to be redrawn. It
+// switches to the profile only when there is something to send. uploaded
+// collects the slots
 // sent during this Apply, so every position showing one is redrawn.
 //
 // Once ctx is cancelled, send takes no further job, writes the tables for
@@ -467,11 +482,19 @@ func send(ctx context.Context, s *session, l *ledger.Ledger, p byte, jobs []job,
 }
 
 // write is the end of send: it writes the 0x29 table once if the entry of a
-// job changed, and then the type of every job's position to redraw. Nothing
-// stops it half way but a keyboard error.
+// job changed, and then the whole 0x25 table, with every job's position an
+// application button and every other position as read, if a position is to
+// be redrawn: its entry or type changed, or the slot it shows was sent in
+// this Apply. The keyboard redraws once it has taken the 0x25 table over;
+// write waits for that, so that no later switch moves a queued change to
+// another profile. Nothing stops it half way but a keyboard error.
+//
+// The per-position type report (0x35) is not used: it names no profile and
+// the keyboard queues it, so a switch sent after it can change the wrong
+// profile.
 func write(s *session, p byte, jobs []job, slots []byte, t tables, uploaded map[byte]bool) error {
 	changed := false
-	var redraw []byte
+	redraw := false
 	for i, j := range jobs {
 		pos := j.o.Position
 		want := proto.AppEntry(slots[i], j.b.Label)
@@ -482,11 +505,17 @@ func write(s *session, p byte, jobs []job, slots []byte, t tables, uploaded map[
 			}
 			changed = true
 		}
-		if entryChanged || t.t25.Type(pos) != proto.AppType || uploaded[slots[i]] {
-			redraw = append(redraw, byte(pos))
+		if t.t25.Type(pos) != proto.AppType {
+			if err := t.t25.SetType(pos, proto.AppType); err != nil {
+				return fmt.Errorf("%s: %w", where(j.o), err)
+			}
+			redraw = true
+		}
+		if entryChanged || uploaded[slots[i]] {
+			redraw = true
 		}
 	}
-	if len(redraw) == 0 {
+	if !redraw {
 		return nil
 	}
 	if err := s.switchTo(p); err != nil {
@@ -497,10 +526,22 @@ func write(s *session, p byte, jobs []job, slots []byte, t tables, uploaded map[
 			return fmt.Errorf("profile %d: %w", p, err)
 		}
 	}
-	for _, pos := range redraw {
-		if err := s.kb.WriteType(pos, proto.AppType); err != nil {
-			return fmt.Errorf("profile %d position %d: %w", p, pos, err)
-		}
+	if err := writeTypes(s.kb, t.t25); err != nil {
+		return fmt.Errorf("profile %d: %w", p, err)
+	}
+	return nil
+}
+
+// writeTypes writes a whole type table and waits for the keyboard to redraw,
+// which says it has taken the table over. Until then a profile switch could
+// move the change to another profile, so an error leaves the caller to stop
+// without switching.
+func writeTypes(kb Keyboard, t25 *proto.Table25) error {
+	if err := kb.WriteTypes(t25); err != nil {
+		return err
+	}
+	if err := kb.WaitRedraw(redrawTimeout); err != nil {
+		return fmt.Errorf("the type table was written but the keyboard did not redraw: %w", err)
 	}
 	return nil
 }
@@ -571,7 +612,8 @@ func Restore(ctx context.Context, kb Keyboard, l *ledger.Ledger, profile byte, s
 }
 
 // restore writes the originals of owners, checked by checkOwners, into the
-// profile's 0x29 and then its whole 0x25. Once both are written, it releases
+// profile's 0x29 and then its whole 0x25, and waits for the keyboard's
+// redraw. Once the keyboard has redrawn, it releases
 // the positions and drops their originals, so a later takeover records what
 // they hold then. An original label the table cannot hold is left empty,
 // with a note.
@@ -596,7 +638,7 @@ func restore(kb Keyboard, l *ledger.Ledger, t29 *proto.Table29, t25 *proto.Table
 	if err := kb.WriteButtons(t29); err != nil {
 		return err
 	}
-	if err := kb.WriteTypes(t25); err != nil {
+	if err := writeTypes(kb, t25); err != nil {
 		return err
 	}
 	for _, o := range owners {
