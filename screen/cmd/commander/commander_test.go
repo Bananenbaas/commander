@@ -91,7 +91,21 @@ func TestBalloonsFor(t *testing.T) {
 		{"reload fails again", failed, failed, []balloon{{failedTitle, "bad layout"}}},
 		{"loop ends", running, supervisor.State{Phase: supervisor.Failed, Run: none, Err: "the loop ended unexpectedly"},
 			[]balloon{{failedTitle, "the loop ended unexpectedly"}}},
-		{"reload fixed", failed, supervisor.State{Phase: supervisor.Running, Run: none}, nil},
+		{"start without a status yet", supervisor.State{Phase: supervisor.Starting, Run: none},
+			supervisor.State{Phase: supervisor.Running, Run: none}, nil},
+		{"reload fixed", failed, supervisor.State{Phase: supervisor.Running, Run: none},
+			[]balloon{{appTitle, "Configuration reloaded"}}},
+		{"reloaded", running, supervisor.State{Phase: supervisor.Running, Run: none},
+			[]balloon{{appTitle, "Configuration reloaded"}}},
+		{"reloaded before the loop reported", supervisor.State{Phase: supervisor.Running, Run: none},
+			supervisor.State{Phase: supervisor.Running, Run: none},
+			[]balloon{{appTitle, "Configuration reloaded"}}},
+		{"reloaded after a refused reload",
+			supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 1}, Err: "not reloaded: x"},
+			supervisor.State{Phase: supervisor.Running, Run: none},
+			[]balloon{{appTitle, "Configuration reloaded"}}},
+		{"waiting for the keyboard after a reload", supervisor.State{Phase: supervisor.Running, Run: none},
+			supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "keyboard"}}, nil},
 		{"reload refused while running", running,
 			supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 1}, Err: "not reloaded, the previous configuration stays: x"},
 			[]balloon{{"Commander", "not reloaded, the previous configuration stays: x"}}},
@@ -142,7 +156,7 @@ func TestFolderFrom(t *testing.T) {
 		{nil, saved(`E:\old`, nil), `E:\old`, false, nil},
 		{nil, saved("", nil), "", false, errNoFolder},
 		{nil, saved("", broken), "", false, broken},
-		{[]string{"a", "b"}, saved(`E:\old`, nil), "", false, errNoFolder},
+		{[]string{`D:\My`, "config"}, saved(`E:\old`, nil), "", false, errTooManyArgs},
 		{[]string{""}, saved(`E:\old`, nil), "", false, errNoFolder},
 	}
 	for _, c := range cases {
@@ -165,5 +179,11 @@ func TestHeldMessage(t *testing.T) {
 	}
 	if _, ok := heldMessage(errors.New(`D:\cfg is not a folder`)); ok {
 		t.Error("heldMessage took an unrelated error")
+	}
+}
+
+func TestTooManyArgsText(t *testing.T) {
+	if !strings.HasPrefix(tooManyArgsText, usageText) || !strings.Contains(tooManyArgsText, "in quotes") {
+		t.Errorf("tooManyArgsText = %q", tooManyArgsText)
 	}
 }

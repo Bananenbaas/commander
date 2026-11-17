@@ -11,6 +11,8 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"runtime/debug"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -28,6 +30,9 @@ import (
 // endSessionWait is the longest wait for the clean stop when the Windows
 // session ends.
 const endSessionWait = 5 * time.Second
+
+// crashWait is the longest wait for the tray icon to go after a panic.
+const crashWait = 2 * time.Second
 
 func main() {
 	os.Exit(commander(os.Args[1:]))
@@ -47,6 +52,11 @@ func commander(args []string) int {
 	logf("Commander starts")
 
 	dir, fromArg, err := folderFrom(args, appdata.LoadFolder)
+	if errors.Is(err, errTooManyArgs) {
+		logf("more than one argument: %q", args)
+		messageBox(tooManyArgsText, windows.MB_ICONINFORMATION)
+		return 1
+	}
 	if errors.Is(err, errNoFolder) {
 		logf("no usable configuration folder in the arguments %q or the settings", args)
 		messageBox(usageText, windows.MB_ICONINFORMATION)
@@ -61,10 +71,35 @@ func commander(args []string) int {
 	// The tray exists before Serve starts, and OnState is only called by
 	// Serve. Its calls never overlap, so prev needs no lock.
 	var tr *tray.Tray
+	var cancel context.CancelFunc
+	var crashOnce sync.Once
+	// crash ends Commander after a panic: it logs it with the stack, takes
+	// the tray icon away if it can and exits with 1. It is set up before
+	// Serve starts, the only source of the panics it is given.
+	crash := func(v any) {
+		crashOnce.Do(func() {
+			logf("Commander failed: %v\n%s", v, debug.Stack())
+			if cancel != nil {
+				cancel()
+			}
+			if tr != nil {
+				select {
+				case <-tr.Done():
+				case <-time.After(crashWait):
+				}
+			}
+			os.Exit(1)
+		})
+	}
 	prev := supervisor.State{Phase: supervisor.Starting, Run: run.Status{Profile: -1}}
 	sup, err := supervisor.New(dir, supervisor.Options{
 		Logf: logf,
 		OnState: func(st supervisor.State) {
+			defer func() {
+				if v := recover(); v != nil {
+					crash(v)
+				}
+			}()
 			// SetTip, SetFailed and Balloon only post to the tray's thread.
 			tr.SetTip(tipFor(st))
 			tr.SetFailed(st.Phase == supervisor.Failed)
@@ -85,17 +120,26 @@ func commander(args []string) int {
 	}
 	dir = sup.Dir()
 	logf("configuration folder: %s", dir)
+
+	exe, err := os.Executable()
+	if err != nil {
+		logf("cannot find commander.exe itself, so Start with Windows cannot be changed: %v", err)
+		exe = ""
+	}
 	if fromArg {
 		if err := appdata.SaveFolder(dir); err != nil {
 			logf("the folder was not remembered: %v", err)
 		}
+		// When Windows starts Commander, it is with the folder given last.
+		if exe != "" {
+			if on, err := autostart.Enabled(exe); err == nil && on {
+				if err := autostart.Enable(exe, dir); err != nil {
+					logf("Start with Windows still uses the previous folder: %v", err)
+				}
+			}
+		}
 	}
 
-	exe, err := os.Executable()
-	if err != nil {
-		logf("cannot find commander.exe itself, so Start with Windows is off: %v", err)
-		exe = ""
-	}
 	normal, err := icon.ICO(icon.Sizes, false)
 	var failed []byte
 	if err == nil {
@@ -111,7 +155,8 @@ func commander(args []string) int {
 	served := make(chan struct{}) // closed when Serve has returned
 	var serveErr error
 	var sessionEnd atomic.Bool
-	ctx, cancel := context.WithCancel(context.Background())
+	var ctx context.Context
+	ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
 	tr, err = tray.Run(ctx, tray.Options{
 		Icon:       normal,
@@ -143,17 +188,33 @@ func commander(args []string) int {
 	}
 
 	go func() {
+		// Serve has stopped the loop and given back the locks before a
+		// panic gets here.
+		defer func() {
+			if v := recover(); v != nil {
+				crash(v)
+			}
+		}()
 		defer close(served)
 		serveErr = sup.Serve(context.Background())
 	}()
 	select {
 	case <-served:
 	case <-tr.Done():
-		// The session has really ended; OnEndSession asked for the stop.
-		// Windows may end the process before it is done.
+		// The tray's window has ended without ctx: the Windows session
+		// ended (OnEndSession has asked for the stop, and Windows may end
+		// the process before it is done), or the window was closed from
+		// outside. Either way Commander stops.
+		if !sessionEnd.Load() {
+			logf("the tray window was closed: stopping")
+		}
 		sup.Stop()
 		<-served
 	}
+	// Serve has given back the locks by now, so for a moment another
+	// Commander or kb7screen run can take the keyboard while this icon is
+	// still in the notification area. That is harmless: this one no longer
+	// touches the keyboard and only removes its icon.
 	cancel()
 	<-tr.Done()
 
@@ -204,7 +265,7 @@ func menu(sup *supervisor.Supervisor, dir, exe string, logf func(string, ...any)
 // toggleAutostart switches starting with Windows on or off.
 func toggleAutostart(exe, dir string, logf func(string, ...any)) {
 	if exe == "" {
-		messageBox("Start with Windows cannot be switched on: Commander cannot find its own program file.", windows.MB_ICONWARNING)
+		messageBox("Start with Windows cannot be changed: Commander cannot find its own program file.", windows.MB_ICONWARNING)
 		return
 	}
 	on, err := autostart.Enabled(exe)

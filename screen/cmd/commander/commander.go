@@ -18,6 +18,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/Bananenbaas/kb7-commander/screen/internal/keyboard"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/run"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/runlock"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/supervisor"
 )
@@ -41,14 +42,22 @@ const (
 // errNoFolder means Commander was not told which folder to use.
 var errNoFolder = errors.New("no configuration folder")
 
+// errTooManyArgs means more than one argument was given.
+var errTooManyArgs = errors.New("more than one argument")
+
+// tooManyArgsText is the message box text for errTooManyArgs: most likely a
+// folder path with spaces was given without quotes.
+const tooManyArgsText = usageText + "\n\nPut a folder path that has spaces in quotes, for example:\n" +
+	`commander.exe "D:\My KB7 config"`
+
 // folderFrom returns the configuration folder: the one argument, else the
 // folder the settings remember (read with saved only then). fromArg tells
-// which. Without either, or with more than one argument, the error is
-// errNoFolder.
+// which. More than one argument gives errTooManyArgs; no folder from
+// either gives errNoFolder.
 func folderFrom(args []string, saved func() (string, error)) (dir string, fromArg bool, err error) {
 	switch {
 	case len(args) > 1:
-		return "", false, errNoFolder
+		return "", false, errTooManyArgs
 	case len(args) == 1:
 		if args[0] == "" {
 			return "", false, errNoFolder
@@ -141,6 +150,14 @@ type balloon struct{ title, text string }
 func balloonsFor(prev, st supervisor.State) []balloon {
 	if st.Phase == supervisor.Stopped {
 		return nil
+	}
+	// The loop is started anew, without an outcome to report, only by the
+	// first start (from Starting), after an Apply (from Applying) and by a
+	// reload that worked: from Running, or from Failed once fixed. Only
+	// the supervisor reports a Run of {Profile: -1} without waiting.
+	restarted := st.Phase == supervisor.Running && st.Run == (run.Status{Profile: -1}) && st.Err == "" && st.Note == ""
+	if restarted && (prev.Phase == supervisor.Running || prev.Phase == supervisor.Failed) {
+		return []balloon{{appTitle, "Configuration reloaded"}}
 	}
 	statusOnly := st.Phase == prev.Phase && st.Err == prev.Err && st.Note == "" && st.Run != prev.Run
 	if statusOnly {
