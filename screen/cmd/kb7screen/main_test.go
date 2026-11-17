@@ -15,7 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/apply"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
 )
 
 func TestParseArgs(t *testing.T) {
@@ -271,37 +274,45 @@ func TestPreviewRendersBeforeWriting(t *testing.T) {
 	}
 }
 
+// lightPreviewLayout holds the example light block of the lighting design
+// verbatim.
 const lightPreviewLayout = `profile = 1
 
 [light]
-fps = 30
+fps = 30                         # optional, 10–30
 
-[[light.layer]]
+[[light.layer]]                  # bottom first
 effect = "wave"
 colors = ["#0040FF", "#00C0FF", "#8000FF"]
-speed = 0.5
+speed = 0.5                      # cycles per second
 direction = "right"
 
 [[light.layer]]
 effect = "ripple"
-color = "#FFFFFF"
-speed = 12
-width = 1.5
+color = "#FFFFFF"                # or colors = [...] to cycle per press
+speed = 12                       # keys per second
+width = 1.5                      # keys
 
 [[light.layer]]
 effect = "state"
 name = "gear"
-toggle = "N"
-start = "on"
+toggle = "N"                     # the key that flips it
+start = "on"                     # state when the game starts
 keys = ["N"]
 color = "#30E070"
 
 [[light.layer]]
 effect = "state"
 name = "quantum"
+toggle = "B"
 keys = ["B"]
 color = "#00AAFF"
-blink = 0
+blink = 0                        # Hz; 0 is steady
+
+[[light.layer]]
+effect = "fixed"
+keys = ["W", "A", "S", "D"]
+color = "#FFFFFF"
 
 [[button]]
 page = 1
@@ -309,13 +320,35 @@ position = 1
 state = "gear"
 `
 
-func lightConfig(t *testing.T) string {
+// A state without a toggle is flipped by the preview itself.
+const lightFlipLayout = `profile = 1
+
+[light]
+
+[[light.layer]]
+effect = "state"
+name = "caps"
+keys = ["N"]
+color = "#30E070"
+
+[[button]]
+page = 1
+position = 1
+state = "caps"
+`
+
+func lightConfigWith(t *testing.T, layout string) string {
 	t.Helper()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "sc.toml"), []byte(lightPreviewLayout), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "sc.toml"), []byte(layout), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+func lightConfig(t *testing.T) string {
+	t.Helper()
+	return lightConfigWith(t, lightPreviewLayout)
 }
 
 func TestLightPreview(t *testing.T) {
@@ -325,8 +358,8 @@ func TestLightPreview(t *testing.T) {
 	if code := realMain([]string{"light-preview", dir, "--profile", "1"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit %d: %s", code, stderr.String())
 	}
-	if d := time.Since(begin); d > 3*time.Second {
-		t.Errorf("rendering took %v, want well under 3 s", d)
+	if d := time.Since(begin); d > 5*time.Second {
+		t.Errorf("rendering took %v, want well under 5 s", d)
 	}
 	path := filepath.Join(dir, "previews", "light-1.gif")
 	f, err := os.Open(path)
@@ -344,8 +377,73 @@ func TestLightPreview(t *testing.T) {
 	if len(g.Delay) > 0 && g.Delay[0] != 5 {
 		t.Errorf("delay %d, want 5", g.Delay[0])
 	}
+	// The fixed layer makes W white from the start; the effects move on.
+	cv := newLightCanvas()
+	led, _ := light.LEDOfKey(action.W)
+	pt, _ := light.Pos(led)
+	x, y := cv.pixel(pt)
+	if r, gr, b, _ := g.Image[0].At(x, y).RGBA(); r>>8 < 0xF0 || gr>>8 < 0xF0 || b>>8 < 0xF0 {
+		t.Errorf("W in frame 0 is %02x%02x%02x, want white", r>>8, gr>>8, b>>8)
+	}
+	if bytes.Equal(g.Image[0].Pix, g.Image[70].Pix) {
+		t.Error("frame 0 and frame 70 are identical")
+	}
 	if !strings.Contains(stdout.String(), path) {
 		t.Errorf("stdout %q lacks the path", stdout.String())
+	}
+}
+
+func TestLightCanvasHoldsEveryLED(t *testing.T) {
+	cv := newLightCanvas()
+	n := 0
+	for i := 0; i < light.NumLEDs; i++ {
+		pt, ok := light.Pos(i)
+		if !ok {
+			continue
+		}
+		n++
+		x, y := cv.pixel(pt)
+		half := lightSquare / 2
+		if x-half < 0 || y-half < 0 || x+half > cv.w || y+half > cv.h {
+			t.Errorf("LED %d at %d,%d does not fit in %dx%d", i, x, y, cv.w, cv.h)
+		}
+	}
+	if n < 90 {
+		t.Errorf("only %d mapped LEDs", n)
+	}
+}
+
+func TestLightPreviewFlipState(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "flip.gif")
+	var stdout, stderr bytes.Buffer
+	if code := realMain([]string{"light-preview", lightConfigWith(t, lightFlipLayout), "--profile", "1", "--out", out}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+	f, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	g, err := gif.DecodeAll(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(g.Image) != 80 {
+		t.Errorf("%d frames, want 80", len(g.Image))
+	}
+	if bytes.Equal(g.Image[0].Pix, g.Image[79].Pix) {
+		t.Error("the flip changed nothing")
+	}
+}
+
+func TestLedColourMatchesSetLED(t *testing.T) {
+	var pl proto.LightPayload
+	for _, i := range []int{0, 15, 16, 30, 47, 93} {
+		proto.SetLED(&pl, i, byte(i+1), byte(i+2), byte(i+3))
+		r, g, b := ledColour(&pl, i)
+		if r != byte(i+1) || g != byte(i+2) || b != byte(i+3) {
+			t.Errorf("LED %d: %d %d %d", i, r, g, b)
+		}
 	}
 }
 

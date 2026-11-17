@@ -27,7 +27,7 @@ Commands:
                                  write a 4 second GIF of the lighting of
                                  profile N (default FILE:
                                  <config>/previews/light-N.gif)
-  apply <config> [--full]      put every layout of the folder on the keyboard;
+  apply <config> [--full]        put every layout of the folder on the keyboard;
                                  --full sends every picture again
   restore <config> --profile N   give the positions kb7screen took over in
                                  profile N their original contents back

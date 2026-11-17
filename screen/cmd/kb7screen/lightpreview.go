@@ -34,6 +34,41 @@ const (
 
 var lightBoard = color.RGBA{R: 0x1A, G: 0x1A, B: 0x1A, A: 0xFF}
 
+// lightCanvas maps key units to pixels so that every mapped LED fits: some
+// lights (media keys, top buttons) lie above the main block, at negative Y.
+type lightCanvas struct {
+	minX, minY float64
+	w, h       int
+}
+
+func newLightCanvas() lightCanvas {
+	first := true
+	var minX, minY, maxX, maxY float64
+	for i := 0; i < light.NumLEDs; i++ {
+		pt, ok := light.Pos(i)
+		if !ok {
+			continue
+		}
+		if first {
+			minX, minY, maxX, maxY = pt.X, pt.Y, pt.X, pt.Y
+			first = false
+		}
+		minX, maxX = math.Min(minX, pt.X), math.Max(maxX, pt.X)
+		minY, maxY = math.Min(minY, pt.Y), math.Max(maxY, pt.Y)
+	}
+	return lightCanvas{
+		minX: minX, minY: minY,
+		w: int(math.Ceil((maxX-minX)*lightCell)) + 2*lightMargin,
+		h: int(math.Ceil((maxY-minY)*lightCell)) + 2*lightMargin,
+	}
+}
+
+// pixel returns the centre of an LED in the image.
+func (c lightCanvas) pixel(pt light.Point) (x, y int) {
+	return lightMargin + int(math.Round((pt.X-c.minX)*lightCell)),
+		lightMargin + int(math.Round((pt.Y-c.minY)*lightCell))
+}
+
 // lightEvent is a key event or a state flip at a time of the simulation.
 type lightEvent struct {
 	at   time.Duration
@@ -108,16 +143,13 @@ func renderLightGIF(p byte, stack *light.Stack) *gif.GIF {
 	e.SetBrightness(100)
 
 	var leds []int
-	var maxX, maxY float64
 	for i := 0; i < light.NumLEDs; i++ {
-		if pt, ok := light.Pos(i); ok {
+		if _, ok := light.Pos(i); ok {
 			leds = append(leds, i)
-			maxX, maxY = math.Max(maxX, pt.X), math.Max(maxY, pt.Y)
 		}
 	}
-	// Positions are centres in key units; the origin is the centre of Escape.
-	w := int(math.Ceil(maxX*lightCell)) + 2*lightMargin
-	h := int(math.Ceil(maxY*lightCell)) + 2*lightMargin
+	cv := newLightCanvas()
+	w, h := cv.w, cv.h
 
 	script := lightScript(stack)
 	next := 0
@@ -152,8 +184,7 @@ func renderLightGIF(p byte, stack *light.Stack) *gif.GIF {
 		}
 		for n, i := range leds {
 			pt, _ := light.Pos(i)
-			cx := lightMargin + int(math.Round(pt.X*lightCell))
-			cy := lightMargin + int(math.Round(pt.Y*lightCell))
+			cx, cy := cv.pixel(pt)
 			fillSquare(frame, cx, cy, index(cols[n]))
 		}
 		g.Image = append(g.Image, frame)
@@ -226,15 +257,23 @@ func fillSquare(img *image.Paletted, cx, cy int, c uint8) {
 	}
 }
 
-func writeGIF(path string, g *gif.GIF) (err error) {
-	f, err := os.Create(path)
+// writeGIF encodes g into a temporary file next to path and renames it into
+// place, so a failed encode leaves no partial GIF.
+func writeGIF(path string, g *gif.GIF) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".light-*.tmp")
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if cerr := f.Close(); err == nil {
-			err = cerr
-		}
-	}()
-	return gif.EncodeAll(f, g)
+	tmp := f.Name()
+	err = gif.EncodeAll(f, g)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmp, path)
+	}
+	if err != nil {
+		os.Remove(tmp)
+	}
+	return err
 }
