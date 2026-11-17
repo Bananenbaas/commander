@@ -137,10 +137,10 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./cmd/kb7screen # Windows build
 - **The lighting stream: nothing for 2.5 s after `0x0e`, and never let a
   write stall.** The keyboard does not answer on interface 1 for about 2 s
   after `0x0e`, so `run` sends no stream frame within 2.5 s of enabling the
-  notifications. A stream write that stalls drops the keyboard off the bus, so
-  `run` closes the keyboard on any stream error other than a missed
-  acknowledgement, and `apply` and `restore` must never run alongside a
-  stream (the run lock).
+  notifications. A stream write that times out returns `ErrStreamStalled`;
+  `run` then closes the keyboard and opens it again at the next poll, as it
+  does on any stream error other than a missed acknowledgement. `apply` and
+  `restore` must never run alongside a stream (the run lock).
 - **Unplug and replug after an interrupted upload.** When `kb7screen` reports
   `keyboard.ErrUploadLeftOpen` (with a banner on the command line), the upload
   stopped after its opening frame may have been accepted. The keyboard may be

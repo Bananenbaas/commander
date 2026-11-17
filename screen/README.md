@@ -105,7 +105,7 @@ mode = "hold"                        # "tap" (default) or "hold"
 ```
 
 Each file needs a `profile`. Each button needs `page`, `position` and at least
-one step in `action`. Buttons without `symbol` or `picture` get the frame and
+one step in `action`, unless it has a `state` (see Lighting). Buttons without `symbol` or `picture` get the frame and
 the title only.
 
 | Key | Meaning |
@@ -117,6 +117,7 @@ the title only.
 | `label` | optional firmware label, at most 11 printable ASCII characters. Empty by default |
 | `action` | the steps, see below |
 | `mode` | `tap` presses the steps once; `hold` keeps one key chord down for as long as the touch lasts |
+| `state` | name of a lighting state the button flips; see Lighting. Without an `action` the button flips only the state |
 | `confirm` | `"hold 1s"`: the button acts only once the finger has stayed on it that long (200 ms to 5 s), so an accidental touch does nothing. Not with `mode = "hold"`, and needs an `action` |
 
 At most 9 different pictures can be on the keyboard at once; buttons with an
@@ -252,8 +253,9 @@ the layer's number and the setting's name.
 Key and LED names are the key names of the action steps (`W`, `LShift`, `F1`,
 `Space`, ...) plus the lights that are not keys: `PrevTrack`, `NextTrack`,
 `GameMode`, `ProfileCycle`, `MicOff`, `RGBButton`, `Wrist1` to `Wrist10`, `Fn`
-and `Menu`. Three groups name many LEDs at once: `all` (every LED), `keys` (the
-main block and the arrows) and `wrist` (the ten wrist rest segments). Names are
+and `Menu`. Three groups name many LEDs at once: `all` (every LED), `keys`
+(every LED of index 0 to 84: the main block and the arrows, including Fn, Menu
+and RAlt) and `wrist` (the ten wrist rest segments). Names are
 not case sensitive.
 
 Setting kinds: a *colour* is `"#RRGGBB"`; a *colour list* is a non-empty list
@@ -337,7 +339,8 @@ goes down while exactly its modifiers are held (`N` does not match LAlt+N). The
 keys before the last must be modifiers, so `toggle = "A+B"` is refused. Key-up
 and how long a key is held play no part.
 
-A button flips a state with `state = "gear"`. With an `action` it sends the
+A button flips a state with `state = "gear"`; the name must be a `state` layer
+of the same profile's `[light]`, or the file is refused when it is loaded. With an `action` it sends the
 action and flips the state, unless the action sends the state's own `toggle`
 chord, which flips it already. **Without an action** it flips only the state
 and sends nothing to the game: the way to bring the light back in line when it
@@ -368,7 +371,8 @@ Windows `run` reads them through Raw Input, which delivers them whatever
 program has the focus and only listens: the key still goes to the program
 unchanged. Other keyboards, and the keystrokes `run` sends itself, are not
 counted. A held key's repeats count as one press. On Linux the keyboard's
-`/dev/input/event*` node is read (see the optional udev rule above). Without
+`/dev/input/event*` node is read (see the optional udev rule above); that
+reader has not been run on a keyboard yet. Without
 key input the ripple and the key-toggled states do nothing. Key presses are used
 in memory for the lighting and never written to disk or to the log.
 
@@ -377,10 +381,12 @@ KB7 for the given time (20 seconds by default) and saves nothing.
 
 ### Brightness, RGB button and when `run` stops
 
-The streamed colours follow the keyboard's brightness. `run` reads the level
-at start and after each profile switch, and follows Fn+Up and Fn+Down, which
-change it in steps of ten from 20 to 100 percent. When the RGB button switches
-the lights off, `run` keeps streaming and the keyboard keeps them dark.
+`run` scales the streamed colours by the keyboard's brightness level. It reads
+the level at start and after each profile switch, and follows the notifications
+that Fn+Up and Fn+Down cause (steps of ten from 20 to 100 percent). When the
+RGB button reports the lights off, `run` keeps streaming. Hardware acceptance
+of these three is pending: the brightness read, the brightness following and
+the RGB button have not been tried on the keyboard yet.
 
 No frame is sent for 2.5 seconds after `run` has enabled the notifications, as
 the keyboard does not answer on interface 1 for about 2 seconds then. A slow

@@ -1,8 +1,8 @@
 # kb7screen lighting — layered effects streamed from the PC
 
 Design for driving the KB7's 112 LEDs from `kb7screen`, so that Swarm II is no
-longer needed for lighting either. Status: approved; implemented, hardware acceptance pending. Builds on
-[`screen-app.md`](screen-app.md).
+longer needed for lighting either. Status: approved; implemented, hardware
+acceptance pending. Builds on [`screen-app.md`](screen-app.md).
 
 ## Intent
 

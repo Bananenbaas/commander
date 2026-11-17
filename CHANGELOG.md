@@ -54,12 +54,16 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Lighting layers in `kb7screen`: a profile's layout file can have a `[light]`
   block with a stack of effects (`static`, `fixed`, `breathing`, `wave`,
   `ripple`, `state`), each declaring its own settings, which `run` streams to
-  the LEDs. The stream follows profile switches, the keyboard's brightness and
-  the RGB button, and ends with a rest frame. Buttons can flip a lighting state
-  with `state = "name"`, with or without an action.
+  the LEDs. `run` reads the brightness at start and after a profile switch,
+  scales the colours by it, follows the brightness notifications and the RGB
+  button, and ends with a rest frame. Buttons can flip a lighting state with
+  `state = "name"`, with or without an action. Hardware acceptance is pending:
+  the brightness handling, the RGB button and the start-up brightness read have
+  not been tried on the keyboard yet.
 - Reading the KB7's own key presses for the ripple and the states: Raw Input on
   Windows (measured with Star Citizen focused), `/dev/input/event*` on Linux,
-  with an optional udev rule. `kb7screen keytest` prints the keys pressed for a
+  with an optional udev rule; the Linux reader has not been run on hardware.
+  `kb7screen keytest` prints the keys pressed for a
   few seconds and saves nothing.
 - `kb7screen light-preview`, an animated GIF of a profile's lighting with
   simulated key presses.
@@ -67,12 +71,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
   stayed on it that long.
 - A run lock, `.kb7screen-run.lock`: a second `run` for a folder, and `apply`
   and `restore` while `run` holds it, refuse to start.
-- Image slots up to 15: Swarm II uploaded to slots 9 to 15 and left 1 to 8
-  alone (`40-swarm-slots-pages-1`).
+- Image slots 9 to 15 took uploads from Swarm II (`40-swarm-slots-pages-1`);
+  15 as the highest slot is a hypothesis from Swarm II's own limit of 15
+  application widgets.
 - Pages 2 and 3 of the touchscreen: byte 2 of report `0x35` is the page,
   report `0x29` holds the pages one after the other, twelve entries each, and
   report `0x25` puts a marker before the twelve types of each page
-  (`40-swarm-slots-pages-1`).
+  (`40-swarm-slots-pages-1`). Observed for page 2; page 3's `0x29` position
+  comes from the table size only.
 - `kb7screen`, a Go program in `screen/` that puts own buttons (built-in style
   or own PNG pictures) on the KB7's touchscreen per profile and carries out
   their actions on the PC: key chords, sequences with waits, programs, URLs.
