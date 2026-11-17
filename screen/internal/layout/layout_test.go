@@ -227,3 +227,131 @@ func TestLoadErrors(t *testing.T) {
 		}
 	}
 }
+
+const lightTOML = `profile = 1
+
+[light]
+fps = 30
+
+[[light.layer]]
+effect = "wave"
+colors = ["#0040FF", "#00C0FF", "#8000FF"]
+speed = 0.5
+direction = "right"
+
+[[light.layer]]
+effect = "ripple"
+color = "#FFFFFF"
+speed = 12
+width = 1.5
+
+[[light.layer]]
+effect = "state"
+name = "gear"
+toggle = "N"
+start = "on"
+keys = ["N"]
+color = "#30E070"
+
+[[light.layer]]
+effect = "state"
+name = "quantum"
+toggle = "B"
+keys = ["B"]
+color = "#00AAFF"
+blink = 0
+`
+
+func stateButton(extra string) string {
+	return "[[button]]\npage = 1\nposition = 1\n" + extra
+}
+
+func TestLoadLight(t *testing.T) {
+	cfg, err := Load(folder(t, map[string]string{"a.toml": lightTOML + stateButton("state = \"gear\"\n")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := cfg.Profiles[0]
+	if p.Light == nil {
+		t.Fatal("Light is nil")
+	}
+	if p.Light.FPS() != 30 {
+		t.Errorf("fps %d", p.Light.FPS())
+	}
+	st := p.Light.States()
+	if len(st) != 2 || st[0].Name != "gear" || st[1].Name != "quantum" {
+		t.Errorf("states %+v", st)
+	}
+	b := p.Buttons[0]
+	if b.State != "gear" || len(b.Action) != 0 || b.Mode != Tap {
+		t.Errorf("button %+v", b)
+	}
+}
+
+func TestLoadWithoutLight(t *testing.T) {
+	cfg, err := Load(folder(t, map[string]string{"a.toml": btn("")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Profiles[0].Light != nil {
+		t.Error("Light set without [light]")
+	}
+}
+
+func TestStateButtonWithAction(t *testing.T) {
+	cfg, err := Load(folder(t, map[string]string{"a.toml": lightTOML + stateButton("state = \"quantum\"\naction = [\"B\"]\n")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := cfg.Profiles[0].Buttons[0]
+	if b.State != "quantum" || len(b.Action) != 1 {
+		t.Errorf("button %+v", b)
+	}
+}
+
+func TestLightErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		toml string
+		want []string
+	}{
+		{"unknown effect", "profile = 0\n[light]\n[[light.layer]]\neffect = \"sparkle\"\n",
+			[]string{"a.toml", "light.layer 1", "sparkle"}},
+		{"unknown setting", "profile = 0\n[light]\n[[light.layer]]\neffect = \"static\"\ncolor = \"#FFFFFF\"\nspeeed = 1\n",
+			[]string{"a.toml", "light.layer 1", "speeed"}},
+		{"second layer", "profile = 0\n[light]\n[[light.layer]]\neffect = \"static\"\ncolor = \"#FFFFFF\"\n[[light.layer]]\neffect = \"nope\"\n",
+			[]string{"a.toml", "light.layer 2", "nope"}},
+		{"no effect", "profile = 0\n[light]\n[[light.layer]]\ncolor = \"#FFFFFF\"\n",
+			[]string{"a.toml", "light.layer 1", "effect"}},
+		{"effect not a string", "profile = 0\n[light]\n[[light.layer]]\neffect = 3\n",
+			[]string{"a.toml", "light.layer 1", "effect"}},
+		{"keys not a list", "profile = 0\n[light]\n[[light.layer]]\neffect = \"static\"\ncolor = \"#FFFFFF\"\nkeys = \"W\"\n",
+			[]string{"a.toml", "light.layer 1", "keys"}},
+		{"keys not strings", "profile = 0\n[light]\n[[light.layer]]\neffect = \"static\"\ncolor = \"#FFFFFF\"\nkeys = [1]\n",
+			[]string{"a.toml", "light.layer 1", "keys"}},
+		{"no layers", "profile = 0\n[light]\nfps = 30\n",
+			[]string{"a.toml", "light"}},
+		{"bad fps", "profile = 0\n[light]\nfps = 99\n[[light.layer]]\neffect = \"static\"\ncolor = \"#FFFFFF\"\n",
+			[]string{"a.toml", "light", "fps"}},
+		{"state not defined", lightTOML + stateButton("state = \"shields\"\n"),
+			[]string{"a.toml", "page 1 position 1", "shields"}},
+		{"state without light", "profile = 0\n" + stateButton("state = \"gear\"\n"),
+			[]string{"a.toml", "page 1 position 1", "gear"}},
+		{"hold state without action", lightTOML + stateButton("state = \"gear\"\nmode = \"hold\"\n"),
+			[]string{"a.toml", "page 1 position 1", "hold"}},
+		{"no action no state", "profile = 0\n" + stateButton(""),
+			[]string{"a.toml", "page 1 position 1", "action must hold at least one step"}},
+	}
+	for _, c := range cases {
+		_, err := Load(folder(t, map[string]string{"a.toml": c.toml}))
+		if err == nil {
+			t.Errorf("%s: no error", c.name)
+			continue
+		}
+		for _, w := range c.want {
+			if !strings.Contains(err.Error(), w) {
+				t.Errorf("%s: error %q lacks %q", c.name, err, w)
+			}
+		}
+	}
+}

@@ -4,6 +4,7 @@ package light
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -150,5 +151,27 @@ func TestDuplicateStateNames(t *testing.T) {
 	s := stateStack(t, lc)
 	if len(s.States()) != 1 {
 		t.Errorf("states %v", s.States())
+	}
+}
+
+func TestStateToggleModifiers(t *testing.T) {
+	s := registry["state"]
+	for _, ok := range []string{"N", "LAlt+N", "AltGr+N", "LCtrl+LShift+N", "RWin+F1"} {
+		v, err := parseValues(s, map[string]any{"name": "x", "color": "#00FF00", "toggle": ok})
+		if err == nil {
+			_, err = s.New(v)
+		}
+		if err != nil {
+			t.Errorf("toggle %q refused: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"A+N", "N+LAlt+B", "Space+N"} {
+		v, err := parseValues(s, map[string]any{"name": "x", "color": "#00FF00", "toggle": bad})
+		if err == nil {
+			_, err = s.New(v)
+		}
+		if err == nil || !strings.Contains(err.Error(), "must be modifiers") {
+			t.Errorf("toggle %q: err %v", bad, err)
+		}
 	}
 }

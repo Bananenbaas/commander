@@ -3,8 +3,10 @@
 package light
 
 import (
+	"fmt"
 	"image/color"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
@@ -29,11 +31,32 @@ func init() {
 				blink: v["blink"].(float64),
 			}
 			if c, ok := v["toggle"].(action.Chord); ok {
+				if err := checkToggle(c); err != nil {
+					return nil, fmt.Errorf("toggle: %w", err)
+				}
 				s.def.Toggle = &c
 			}
 			return s, nil
 		},
 	})
+}
+
+// checkToggle refuses a chord whose keys before the last are not all
+// modifiers: such a chord can never match a key press on the keyboard.
+func checkToggle(c action.Chord) error {
+	if len(c.Keys) == 0 {
+		return fmt.Errorf("the chord has no key")
+	}
+	for _, k := range c.Keys[:len(c.Keys)-1] {
+		if k < action.LCtrl || k > action.RWin {
+			names := make([]string, len(c.Keys))
+			for i, k := range c.Keys {
+				names[i] = action.KeyName(k)
+			}
+			return fmt.Errorf("%q: the keys before the last must be modifiers", strings.Join(names, "+"))
+		}
+	}
+	return nil
 }
 
 type stateEffect struct {

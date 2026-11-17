@@ -15,6 +15,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
 )
 
 // Mode says how a button's action is carried out.
@@ -36,6 +37,7 @@ type Button struct {
 	Color          color.NRGBA
 	Mode           Mode
 	Action         []action.Step
+	State          string // name of a lighting state this button flips, or empty
 }
 
 // Profile is the content of one layout file.
@@ -44,6 +46,7 @@ type Profile struct {
 	File              string
 	SwitchWhenRunning string
 	Buttons           []Button
+	Light             *light.Stack // nil when the layout has no [light]
 }
 
 // Config is a loaded configuration folder.
@@ -55,7 +58,13 @@ type Config struct {
 type rawFile struct {
 	Profile           *int        `toml:"profile"`
 	SwitchWhenRunning string      `toml:"switch_when_running"`
+	Light             *rawLight   `toml:"light"`
 	Buttons           []rawButton `toml:"button"`
+}
+
+type rawLight struct {
+	FPS    int64            `toml:"fps"`
+	Layers []map[string]any `toml:"layer"`
 }
 
 type rawButton struct {
@@ -68,6 +77,7 @@ type rawButton struct {
 	Picture  string   `toml:"picture"`
 	Action   []string `toml:"action"`
 	Mode     string   `toml:"mode"`
+	State    string   `toml:"state"`
 }
 
 var defaultColor = color.NRGBA{R: 0x00, G: 0xAA, B: 0xFF, A: 0xFF}
@@ -143,6 +153,13 @@ func loadFile(dir, path string) (*Profile, error) {
 		return nil, fmt.Errorf("%s: profile must be 0 to %d, got %d", name, maxProfile, *raw.Profile)
 	}
 	p := &Profile{Number: byte(*raw.Profile), File: path, SwitchWhenRunning: raw.SwitchWhenRunning}
+	if raw.Light != nil {
+		stack, err := buildLight(raw.Light)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		p.Light = stack
+	}
 	seen := map[[2]int]bool{}
 	for i, rb := range raw.Buttons {
 		if rb.Page == nil || rb.Position == nil {
@@ -158,13 +175,81 @@ func loadFile(dir, path string) (*Profile, error) {
 			return nil, fmt.Errorf("%s: duplicate button", where)
 		}
 		seen[key] = true
+		if b.State != "" {
+			if err := checkState(p.Light, b.State); err != nil {
+				return nil, fmt.Errorf("%s: %w", where, err)
+			}
+		}
 		p.Buttons = append(p.Buttons, b)
 	}
 	return p, nil
 }
 
+// buildLight turns the [light] table into a stack. Errors name light.layer N
+// (1-based) and the setting.
+func buildLight(rl *rawLight) (*light.Stack, error) {
+	cfg := light.Config{FPS: int(rl.FPS)}
+	if rl.FPS != int64(cfg.FPS) {
+		return nil, fmt.Errorf("light: fps %d is out of range", rl.FPS)
+	}
+	for i, m := range rl.Layers {
+		where := fmt.Sprintf("light.layer %d", i+1)
+		lc := light.LayerConfig{Settings: map[string]any{}}
+		for k, v := range m {
+			switch k {
+			case "effect":
+				e, ok := v.(string)
+				if !ok {
+					return nil, fmt.Errorf("%s: effect must be a string", where)
+				}
+				lc.Effect = e
+			case "keys":
+				list, ok := v.([]any)
+				if !ok {
+					return nil, fmt.Errorf("%s: keys must be a list of key names", where)
+				}
+				for _, x := range list {
+					ks, ok := x.(string)
+					if !ok {
+						return nil, fmt.Errorf("%s: keys must be a list of key names", where)
+					}
+					lc.Keys = append(lc.Keys, ks)
+				}
+			default:
+				lc.Settings[k] = v
+			}
+		}
+		if lc.Effect == "" {
+			return nil, fmt.Errorf("%s: effect is required", where)
+		}
+		cfg.Layers = append(cfg.Layers, lc)
+	}
+	stack, err := light.Build(cfg)
+	if err != nil {
+		msg := err.Error()
+		if strings.HasPrefix(msg, "layer ") {
+			return nil, fmt.Errorf("light.%s", msg)
+		}
+		return nil, fmt.Errorf("light: %s", msg)
+	}
+	return stack, nil
+}
+
+// checkState makes sure a button's state is one the profile's [light] declares.
+func checkState(st *light.Stack, name string) error {
+	if st == nil {
+		return fmt.Errorf("state %q: the layout has no [light]", name)
+	}
+	for _, d := range st.States() {
+		if d.Name == name {
+			return nil
+		}
+	}
+	return fmt.Errorf("state %q is not declared by any light layer of this layout", name)
+}
+
 func buildButton(dir string, rb rawButton) (Button, error) {
-	b := Button{Page: *rb.Page, Position: *rb.Position, Title: rb.Title, Label: rb.Label, Color: defaultColor}
+	b := Button{Page: *rb.Page, Position: *rb.Position, Title: rb.Title, Label: rb.Label, Color: defaultColor, State: rb.State}
 	if b.Page != 1 {
 		return b, fmt.Errorf("page must be 1; pages 2 and 3 are not measured yet")
 	}
@@ -200,7 +285,7 @@ func buildButton(dir string, rb rawButton) (Button, error) {
 			return b, err
 		}
 	}
-	if len(rb.Action) == 0 {
+	if len(rb.Action) == 0 && rb.State == "" {
 		return b, fmt.Errorf("action must hold at least one step")
 	}
 	for _, s := range rb.Action {
@@ -215,6 +300,9 @@ func buildButton(dir string, rb rawButton) (Button, error) {
 		b.Mode = Tap
 	case "hold":
 		b.Mode = Hold
+		if len(b.Action) == 0 {
+			return b, fmt.Errorf("hold needs an action; a button with only a state is a tap")
+		}
 		if _, ok := b.Action[0].(action.Chord); len(b.Action) != 1 || !ok {
 			return b, fmt.Errorf("hold needs exactly one step and it must be a key chord")
 		}
