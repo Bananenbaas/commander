@@ -45,6 +45,7 @@ import (
 type Keyboard interface {
 	EnableNotifications() error
 	SwitchProfile(p byte) error
+	SwitchProfileFresh(p byte) error
 	NextEvent(timeout time.Duration) (any, error)
 	ReadButtons(p byte) (*proto.Table29, error)
 	Close() error
@@ -269,10 +270,17 @@ func (l *loop) poll(ctx context.Context) {
 		l.connect(ctx, want)
 		return
 	}
-	if want != l.expected {
-		l.logf("switching to profile %d", want)
-		l.switchTo(ctx, want)
+	if want == l.expected {
+		return
 	}
+	if want == l.active {
+		// The keyboard does not confirm a switch to the active profile.
+		l.logf("profile %d is already active", want)
+		l.expected = want
+		return
+	}
+	l.logf("switching to profile %d", want)
+	l.switchTo(ctx, want, false)
 }
 
 func anyOf(running map[string]bool, names []string) bool {
@@ -317,7 +325,7 @@ func (l *loop) connect(ctx context.Context, want byte) {
 		l.drop(ctx)
 		return
 	}
-	if !l.switchTo(ctx, want) {
+	if !l.switchTo(ctx, want, true) {
 		return
 	}
 	l.logf("keyboard ready on profile %d", want)
@@ -326,17 +334,23 @@ func (l *loop) connect(ctx context.Context, want byte) {
 	}
 }
 
-// switchTo releases held keys and switches to p.
+// switchTo releases held keys and switches to p. With fresh, used while the
+// active profile is not known, the switch goes through another profile
+// first: the keyboard does not confirm a switch to the profile that is
+// already active.
 //
 // When the keyboard does not confirm the switch in time, p is taken as
-// active: whether it reports a switch to the profile that is already active
-// is not measured, and reopening would only time out again. On any other
+// active, as reopening would most likely only time out again. On any other
 // failure the keyboard is closed; the next poll opens it again.
-func (l *loop) switchTo(ctx context.Context, p byte) bool {
+func (l *loop) switchTo(ctx context.Context, p byte, fresh bool) bool {
 	if !l.release(ctx) {
 		return false
 	}
-	if err := l.kb.SwitchProfile(p); err != nil {
+	switchProfile := l.kb.SwitchProfile
+	if fresh {
+		switchProfile = l.kb.SwitchProfileFresh
+	}
+	if err := switchProfile(p); err != nil {
 		if !errors.Is(err, device.ErrTimeout) {
 			l.logf("switching to profile %d: %v", p, err)
 			l.drop(ctx)

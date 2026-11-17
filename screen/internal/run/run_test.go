@@ -338,10 +338,18 @@ func (k *fakeKB) EnableNotifications() error {
 }
 
 func (k *fakeKB) SwitchProfile(p byte) error {
-	k.enter("SwitchProfile")
+	return k.doSwitch("SwitchProfile", fmt.Sprintf("switch %d", p))
+}
+
+func (k *fakeKB) SwitchProfileFresh(p byte) error {
+	return k.doSwitch("SwitchProfileFresh", fmt.Sprintf("fresh %d", p))
+}
+
+func (k *fakeKB) doSwitch(call, rec string) error {
+	k.enter(call)
 	defer k.leave()
-	k.h.noneHeld("SwitchProfile")
-	k.h.record(fmt.Sprintf("switch %d", p))
+	k.h.noneHeld(call)
+	k.h.record(rec)
 	n := k.h.switches
 	k.h.switches++
 	if k.h.switchErr != nil {
@@ -497,7 +505,7 @@ func TestStartUp(t *testing.T) {
 	test(t, func(h *harness) {
 		h.onPoll[1] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0", "poll", "close")
+		h.want("poll", "open", "notify", "fresh 0", "poll", "close")
 		want := append(slices.Clone(procs.Swarm), game, other)
 		if !slices.Equal(h.names, want) {
 			h.t.Errorf("Running(%q), want Running(%q)", h.names, want)
@@ -511,10 +519,10 @@ func TestStartUpChoosesTheProfile(t *testing.T) {
 		running []string
 		want    string
 	}{
-		{nil, "switch 0"},
-		{[]string{game}, "switch 2"},
-		{[]string{other}, "switch 3"},
-		{[]string{other, game}, "switch 2"}, // the lower profile wins
+		{nil, "fresh 0"},
+		{[]string{game}, "fresh 2"},
+		{[]string{other}, "fresh 3"},
+		{[]string{other, game}, "fresh 2"}, // the lower profile wins
 	} {
 		t.Run(strings.Join(c.running, "+"), func(t *testing.T) {
 			test(t, func(h *harness) {
@@ -537,7 +545,7 @@ func TestDesktopIsTheFallback(t *testing.T) {
 		}}
 		h.onPoll[1] = h.cancel
 		h.run(cfg)
-		h.want("poll", "open", "notify", "switch 1", "poll", "close")
+		h.want("poll", "open", "notify", "fresh 1", "poll", "close")
 	})
 }
 
@@ -552,7 +560,7 @@ func TestGameOnlyFolderSwitchesBack(t *testing.T) {
 		h.onPoll[2] = func() { h.running[game] = false }
 		h.onPoll[3] = h.cancel
 		h.run(cfg)
-		h.want("poll", "open", "notify", "switch 0",
+		h.want("poll", "open", "notify", "fresh 0",
 			"poll", "switch 1",
 			"poll", "switch 0",
 			"poll", "close")
@@ -564,7 +572,7 @@ func TestTapRunsTheAction(t *testing.T) {
 		h.scripts = [][]item{tap(3)}
 		h.onPoll[1] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0", "down A", "up A", "poll", "close")
+		h.want("poll", "open", "notify", "fresh 0", "down A", "up A", "poll", "close")
 	})
 }
 
@@ -581,7 +589,7 @@ func TestIgnoredInput(t *testing.T) {
 		)}
 		h.onPoll[1] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0", "down A", "up A", "poll", "close")
+		h.want("poll", "open", "notify", "fresh 0", "down A", "up A", "poll", "close")
 	})
 }
 
@@ -594,7 +602,7 @@ func TestFollowsTheActiveProfile(t *testing.T) {
 		)}
 		h.onPoll[1] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0", "down B", "up B", "down A", "up A", "poll", "close")
+		h.want("poll", "open", "notify", "fresh 0", "down B", "up B", "down A", "up A", "poll", "close")
 	})
 }
 
@@ -604,7 +612,7 @@ func TestHoldLastsUntilRelease(t *testing.T) {
 		h.onPoll[1] = func() { h.push(touch(5, false)) }
 		h.onPoll[2] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0", "down LCtrl", "down A",
+		h.want("poll", "open", "notify", "fresh 0", "down LCtrl", "down A",
 			"poll", "up A", "up LCtrl", "poll", "close")
 	})
 }
@@ -622,7 +630,7 @@ func TestOnlyApplicationButtonTouchesAct(t *testing.T) {
 		h.scripts = [][]item{script(in, tap(3))} // control: an application button
 		h.onPoll[1] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0", "down A", "up A", "poll", "close")
+		h.want("poll", "open", "notify", "fresh 0", "down A", "up A", "poll", "close")
 	})
 }
 
@@ -631,7 +639,7 @@ func TestHoldIsReleasedWhateverTheReleaseKind(t *testing.T) {
 		h.scripts = [][]item{{touch(5, true), widgetTouch(5, 0x03, false)}}
 		h.onPoll[1] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0", "down LCtrl", "down A", "up A", "up LCtrl", "poll", "close")
+		h.want("poll", "open", "notify", "fresh 0", "down LCtrl", "down A", "up A", "up LCtrl", "poll", "close")
 	})
 }
 
@@ -642,7 +650,7 @@ func TestHoldCanBePressedAgainAfterARelease(t *testing.T) {
 		h.scripts = [][]item{{touch(5, true), event(proto.ProfileChanged{Profile: 0}), touch(5, true)}}
 		h.onPoll[1] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0", "down LCtrl", "down A", "up A", "up LCtrl",
+		h.want("poll", "open", "notify", "fresh 0", "down LCtrl", "down A", "up A", "up LCtrl",
 			"down LCtrl", "down A", "poll", "up A", "up LCtrl", "close")
 	})
 }
@@ -653,7 +661,7 @@ func TestProfileChangeReleasesHeldKeys(t *testing.T) {
 		h.scripts = [][]item{{touch(5, true), event(proto.ProfileChanged{Profile: 1}), touch(5, false)}}
 		h.onPoll[1] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0", "down LCtrl", "down A", "up A", "up LCtrl", "poll", "close")
+		h.want("poll", "open", "notify", "fresh 0", "down LCtrl", "down A", "up A", "up LCtrl", "poll", "close")
 	})
 }
 
@@ -664,7 +672,7 @@ func TestGameStartAndStopSwitchProfiles(t *testing.T) {
 		h.onPoll[3] = func() { h.running[game] = false }
 		h.onPoll[4] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0",
+		h.want("poll", "open", "notify", "fresh 0",
 			"poll", "switch 2",
 			"poll", "down B", "up B",
 			"poll", "switch 0",
@@ -674,13 +682,30 @@ func TestGameStartAndStopSwitchProfiles(t *testing.T) {
 	})
 }
 
+// The keyboard does not confirm a switch to the active profile: when the
+// game's profile was chosen on the keyboard already, nothing is sent.
+func TestGameStartOnTheActiveProfileDoesNotSwitch(t *testing.T) {
+	test(t, func(h *harness) {
+		h.scripts = [][]item{{event(proto.ProfileChanged{Profile: 2})}}
+		h.onPoll[1] = func() { h.running[game] = true }
+		h.onPoll[2] = func() { h.running[game] = false }
+		h.onPoll[3] = h.cancel
+		h.run(testConfig())
+		h.want("poll", "open", "notify", "fresh 0",
+			"poll",
+			"poll", "switch 0",
+			"poll", "close")
+		h.wantLogged(1, "profile 2 is already active")
+	})
+}
+
 func TestOtherProgramsDoNotSwitch(t *testing.T) {
 	test(t, func(h *harness) {
 		h.running[game] = true
 		h.onPoll[1] = func() { h.running[other] = true } // profile 2 still comes first
 		h.onPoll[2] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 2", "poll", "poll", "close")
+		h.want("poll", "open", "notify", "fresh 2", "poll", "poll", "close")
 	})
 }
 
@@ -690,7 +715,7 @@ func TestKeysAreReleasedBeforeSwitching(t *testing.T) {
 		h.onPoll[1] = func() { h.running[game] = true }
 		h.onPoll[2] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0", "down LCtrl", "down A",
+		h.want("poll", "open", "notify", "fresh 0", "down LCtrl", "down A",
 			"poll", "up A", "up LCtrl", "switch 2", "poll", "close")
 	})
 }
@@ -703,7 +728,7 @@ func TestSwarmAppearing(t *testing.T) {
 		h.run(testConfig())
 		// Released and closed within the poll that saw Swarm II; after that
 		// the keyboard is not opened or read (the fakes report that).
-		h.want("poll", "open", "notify", "switch 0", "down LCtrl", "down A",
+		h.want("poll", "open", "notify", "fresh 0", "down LCtrl", "down A",
 			"poll", "up A", "up LCtrl", "close", "poll", "poll")
 		if h.opens != 1 {
 			h.t.Errorf("%d opens, want 1", h.opens)
@@ -719,7 +744,7 @@ func TestSwarmAtStartUp(t *testing.T) {
 		h.onPoll[4] = h.cancel
 		h.run(testConfig())
 		h.want("poll", "poll", "poll",
-			"poll", "open", "notify", "switch 0", "read 0", "read 2", "read 3",
+			"poll", "open", "notify", "fresh 0", "read 0", "read 2", "read 3",
 			"poll", "close")
 		h.wantLogged(1, "Swarm II is running")
 		h.wantLogged(1, "Swarm II has closed")
@@ -738,9 +763,9 @@ func TestResumeWarnsAboutChangedButtons(t *testing.T) {
 		h.run(testConfig())
 		// Only the reopening after Swarm II reads the tables, and nothing is
 		// written: Keyboard has no write call.
-		h.want("poll", "open", "notify", "switch 0",
+		h.want("poll", "open", "notify", "fresh 0",
 			"poll", "close",
-			"poll", "open", "notify", "switch 0", "read 0", "read 2", "read 3",
+			"poll", "open", "notify", "fresh 0", "read 0", "read 2", "read 3",
 			"poll", "close")
 		h.wantLogged(1, "profile 0", "positions 3, 5", "kb7screen apply")
 		h.wantLogged(1, "profile 2", "position 3", "kb7screen apply")
@@ -781,12 +806,12 @@ func TestUnplugReleasesAndRetriesEveryPoll(t *testing.T) {
 		}
 		h.onPoll[6] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0", "down LCtrl", "down A",
+		h.want("poll", "open", "notify", "fresh 0", "down LCtrl", "down A",
 			"poll", "up A", "up LCtrl", "close",
 			"poll", "open failed",
 			"poll", "open failed",
 			"poll", "open failed",
-			"poll", "open", "notify", "switch 0",
+			"poll", "open", "notify", "fresh 0",
 			"poll", "close")
 		h.wantLogged(1, "waiting for the keyboard")
 	})
@@ -799,8 +824,8 @@ func TestReadErrorsReconnect(t *testing.T) {
 				h.scripts = [][]item{{failure(err)}}
 				h.onPoll[2] = h.cancel
 				h.run(testConfig())
-				h.want("poll", "open", "notify", "switch 0", "close",
-					"poll", "open", "notify", "switch 0",
+				h.want("poll", "open", "notify", "fresh 0", "close",
+					"poll", "open", "notify", "fresh 0",
 					"poll", "close")
 				h.wantLogged(1, err.Error())
 			})
@@ -821,7 +846,7 @@ func TestStartFailuresRetry(t *testing.T) {
 			h.onPoll[2] = h.cancel
 			h.run(testConfig())
 			h.want("poll", "open", "notify", "close",
-				"poll", "open", "notify", "switch 0",
+				"poll", "open", "notify", "fresh 0",
 				"poll", "close")
 			h.wantLogged(1, "no answer")
 		})
@@ -831,8 +856,8 @@ func TestStartFailuresRetry(t *testing.T) {
 			h.switchErr = first
 			h.onPoll[2] = h.cancel
 			h.run(testConfig())
-			h.want("poll", "open", "notify", "switch 0", "close",
-				"poll", "open", "notify", "switch 0",
+			h.want("poll", "open", "notify", "fresh 0", "close",
+				"poll", "open", "notify", "fresh 0",
 				"poll", "close")
 			h.wantLogged(1, "no answer")
 		})
@@ -848,7 +873,7 @@ func TestStartFailuresRetry(t *testing.T) {
 			h.onPoll[3] = h.cancel
 			h.run(testConfig())
 			h.want("poll", "open failed", "poll", "open failed",
-				"poll", "open", "notify", "switch 0",
+				"poll", "open", "notify", "fresh 0",
 				"poll", "close")
 			h.wantLogged(1, "access denied")
 		})
@@ -866,9 +891,9 @@ func TestGameSwitchFailureReconnects(t *testing.T) {
 		h.onPoll[1] = func() { h.running[game] = true }
 		h.onPoll[3] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0",
+		h.want("poll", "open", "notify", "fresh 0",
 			"poll", "switch 2", "close",
-			"poll", "open", "notify", "switch 2",
+			"poll", "open", "notify", "fresh 2",
 			"poll", "close")
 	})
 }
@@ -884,7 +909,7 @@ func TestUnconfirmedSwitchIsAssumed(t *testing.T) {
 			h.scripts = [][]item{tap(3)}
 			h.onPoll[1] = h.cancel
 			h.run(testConfig())
-			h.want("poll", "open", "notify", "switch 0", "down A", "up A", "poll", "close")
+			h.want("poll", "open", "notify", "fresh 0", "down A", "up A", "poll", "close")
 			h.wantLogged(1, "did not confirm the switch to profile 0; assuming it is active")
 		})
 	})
@@ -900,7 +925,7 @@ func TestUnconfirmedSwitchIsAssumed(t *testing.T) {
 			h.onPoll[2] = func() { h.push(tap(3)...) } // on the game's profile
 			h.onPoll[3] = h.cancel
 			h.run(testConfig())
-			h.want("poll", "open", "notify", "switch 0",
+			h.want("poll", "open", "notify", "fresh 0",
 				"poll", "switch 2",
 				"poll", "down B", "up B",
 				"poll", "close")
@@ -922,7 +947,7 @@ func TestPanicStillReleasesAndCloses(t *testing.T) {
 			_ = Run(h.ctx, testConfig(), h.deps())
 			h.t.Error("Run returned")
 		}()
-		h.want("poll", "open", "notify", "switch 0", "down LCtrl", "down A",
+		h.want("poll", "open", "notify", "fresh 0", "down LCtrl", "down A",
 			"poll", "up A", "up LCtrl", "close")
 	})
 }
@@ -934,7 +959,7 @@ func TestProcessCheckFailure(t *testing.T) {
 		h.onPoll[3] = h.cancel
 		h.run(testConfig())
 		// Without knowing whether Swarm II runs, the keyboard is not opened.
-		h.want("poll", "poll", "poll", "open", "notify", "switch 0", "poll", "close")
+		h.want("poll", "poll", "poll", "open", "notify", "fresh 0", "poll", "close")
 		h.wantLogged(1, "process list unavailable")
 	})
 }
@@ -944,7 +969,7 @@ func TestCancelReleasesAndCloses(t *testing.T) {
 		h.scripts = [][]item{{touch(5, true)}}
 		h.onPoll[1] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0", "down LCtrl", "down A",
+		h.want("poll", "open", "notify", "fresh 0", "down LCtrl", "down A",
 			"poll", "up A", "up LCtrl", "close")
 	})
 }
@@ -965,7 +990,7 @@ func TestCancelDropsWaitingActions(t *testing.T) {
 		h.scripts = [][]item{{touch(8, true), touch(3, true)}}
 		h.onPoll[1] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0", "down A", "up A",
+		h.want("poll", "open", "notify", "fresh 0", "down A", "up A",
 			"poll", "down B", "up B", "close")
 	})
 }
@@ -981,11 +1006,11 @@ func TestCancelDoesNotWaitForever(t *testing.T) {
 		if d := time.Since(h.start); d > 10*time.Second {
 			h.t.Errorf("Run returned after %v", d)
 		}
-		h.want("poll", "open", "notify", "switch 0", "down A", "up A", "poll", "close")
+		h.want("poll", "open", "notify", "fresh 0", "down A", "up A", "poll", "close")
 		h.wantLogged(1, "still running")
 		// The worker finishes the tap on its own and then ends.
 		time.Sleep(time.Minute)
-		h.want("poll", "open", "notify", "switch 0", "down A", "up A", "poll", "close", "down B", "up B")
+		h.want("poll", "open", "notify", "fresh 0", "down A", "up A", "poll", "close", "down B", "up B")
 	})
 }
 
@@ -995,7 +1020,7 @@ func TestActionErrorsAreLogged(t *testing.T) {
 		h.scripts = [][]item{script(tap(7), tap(3))}
 		h.onPoll[1] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "switch 0", "launch tool", "down A", "up A", "poll", "close")
+		h.want("poll", "open", "notify", "fresh 0", "launch tool", "down A", "up A", "poll", "close")
 		h.wantLogged(1, "profile 0 position 7", "no such program")
 	})
 }
