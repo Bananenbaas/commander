@@ -177,8 +177,16 @@ const (
 
 var keyNames = map[string]Key{}
 
+// keyNameOf holds the first name registered for each key, as written.
+var keyNameOf = map[Key]string{}
+
 func init() {
-	add := func(name string, k Key) { keyNames[strings.ToLower(name)] = k }
+	add := func(name string, k Key) {
+		keyNames[strings.ToLower(name)] = k
+		if _, ok := keyNameOf[k]; !ok {
+			keyNameOf[k] = name
+		}
+	}
 	for i := 0; i < 26; i++ {
 		add(string(rune('A'+i)), A+Key(i))
 	}
@@ -227,3 +235,6 @@ func ParseKey(name string) (Key, error) {
 	}
 	return k, nil
 }
+
+// KeyName returns the name ParseKey accepts for k, or "" for an unknown key.
+func KeyName(k Key) string { return keyNameOf[k] }

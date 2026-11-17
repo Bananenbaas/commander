@@ -33,6 +33,9 @@ func TestParseArgs(t *testing.T) {
 		{[]string{"restore", "cfg", "--profile", "4"}, command{name: "restore", config: "cfg", profile: 4}},
 		{[]string{"restore", "--profile", "1", "cfg"}, command{name: "restore", config: "cfg", profile: 1}},
 		{[]string{"run", "cfg"}, command{name: "run", config: "cfg"}},
+		{[]string{"keytest"}, command{name: "keytest", seconds: 20}},
+		{[]string{"keytest", "--seconds", "1"}, command{name: "keytest", seconds: 1}},
+		{[]string{"keytest", "--seconds=120"}, command{name: "keytest", seconds: 120}},
 	}
 	for _, c := range ok {
 		got, err := parseArgs(c.args)
@@ -60,6 +63,10 @@ func TestParseArgs(t *testing.T) {
 		{"restore", "--profile", "1"},
 		{"run", "cfg", "--full"},
 		{"run", "cfg", "--nope"},
+		{"keytest", "--seconds", "0"},
+		{"keytest", "--seconds", "121"},
+		{"keytest", "cfg"},
+		{"check", "--seconds", "5"},
 	}
 	for _, args := range bad {
 		if c, err := parseArgs(args); err == nil {

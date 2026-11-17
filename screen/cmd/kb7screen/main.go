@@ -19,6 +19,7 @@ import (
 	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/apply"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/keys"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/keyboard"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
@@ -71,6 +72,8 @@ func execute(c command, stdout, stderr io.Writer) error {
 		return doRestore(c, stdout)
 	case "run":
 		return doRun(c, stderr)
+	case "keytest":
+		return doKeytest(c, stdout)
 	}
 	return fmt.Errorf("unknown command %q", c.name)
 }
@@ -328,4 +331,29 @@ func doRun(c command, stderr io.Writer) error {
 		},
 	}
 	return run.Run(ctx, cfg, deps)
+}
+
+// doKeytest prints the keys pressed on the KB7 for the given time. Nothing is
+// saved.
+func doKeytest(c command, stdout io.Writer) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(c.seconds)*time.Second)
+	defer cancel()
+	ch, err := keys.Listen(ctx)
+	if errors.Is(err, keys.ErrUnsupported) {
+		return errors.New("key input is not available on this system")
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "Press keys on the KB7; listening for %d seconds.\n", c.seconds)
+	for e := range ch {
+		state := "up"
+		if e.Down {
+			state = "down"
+		}
+		fmt.Fprintf(stdout, "%s %s\n", action.KeyName(e.Key), state)
+	}
+	return nil
 }

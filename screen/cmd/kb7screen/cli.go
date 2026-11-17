@@ -27,6 +27,9 @@ Commands:
                                  --full sends every picture again
   restore <config> --profile N   give the positions kb7screen took over in
                                  profile N their original contents back
+  keytest [--seconds N]          prints the keys pressed on the KB7 for N
+                                 seconds (default 20, 1 to 120); nothing is
+                                 saved
   run <config>                   carry out the buttons' actions until stopped
                                  with Ctrl+C
 
@@ -44,6 +47,7 @@ type command struct {
 	profile int    // read and restore
 	full    bool   // apply
 	out     string // preview
+	seconds int    // keytest
 }
 
 // errHelp is returned by parseArgs when the usage text was asked for.
@@ -63,7 +67,7 @@ func parseArgs(args []string) (command, error) {
 	c.name = args[0]
 	needsConfig, needsProfile := false, false
 	switch c.name {
-	case "check":
+	case "check", "keytest":
 	case "read":
 		needsProfile = true
 	case "preview", "apply", "run":
@@ -79,6 +83,7 @@ func parseArgs(args []string) (command, error) {
 	profile := fs.Int("profile", -1, "")
 	full := fs.Bool("full", false, "")
 	out := fs.String("out", "", "")
+	seconds := fs.Int("seconds", 20, "")
 	var rest []string
 	args = args[1:]
 	for {
@@ -105,6 +110,15 @@ func parseArgs(args []string) (command, error) {
 	}
 	if set["out"] && c.name != "preview" {
 		return c, fmt.Errorf("%s does not take --out", c.name)
+	}
+	if set["seconds"] && c.name != "keytest" {
+		return c, fmt.Errorf("%s does not take --seconds", c.name)
+	}
+	if c.name == "keytest" {
+		if *seconds < 1 || *seconds > 120 {
+			return c, fmt.Errorf("--seconds must be 1 to 120, got %d", *seconds)
+		}
+		c.seconds = *seconds
 	}
 	if needsProfile {
 		if !set["profile"] {

@@ -78,3 +78,43 @@ func TestLinuxCodeValues(t *testing.T) {
 		}
 	}
 }
+
+func TestKeyFromWindowsScan(t *testing.T) {
+	for _, k := range []Key{A, W, N, Space, F12, RAlt, Insert} {
+		code, ext, ok := WindowsScan(k)
+		c := uint16(code)
+		if ext {
+			c |= 0xE000
+		}
+		if got, ok2 := KeyFromWindowsScan(c); !ok || !ok2 || got != k {
+			t.Errorf("%v: got %v", k, got)
+		}
+	}
+	if _, ok := KeyFromWindowsScan(0x00); ok {
+		t.Error("0x00 must be unknown")
+	}
+}
+
+func TestKeyFromLinuxCode(t *testing.T) {
+	for _, k := range []Key{A, W, N, Space} {
+		code, ok := LinuxCode(k)
+		if got, ok2 := KeyFromLinuxCode(code); !ok || !ok2 || got != k {
+			t.Errorf("%v: got %v", k, got)
+		}
+	}
+	if _, ok := KeyFromLinuxCode(0); ok {
+		t.Error("0 must be unknown")
+	}
+}
+
+func TestKeyName(t *testing.T) {
+	if got := KeyName(W); got != "W" {
+		t.Errorf("KeyName(W) = %q", got)
+	}
+	for _, e := range keyTable {
+		got, err := ParseKey(KeyName(e.key))
+		if err != nil || got != e.key {
+			t.Errorf("key %#x: name %q parses to %#x, %v", uint16(e.key), KeyName(e.key), uint16(got), err)
+		}
+	}
+}

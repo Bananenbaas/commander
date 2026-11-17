@@ -74,6 +74,36 @@ var byKey = func() map[Key]keyCodes {
 	return m
 }()
 
+var (
+	byWin = map[uint16]Key{}
+	byLin = map[uint16]Key{}
+)
+
+func init() {
+	for _, e := range keyTable {
+		// The codes are unique (see the tests); the first entry wins anyway.
+		if _, ok := byWin[e.win]; !ok {
+			byWin[e.win] = e.key
+		}
+		if _, ok := byLin[e.lin]; !ok {
+			byLin[e.lin] = e.key
+		}
+	}
+}
+
+// KeyFromWindowsScan returns the key of a set-1 make code, with 0xE000 or-ed
+// in when the key is extended (the convention of the key table).
+func KeyFromWindowsScan(code uint16) (Key, bool) {
+	k, ok := byWin[code]
+	return k, ok
+}
+
+// KeyFromLinuxCode returns the key of a Linux input keycode.
+func KeyFromLinuxCode(code uint16) (Key, bool) {
+	k, ok := byLin[code]
+	return k, ok
+}
+
 // WindowsScan returns the set-1 scan code of k and whether it needs the
 // extended-key flag.
 func WindowsScan(k Key) (code uint8, extended bool, ok bool) {
