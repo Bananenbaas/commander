@@ -37,6 +37,8 @@ jobs:
     defaults:
       run:
         working-directory: screen
+    env:
+      CGO_ENABLED: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -47,3 +49,8 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go build ./cmd/kb7screen
+      # The race detector needs cgo, which the released executables do not use.
+      - if: runner.os == 'Linux'
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race ./...
