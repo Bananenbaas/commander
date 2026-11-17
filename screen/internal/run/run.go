@@ -57,7 +57,7 @@ type Keyboard interface {
 	NextEvent(timeout time.Duration) (any, error)
 	ReadButtons(p byte) (*proto.Table29, error)
 	StreamLights(p *proto.LightPayload) error
-	ReadBrightness(p byte) (int, error)
+	ReadLights(p byte) (*proto.LightPayload, int, error)
 	Close() error
 }
 
@@ -132,14 +132,15 @@ type loop struct {
 
 	// Lighting; eng is nil without it.
 	eng        *light.Engine
-	keys       <-chan keys.Event // nil without key input, or once it is closed
-	flips      map[spot]string   // the state a touch of the button flips itself
-	wasRunning map[string]bool   // switch_when_running programs running at the last poll
-	nextFrame  time.Time         // when the next frame is due
-	streamed   bool              // a frame was sent since the keyboard was opened or the last rest frame
-	shown      byte              // the profile of the last frame sent
-	ackLogged  bool              // a missing acknowledgement was logged since the keyboard was opened
-	brightMsg  string            // why the brightness could not be read, as last logged
+	keys       <-chan keys.Event            // nil without key input, or once it is closed
+	flips      map[spot]string              // the state a touch of the button flips itself
+	wasRunning map[string]bool              // switch_when_running programs running at the last poll
+	nextFrame  time.Time                    // when the next frame is due
+	streamed   bool                         // a frame was sent since the keyboard was opened or the last rest frame
+	shown      byte                         // the profile of the last frame sent
+	ackLogged  bool                         // a missing acknowledgement was logged since the keyboard was opened
+	brightMsg  string                       // why the brightness could not be read, as last logged
+	stored     map[byte]*proto.LightPayload // each profile's 0x11 colours read since the keyboard was opened, unscaled
 }
 
 // Run carries out the actions of the buttons of cfg until ctx is cancelled,
@@ -165,13 +166,16 @@ type loop struct {
 // layers are streamed at its frame rate while the keyboard is open, starting
 // 2.5 s after notifications are enabled; the key events of d.Keys reach the
 // engine before every frame. After every profile change the profile's
-// brightness is read (the last level stays when that fails), and brightness
-// notifications are followed. A profile's states take their start values
-// when its program starts. A touch of a button with a state flips it, unless
-// the button's action sends the state's toggle, which flips it already. When
-// the stream stops, because the active profile is not lit, Swarm II runs or
-// Run stops, a rest frame of the profile last shown is sent after the held
-// keys are released; not when the keyboard failed. After a frame the
+// report 0x11 is read, its brightness and stored lighting in one (the last
+// level stays when that fails), and brightness notifications are followed. A
+// profile's states take their start values when its program starts. A touch
+// of a button with a state flips it, unless the button's action sends the
+// state's toggle, which flips it already. When the stream stops, because the
+// active profile is not lit, Swarm II runs or Run stops, the active
+// profile's stored lighting, scaled by the brightness, is sent after the held
+// keys are released, as the keyboard keeps the last frame streamed; when it
+// could not be read, a rest frame of the profile last shown is sent instead.
+// Nothing is sent when the keyboard failed. After a frame the
 // keyboard does not acknowledge, the next one waits 2.5 s; any other stream
 // error, a write the keyboard does not take included, closes the keyboard.
 //
@@ -385,6 +389,7 @@ func (l *loop) connect(ctx context.Context, want byte) {
 	}
 	l.openMsg = ""
 	l.kb = kb
+	l.stored = map[byte]*proto.LightPayload{} // read again: Swarm II may have changed them
 	if !l.release(ctx) {
 		return
 	}
@@ -625,8 +630,8 @@ func (l *loop) confirmDue() (time.Duration, bool) {
 }
 
 // stop releases every held key, after the action that is running, sends the
-// rest frame and closes the keyboard. Actions that have not started are
-// dropped.
+// active profile's stored lighting (see rest) and closes the keyboard.
+// Actions that have not started are dropped.
 func (l *loop) stop() {
 	l.confirm = nil
 	if !l.w.stop(stopTimeout) {

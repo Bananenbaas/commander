@@ -425,21 +425,22 @@ func (k *KB) StreamLights(p *proto.LightPayload) error {
 	return nil
 }
 
-// ReadBrightness reads the brightness percentage of profile p from report 0x11.
-func (k *KB) ReadBrightness(p byte) (int, error) {
+// ReadLights reads report 0x11 of profile p, in one selector read: the
+// lighting stored for the profile, unscaled, and its brightness percentage.
+func (k *KB) ReadLights(p byte) (*proto.LightPayload, int, error) {
 	if err := k.selectTable(p, selLights); err != nil {
-		return 0, err
+		return nil, 0, err
 	}
 	b, err := k.d.GetFeature(lightsID, proto.Len11)
 	if err != nil {
-		return 0, fmt.Errorf("keyboard: reading lighting report: %w", err)
+		return nil, 0, fmt.Errorf("keyboard: reading lighting report: %w", err)
 	}
-	v, err := proto.Brightness11(b)
+	stored, v, err := proto.Lights11(b)
 	if err != nil {
-		return 0, fmt.Errorf("keyboard: %w", err)
+		return nil, 0, fmt.Errorf("keyboard: %w", err)
 	}
 	if v > 100 {
-		return 0, fmt.Errorf("keyboard: brightness %d is out of range 0 to 100", v)
+		return nil, 0, fmt.Errorf("keyboard: brightness %d is out of range 0 to 100", v)
 	}
-	return v, nil
+	return stored, v, nil
 }

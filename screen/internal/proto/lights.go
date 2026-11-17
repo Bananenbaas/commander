@@ -11,9 +11,11 @@ const (
 	lightBlock      = 48
 	lightBanks      = 6
 	lightPerFrame   = 60
+	lightColours    = 7 * lightBlock // the colour bytes, before the zero tail
 
 	// Len11 is the length of report 0x11 as GetFeature returns it.
-	Len11 = 348
+	Len11     = 348
+	colours11 = 10 // where the colours start in report 0x11
 )
 
 // LightPayload is the 360 byte colour payload of one lighting update.
@@ -45,18 +47,23 @@ func LightFrames(p *LightPayload) [6][64]byte {
 // IsLightAck reports whether fr is the acknowledgement of bank.
 func IsLightAck(fr [64]byte, bank byte) bool { return fr[0] == 0x32 && fr[1] == bank }
 
-// Brightness11 returns the brightness percentage in report 0x11, given as
-// GetFeature returns it (report ID first).
-func Brightness11(b []byte) (int, error) {
+// Lights11 parses report 0x11, given as GetFeature returns it (report ID
+// first): the stored colours, bytes 10 to 345, in the layout of the a1
+// payload's first 336 bytes (the 24-byte tail stays zero), and the brightness
+// percentage, byte 6. The colours are as configured, not scaled by the
+// brightness.
+func Lights11(b []byte) (*LightPayload, int, error) {
 	if len(b) != Len11 {
-		return 0, fmt.Errorf("report 0x11: %d bytes, want %d", len(b), Len11)
+		return nil, 0, fmt.Errorf("report 0x11: %d bytes, want %d", len(b), Len11)
 	}
 	if b[0] != 0x11 {
-		return 0, fmt.Errorf("report 0x11: report id 0x%02x", b[0])
+		return nil, 0, fmt.Errorf("report 0x11: report id 0x%02x", b[0])
 	}
 	s := Sum16(b[:Len11-2])
 	if b[Len11-2] != byte(s) || b[Len11-1] != byte(s>>8) {
-		return 0, fmt.Errorf("report 0x11: bad checksum")
+		return nil, 0, fmt.Errorf("report 0x11: bad checksum")
 	}
-	return int(b[6]), nil
+	p := new(LightPayload)
+	copy(p[:lightColours], b[colours11:colours11+lightColours])
+	return p, int(b[6]), nil
 }

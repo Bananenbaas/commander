@@ -61,20 +61,38 @@ func TestIsLightAck(t *testing.T) {
 	}
 }
 
-func TestBrightness11(t *testing.T) {
+func TestLights11(t *testing.T) {
+	var want LightPayload
+	SetLED(&want, 0, 0x10, 0x40, 0xc0)
+	SetLED(&want, 17, 1, 2, 3)
+	SetLED(&want, 111, 0xff, 0xfe, 0xfd) // the last LED, in the last block
 	b := make([]byte, Len11)
 	copy(b, []byte{0x11, 0x5c, 0x01, 0x00, 0x01, 0x06, 0x63, 0x0b, 0x01, 0x00})
+	copy(b[10:346], want[:336])
 	s := Sum16(b[:346])
 	b[346], b[347] = byte(s), byte(s>>8)
-	got, err := Brightness11(b)
-	if err != nil || got != 99 {
-		t.Fatalf("got %d, %v", got, err)
+
+	p, level, err := Lights11(b)
+	if err != nil || level != 99 {
+		t.Fatalf("got level %d, %v", level, err)
 	}
+	if *p != want {
+		t.Error("colours differ from the table")
+	}
+	if got := [3]byte{p[17/16*48+17%16], p[17/16*48+17%16+16], p[17/16*48+17%16+32]}; got != [3]byte{1, 2, 3} {
+		t.Errorf("LED 17 is % x", got)
+	}
+
 	b[347]++
-	if _, err := Brightness11(b); err == nil {
+	if _, _, err := Lights11(b); err == nil {
 		t.Error("wrong sum accepted")
 	}
-	if _, err := Brightness11(b[:100]); err == nil {
+	b[347]--
+	b[0] = 0x12
+	if _, _, err := Lights11(b); err == nil {
+		t.Error("wrong report id accepted")
+	}
+	if _, _, err := Lights11(b[:100]); err == nil {
 		t.Error("short report accepted")
 	}
 }

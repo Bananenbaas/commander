@@ -195,14 +195,32 @@ func (l *loop) stream(p *proto.LightPayload) (missed bool, err error) {
 	return true, nil
 }
 
-// rest sends the rest frame of the profile last streamed, if a frame was
-// streamed since the keyboard was opened or since the last rest frame.
+// rest sends the frame the keyboard is to keep once the stream stops, if a
+// frame was streamed since the keyboard was opened or since the last such
+// frame: the active profile's stored lighting, read first when it was not
+// read since the keyboard was opened (see restFrame). It is needed because
+// the keyboard keeps the last frame streamed, also after a profile switch
+// has loaded the new profile's stored lighting.
 func (l *loop) rest() error {
 	if l.eng == nil || l.kb == nil || !l.streamed {
 		return nil
 	}
+	if _, ok := l.stored[l.active]; !ok {
+		if err := l.readLights(); err != nil {
+			return err // the keyboard is gone
+		}
+	}
+	return l.sendRest()
+}
+
+// sendRest sends restFrame, if a frame was streamed since the keyboard was
+// opened or since the last such frame.
+func (l *loop) sendRest() error {
+	if !l.streamed {
+		return nil
+	}
 	l.streamed = false
-	p := l.eng.Rest(l.shown)
+	p := l.restFrame()
 	if p == nil {
 		return nil
 	}
@@ -210,35 +228,61 @@ func (l *loop) rest() error {
 	return err
 }
 
+// restFrame is the active profile's stored lighting (report 0x11, kept
+// unscaled) scaled by the brightness. When it has not been read since the
+// keyboard was opened, it is the rest frame of the profile last streamed
+// (see light.Engine.Rest).
+func (l *loop) restFrame() *proto.LightPayload {
+	if p := l.stored[l.active]; p != nil {
+		return l.eng.Scaled(p)
+	}
+	return l.eng.Rest(l.shown)
+}
+
+// readLights reads the active profile's report 0x11: its brightness becomes
+// the engine's, and its stored lighting is kept for restFrame. A failed read
+// leaves both as they were and is logged once; it is returned only when the
+// keyboard is gone.
+func (l *loop) readLights() error {
+	stored, level, err := l.kb.ReadLights(l.active)
+	switch {
+	case errors.Is(err, device.ErrDisconnected) || errors.Is(err, device.ErrClosed):
+		return err
+	case err != nil:
+		l.logOnce(&l.brightMsg, fmt.Sprintf("reading the brightness: %v; keeping the last level", err))
+		return nil
+	}
+	l.brightMsg = ""
+	l.eng.SetBrightness(level)
+	l.stored[l.active] = stored
+	return nil
+}
+
 // activate follows a change of the active profile: the engine renders it
-// from the next frame on, a rest frame is sent when it is not lit, and its
-// brightness is read; when that read fails, the last level stays, unless
-// the keyboard is gone: then it is closed. It reports false when the
-// keyboard failed and was closed.
+// from the next frame on, its brightness and stored lighting are read (one
+// selector read), and when it is not lit the stored lighting is sent (see
+// rest). When the read fails, the last brightness stays and so does the
+// stored lighting read earlier since the keyboard was opened; without one
+// the rest frame of the profile last streamed is sent instead. When the
+// keyboard is gone it is closed. It reports false when the keyboard failed
+// and was closed.
 func (l *loop) activate(ctx context.Context) bool {
 	if l.eng == nil {
 		return true
 	}
 	l.eng.SetActive(l.active)
+	if err := l.readLights(); err != nil {
+		l.logf("reading the brightness: %v; opening the keyboard again", err)
+		l.drop(ctx)
+		return false
+	}
 	if !l.eng.Lit(l.active) {
-		if err := l.rest(); err != nil {
+		if err := l.sendRest(); err != nil {
 			l.logf("lighting the keyboard: %v; opening it again", err)
 			l.drop(ctx)
 			return false
 		}
 	}
-	level, err := l.kb.ReadBrightness(l.active)
-	switch {
-	case errors.Is(err, device.ErrDisconnected) || errors.Is(err, device.ErrClosed):
-		l.logf("reading the brightness: %v; opening the keyboard again", err)
-		l.drop(ctx)
-		return false
-	case err != nil:
-		l.logOnce(&l.brightMsg, fmt.Sprintf("reading the brightness: %v; keeping the last level", err))
-		return true
-	}
-	l.brightMsg = ""
-	l.eng.SetBrightness(level)
 	return true
 }
 

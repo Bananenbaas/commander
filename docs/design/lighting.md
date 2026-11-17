@@ -76,8 +76,14 @@ report `0x11`", "LED map" and "Device notifications":
 
 Not measured, needed before relying on it:
 
-1. **What the keyboard shows when the stream stops** (run ends or crashes):
-   the last frame, or the stored `0x11` of the active profile.
+1. ~~**What the keyboard shows when the stream stops** (run ends or crashes):
+   the last frame, or the stored `0x11` of the active profile.~~ **Measured
+   2026-11-17** from `kb7screen run` (the owner's observation, no capture):
+   the last frame. Switching from the lit SC profile to the unlit DESKTOP
+   profile, the keyboard first showed DESKTOP's stored lighting, then the rest
+   frame `run` sent after the switch (the SC layers at t = 0) and kept it. So
+   the keyboard keeps the last frame streamed, also after a profile switch,
+   and `run` now leaves the stored table behind instead (see Run below).
 2. **What a profile switch does to a running stream**: whether the stored
    table of the new profile flashes before our next frame.
 3. ~~Reading key presses of the KB7 through Windows Raw Input while another
@@ -92,7 +98,9 @@ Not measured, needed before relying on it:
    keys show up.
 4. **The brightness level at start-up**: read from `0x11` byte 6 through the
    selector (`05 <profile> b0 00`), as Swarm II does at start. Reading this
-   block from our own code has not been done; `b8`, `b9` and `ba` have.
+   block from our own code works: observed from `kb7screen run` (no capture),
+   which read it on every profile switch of the session above without an
+   error. Whether the level read is right has not been checked.
 5. **Streaming while an upload or a table write runs** on the same interface:
    `apply` reads acknowledgements on interface 1 and a concurrent stream would
    mix its own into them. Not tried, and not to be tried (see Run below).
@@ -251,11 +259,16 @@ Nothing about the keys is stored or logged.
   feature interface, not on the stream's) and falls back to the last level if
   that read fails.
 - When the stream stops (Ctrl+C, closing the keyboard for Swarm II, a switch
-  to a profile without `[light]`), `run` sends one last frame of the profile's
-  layers at t = 0 with no ripple and states off, so no half-finished ripple
-  or stale state stays frozen if the keyboard keeps the last frame. This goes
-  after the held keys are released and before the keyboard is closed, and is
-  skipped when the keyboard is already gone.
+  to a profile without `[light]`), `run` sends one last frame: the stored
+  `0x11` colours of the profile that is (or, after a switch, becomes) active,
+  scaled by the brightness like the stream, because the keyboard keeps the
+  last frame streamed (measurement 1). The table is read with the brightness
+  in the selector read after each profile switch and kept until the keyboard
+  is closed; on a switch it is read before the frame is sent. When it could
+  not be read, the last frame is the previous lit profile's layers at t = 0
+  with no ripple and states off. This goes after the held keys are released
+  and before the keyboard is closed, and is skipped when the keyboard is
+  already gone.
 - RGB off (`03 00 11 01`): keep streaming, the keyboard keeps them dark.
 - While Swarm II runs, `run` already closes the keyboard; the stream stops
   with it and resumes after.
@@ -269,10 +282,11 @@ Nothing about the keys is stored or logged.
 
 ### Stored table (static fallback)
 
-`apply` also writes each lit profile's `0x11` with the layers frozen at
-t = 0 (states off, no ripple), keeping the header it read, so the keyboard
-looks close to right when `run` is not running. This depends on measurement 1
-and on reading `0x11` (measurement 4); until both are done it is left out.
+The stored table is now what `run` leaves on the LEDs when the stream stops
+(see Run). Writing it is still left out: `apply` could write each lit
+profile's `0x11` with the layers frozen at t = 0 (states off, no ripple),
+keeping the header it read, so the keyboard looks close to right when `run`
+is not running, but nothing writes `0x11` yet.
 
 ## Testing
 

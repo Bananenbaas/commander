@@ -160,6 +160,7 @@ type harness struct {
 	brightReads int
 	bright      int
 	brightErr   error
+	stored      map[byte]proto.LightPayload // the 0x11 table of each profile
 	notifyAt    []time.Duration
 }
 
@@ -452,15 +453,18 @@ func (k *fakeKB) StreamLights(p *proto.LightPayload) error {
 	return nil
 }
 
-func (k *fakeKB) ReadBrightness(p byte) (int, error) {
-	k.enter("ReadBrightness")
+// ReadLights returns the stored table of p in h.stored (all off when there is
+// none) and h.bright.
+func (k *fakeKB) ReadLights(p byte) (*proto.LightPayload, int, error) {
+	k.enter("ReadLights")
 	defer k.leave()
-	k.h.record(fmt.Sprintf("brightness %d", p))
+	k.h.record(fmt.Sprintf("lights %d", p))
 	k.h.brightReads++
 	if k.h.brightErr != nil {
-		return 0, k.h.brightErr
+		return nil, 0, k.h.brightErr
 	}
-	return k.h.bright, nil
+	stored := k.h.stored[p]
+	return &stored, k.h.bright, nil
 }
 
 func (k *fakeKB) Close() error {
@@ -1202,6 +1206,25 @@ func restOf(s *light.Stack) proto.LightPayload {
 	return *light.NewEngine(map[byte]*light.Stack{0: s}, time.Time{}).Rest(0)
 }
 
+// storedBlue is a stored 0x11 table unlike any frame of litStack: every LED
+// blue 200, and LED 17 (10, 20, 30). The fake records it as "frame (gear off)".
+func storedBlue() proto.LightPayload {
+	var p proto.LightPayload
+	for i := range 112 {
+		proto.SetLED(&p, i, 0, 0, 200)
+	}
+	proto.SetLED(&p, 17, 10, 20, 30)
+	return p
+}
+
+// scaledBy returns p with every colour at pct percent, rounding down.
+func scaledBy(p proto.LightPayload, pct int) proto.LightPayload {
+	for i := range p {
+		p[i] = byte(int(p[i]) * pct / 100)
+	}
+	return p
+}
+
 // compact returns the log with every run of "frame" entries as one "frames".
 func compact(log []string) []string {
 	var out []string
@@ -1301,7 +1324,7 @@ func TestWithoutLightNothingIsStreamed(t *testing.T) {
 				h.run(testConfig())
 				h.want("poll", "open", "notify", "fresh 0", "down A", "up A", "poll", "poll", "poll", "close")
 				if h.streams != 0 || h.brightReads != 0 {
-					h.t.Errorf("%d StreamLights and %d ReadBrightness calls, want none", h.streams, h.brightReads)
+					h.t.Errorf("%d StreamLights and %d ReadLights calls, want none", h.streams, h.brightReads)
 				}
 				if h.maxWait != 100*time.Millisecond {
 					h.t.Errorf("NextEvent waited up to %v, want 100ms", h.maxWait)
@@ -1315,9 +1338,10 @@ func TestFramesFollowTheFrameRate(t *testing.T) {
 	test(t, func(h *harness) {
 		cfg := litConfig(t)
 		h.lit(cfg)
+		h.stored = map[byte]proto.LightPayload{0: storedBlue()}
 		h.onPoll[3] = h.cancel
 		h.run(cfg)
-		h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
+		h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0",
 			"poll", "frames",
 			"poll", "frames",
 			"poll", "frame (gear off)", "close")
@@ -1340,8 +1364,8 @@ func TestFramesFollowTheFrameRate(t *testing.T) {
 		if got := rgb(&regular[0].p, ledOf(action.A)); got != [3]byte{200, 0, 0} {
 			h.t.Errorf("A shows %v, want red 200", got)
 		}
-		if got, want := h.frames[len(h.frames)-1].p, restOf(cfg.Profiles[1].Light); got != want {
-			h.t.Error("the last frame is not the rest frame")
+		if got, want := h.frames[len(h.frames)-1].p, storedBlue(); got != want {
+			h.t.Error("the last frame is not the stored table")
 		}
 		want := []time.Duration{0, 2 * time.Second, 4 * time.Second, 6 * time.Second}
 		if !slices.Equal(h.pollTimes, want) {
@@ -1368,9 +1392,9 @@ func TestStreamErrors(t *testing.T) {
 			h.onPoll[4] = h.cancel
 			h.run(cfg)
 			// No rest frame for a keyboard that failed.
-			h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
+			h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0",
 				"poll", "frames", "stream failed", "close",
-				"poll", "open", "notify", "fresh 0", "brightness 0",
+				"poll", "open", "notify", "fresh 0", "lights 0",
 				"poll", "frames",
 				"poll", "frame (gear off)", "close")
 			if n := h.framesBetween(0, 4*time.Second); n != 5 {
@@ -1401,7 +1425,7 @@ func TestStreamErrors(t *testing.T) {
 			h.run(cfg)
 			// After a missed acknowledgement the next frame waits as long as
 			// after enabling notifications; touches are read meanwhile.
-			h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
+			h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0",
 				"poll", "frames", "stream failed",
 				"poll", "down A", "up A", "stream failed",
 				"poll", "stream failed",
@@ -1437,9 +1461,9 @@ func TestStreamErrors(t *testing.T) {
 			h.run(cfg)
 			// The keyboard is closed, not tried again every tick; it is opened
 			// again at the next poll and the polls go on two seconds apart.
-			h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
+			h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0",
 				"poll", "stream failed", "close",
-				"poll", "open", "notify", "fresh 0", "brightness 0",
+				"poll", "open", "notify", "fresh 0", "lights 0",
 				"poll", "frames",
 				"poll", "frames",
 				"poll", "frame (gear off)", "close")
@@ -1453,23 +1477,30 @@ func TestStreamErrors(t *testing.T) {
 	})
 }
 
-// Review Focus 4: a switch to a profile without [light].
-func TestRestFrameOnUnlitProfile(t *testing.T) {
+// Review Focus 4: a switch to a profile without [light]. The one frame sent
+// after the switch is that profile's stored table at the brightness read with
+// it.
+func TestStoredFrameOnUnlitProfile(t *testing.T) {
 	t.Run("on the keyboard", func(t *testing.T) {
 		test(t, func(h *harness) {
 			cfg := litConfig(t)
 			h.lit(cfg)
+			h.bright = 50
+			h.stored = map[byte]proto.LightPayload{4: storedBlue()}
 			h.onPoll[2] = func() { h.push(event(proto.ProfileChanged{Profile: 4})) }
 			h.onPoll[3] = func() { h.push(event(proto.ProfileChanged{Profile: 0})) }
 			h.onPoll[4] = h.cancel
 			h.run(cfg)
-			h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
+			h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0",
 				"poll", "frames",
-				"poll", "frames", "frame (gear off)", "brightness 4",
-				"poll", "brightness 0", "frames",
+				"poll", "frames", "lights 4", "frame (gear off)",
+				"poll", "lights 0", "frames",
 				"poll", "frame (gear off)", "close")
-			if got, want := *h.frameAt(5 * time.Second), restOf(cfg.Profiles[1].Light); got != want {
-				h.t.Error("the frame sent on the switch to profile 4 is not the rest frame")
+			if got, want := *h.frameAt(5 * time.Second), scaledBy(storedBlue(), 50); got != want {
+				h.t.Error("the frame sent on the switch to profile 4 is not its stored table at 50%")
+			}
+			if got := h.frames[len(h.frames)-1].p; got != (proto.LightPayload{}) {
+				h.t.Error("the frame sent on stopping is not profile 0's stored table (all off)")
 			}
 		})
 	})
@@ -1477,13 +1508,130 @@ func TestRestFrameOnUnlitProfile(t *testing.T) {
 		test(t, func(h *harness) {
 			cfg := litConfig(t)
 			h.lit(cfg)
+			h.stored = map[byte]proto.LightPayload{2: storedBlue()}
 			h.onPoll[2] = func() { h.running[game] = true }
 			h.onPoll[3] = h.cancel
 			h.run(cfg)
-			h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
+			h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0",
 				"poll", "frames",
-				"poll", "switch 2", "frame (gear off)", "brightness 2",
+				"poll", "switch 2", "lights 2", "frame (gear off)",
 				"poll", "close")
+			if got := h.frames[len(h.frames)-1].p; got != storedBlue() {
+				h.t.Error("the frame sent on the switch to profile 2 is not its stored table")
+			}
+		})
+	})
+}
+
+func TestStopShowsTheStoredTable(t *testing.T) {
+	test(t, func(h *harness) {
+		cfg := litConfig(t)
+		h.lit(cfg)
+		h.bright = 40
+		h.stored = map[byte]proto.LightPayload{0: storedBlue()}
+		h.onPoll[2] = h.cancel
+		h.run(cfg)
+		h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0",
+			"poll", "frames",
+			"poll", "frame (gear off)", "close")
+		if got, want := h.frames[len(h.frames)-1].p, scaledBy(storedBlue(), 40); got != want {
+			h.t.Error("the frame sent on stopping is not the stored table at 40%")
+		}
+		if got := rgb(&h.frames[0].p, ledOf(action.A)); got != [3]byte{80, 0, 0} {
+			h.t.Errorf("control: A shows %v while streaming, want red 80", got)
+		}
+	})
+}
+
+// When the stored table cannot be read, the rest frame of the profile last
+// streamed is sent instead, and the failure is logged once.
+func TestRestFallsBackWhenTheReadFails(t *testing.T) {
+	t.Run("on a switch", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.stored = map[byte]proto.LightPayload{4: storedBlue()}
+			h.onPoll[2] = func() {
+				h.brightErr = errors.New("no answer")
+				h.push(event(proto.ProfileChanged{Profile: 4}))
+			}
+			h.onPoll[3] = h.cancel
+			h.run(cfg)
+			h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0",
+				"poll", "frames",
+				"poll", "frames", "lights 4", "frame (gear off)",
+				"poll", "close")
+			if got, want := *h.frameAt(5 * time.Second), restOf(cfg.Profiles[1].Light); got != want {
+				h.t.Error("the frame sent on the switch is not profile 0's rest frame")
+			}
+			h.wantLogged(1, "no answer")
+		})
+	})
+	t.Run("a table read before on this connection stays", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.stored = map[byte]proto.LightPayload{4: storedBlue()}
+			h.onPoll[2] = func() { h.push(event(proto.ProfileChanged{Profile: 4})) }
+			h.onPoll[3] = func() { h.push(event(proto.ProfileChanged{Profile: 0})) }
+			h.onPoll[4] = func() {
+				h.brightErr = errors.New("no answer")
+				h.push(event(proto.ProfileChanged{Profile: 4}))
+			}
+			h.onPoll[5] = h.cancel
+			h.run(cfg)
+			h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0",
+				"poll", "frames",
+				"poll", "frames", "lights 4", "frame (gear off)",
+				"poll", "lights 0", "frames",
+				"poll", "frames", "lights 4", "frame (gear off)",
+				"poll", "close")
+			if got := *h.frameAt(9 * time.Second); got != storedBlue() {
+				h.t.Error("the frame sent on the second switch to profile 4 is not its stored table")
+			}
+			h.wantLogged(1, "no answer")
+		})
+	})
+	t.Run("forgotten on reconnecting", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.stored = map[byte]proto.LightPayload{0: storedBlue()}
+			h.streamErr = func(n int) error {
+				if n == 5 {
+					return fmt.Errorf("%w: writing", device.ErrDisconnected)
+				}
+				return nil
+			}
+			h.onPoll[2] = func() { h.brightErr = errors.New("no answer") }
+			h.onPoll[4] = h.cancel
+			h.run(cfg)
+			h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0",
+				"poll", "frames", "stream failed", "close",
+				"poll", "open", "notify", "fresh 0", "lights 0",
+				"poll", "frames",
+				"poll", "lights 0", "frame (gear off)", "close")
+			if got, want := h.frames[len(h.frames)-1].p, restOf(cfg.Profiles[1].Light); got != want {
+				h.t.Error("the frame sent on stopping is not profile 0's rest frame")
+			}
+		})
+	})
+	t.Run("on stopping", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.stored = map[byte]proto.LightPayload{0: storedBlue()}
+			h.brightErr = errors.New("no answer")
+			h.onPoll[2] = h.cancel
+			h.run(cfg)
+			// Not read on the switch, so read again before the last frame.
+			h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0",
+				"poll", "frames",
+				"poll", "lights 0", "frame (gear off)", "close")
+			if got, want := h.frames[len(h.frames)-1].p, restOf(cfg.Profiles[1].Light); got != want {
+				h.t.Error("the frame sent on stopping is not profile 0's rest frame")
+			}
+			h.wantLogged(1, "no answer")
 		})
 	})
 }
@@ -1494,19 +1642,23 @@ func TestSwarmWhileStreaming(t *testing.T) {
 		cfg := litConfig(t)
 		h.lit(cfg)
 		h.scripts = [][]item{{touch(5, true)}}
+		h.stored = map[byte]proto.LightPayload{0: storedBlue()}
 		h.onPoll[2] = func() { h.running[procs.Swarm[0]] = true }
 		h.onPoll[4] = func() { h.running[procs.Swarm[0]] = false }
 		h.onPoll[6] = h.cancel
 		h.run(cfg)
-		h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0", "down LCtrl", "down A",
+		h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0", "down LCtrl", "down A",
 			"poll", "frames",
 			"poll", "up A", "up LCtrl", "frame (gear off)", "close",
 			"poll",
-			"poll", "open", "notify", "fresh 0", "brightness 0", "read 0", "read 2", "read 3",
+			"poll", "open", "notify", "fresh 0", "lights 0", "read 0", "read 2", "read 3",
 			"poll", "frames",
 			"poll", "frame (gear off)", "close")
 		if n := h.framesBetween(4*time.Second+time.Nanosecond, h.notified(1)+quietGap); n != 0 {
 			h.t.Errorf("%d frames while paused or quiet", n)
+		}
+		if got := *h.frameAt(4 * time.Second); got != storedBlue() {
+			h.t.Error("the frame sent before closing for Swarm II is not the stored table")
 		}
 	})
 }
@@ -1594,8 +1746,10 @@ func TestBrightness(t *testing.T) {
 			if got := rgb(h.frameAt(5900*time.Millisecond), ledOf(action.N)); got != [3]byte{0, 127, 0} {
 				h.t.Errorf("N %v at 50%%, want green 127", got)
 			}
-			if h.brightReads != 2 {
-				h.t.Errorf("%d brightness reads, want 2", h.brightReads)
+			// One per switch, and one more on stopping, as the stored table
+			// was never read.
+			if h.brightReads != 3 {
+				h.t.Errorf("%d reads of 0x11, want 3", h.brightReads)
 			}
 			h.wantLogged(1, "no answer")
 		})
@@ -1620,8 +1774,8 @@ func TestBrightness(t *testing.T) {
 			h.onPoll[1] = func() { h.brightErr = nil }
 			h.onPoll[2] = h.cancel
 			h.run(cfg)
-			h.want("poll", "open", "notify", "fresh 0", "brightness 0", "close",
-				"poll", "open", "notify", "fresh 0", "brightness 0",
+			h.want("poll", "open", "notify", "fresh 0", "lights 0", "close",
+				"poll", "open", "notify", "fresh 0", "lights 0",
 				"poll", "close")
 			h.wantLogged(0, "keyboard ready on profile 0", "reading")
 			h.wantLogged(1, "keyboard ready on profile 0")
@@ -1720,7 +1874,7 @@ func TestPanicInTheRestFrameStillCloses(t *testing.T) {
 			_ = Run(h.ctx, cfg, h.deps())
 			h.t.Error("Run returned")
 		}()
-		h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
+		h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0",
 			"poll", "frames", "poll", "close")
 	})
 }

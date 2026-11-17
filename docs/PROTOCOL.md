@@ -333,6 +333,7 @@ whichever frame arrived last, roughly twenty-eight times a second.
 | A frame is 64 bytes: `a1 <bank 01–06> <len-lo> <len-hi>` plus 60 payload bytes, with the length only on bank 1 | **confirmed** |
 | Writing goes to the interface 1 collection as a 65-byte `WriteFile`, exactly like the `a3` volume frame | **confirmed** |
 | The device renders the most recent frame; there is no arbitration between writers | observed |
+| When the stream stops, the LEDs keep the last frame streamed, also after a profile switch: switching from a profile `kb7screen run` streamed to one it does not, the keyboard showed the new profile's stored `0x11` lighting, then the one frame sent after the switch, and kept that frame | observed (`kb7screen run`, owner's observation, no capture) |
 | Neither writer loses frames under contention: all 1188 of ours and all 3734 of Swarm II's appear in the capture | observed (`13-replay-led-stream-green-1`) |
 
 **The architectural consequence.** Lighting cannot be shared. Whoever streams

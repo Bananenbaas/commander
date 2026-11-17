@@ -386,19 +386,24 @@ KB7 for the given time (20 seconds by default) and saves nothing.
 the level at start and after each profile switch, and follows the notifications
 that Fn+Up and Fn+Down cause (steps of ten from 20 to 100 percent). When the
 RGB button reports the lights off, `run` keeps streaming. Hardware acceptance
-of these three is pending: the brightness read, the brightness following and
-the RGB button have not been tried on the keyboard yet.
+of these three is pending: the brightness read has run on the keyboard without
+an error, but whether the level is right has not been checked, and the
+brightness following and the RGB button have not been tried yet.
 
 No frame is sent for 2.5 seconds after `run` has enabled the notifications, as
 the keyboard does not answer on interface 1 for about 2 seconds then. A slow
 or missed frame is skipped, never queued. After a missed acknowledgement the
 stream pauses for 2.5 seconds, and a stalled write closes and reopens the
-keyboard. When the stream stops, because the
-active profile has no `[light]`, Swarm II started, or `run` ends, `run` sends one
-last frame of the profile's layers at their starting point (no ripple, states
-off) after the held keys are released, so no half-finished ripple or stale
-state stays on the LEDs. It is not sent when the keyboard is already gone, and
-lighting continues when the keyboard is plugged in again.
+keyboard. The keyboard keeps the last frame it was streamed, also after a
+profile switch. So when the stream stops, because the active profile has no
+`[light]`, Swarm II started, or `run` ends, `run` sends one last frame after
+the held keys are released: the lighting stored on the keyboard for the active
+profile (what it shows without Swarm II), at the current brightness. `run`
+reads that table together with the brightness after each profile switch. If
+it cannot be read, the last frame is the previous lit profile's layers at
+their starting point (no ripple, states off) instead. Nothing is sent when the
+keyboard is already gone, and lighting continues when the keyboard is plugged
+in again.
 
 ### Preview
 

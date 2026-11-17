@@ -190,6 +190,26 @@ func TestEngineBrightness(t *testing.T) {
 	}
 }
 
+func TestEngineScaled(t *testing.T) {
+	e := NewEngine(nil, engineStart)
+	var p proto.LightPayload
+	proto.SetLED(&p, 0, 255, 200, 1)
+	proto.SetLED(&p, 17, 10, 20, 30)
+	orig := p
+	e.SetBrightness(50)
+	got := e.Scaled(&p)
+	if p != orig {
+		t.Error("Scaled changed its argument")
+	}
+	if rgbOf(got, 0) != [3]byte{127, 100, 0} || rgbOf(got, 17) != [3]byte{5, 10, 15} {
+		t.Errorf("at 50%%: LED 0 %v, LED 17 %v", rgbOf(got, 0), rgbOf(got, 17))
+	}
+	e.SetBrightness(100)
+	if *e.Scaled(&p) != p {
+		t.Error("at 100% the payload changed")
+	}
+}
+
 func TestEngineUnlit(t *testing.T) {
 	e := twoProfiles(t)
 	if !e.Lit(1) || e.Lit(0) {

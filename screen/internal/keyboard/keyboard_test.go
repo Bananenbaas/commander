@@ -698,18 +698,37 @@ func TestStreamLightsPassesOtherWriteErrors(t *testing.T) {
 	}
 }
 
-func TestReadBrightness(t *testing.T) {
-	f := &device.Fake{}
+func TestReadLights(t *testing.T) {
+	var want proto.LightPayload
+	proto.SetLED(&want, 0, 0x10, 0x40, 0xc0)
+	proto.SetLED(&want, 17, 1, 2, 3)
 	r := make([]byte, proto.Len11)
 	copy(r, []byte{0x11, 0x5c, 1, 0, 1, 6, 0x63})
+	copy(r[10:], want[:336])
 	seal(r)
+	f := &device.Fake{}
 	f.QueueFeature([]byte{0x05, 0x01, 0, 0}, r)
 	k, _ := newTest(f)
-	got, err := k.ReadBrightness(2)
-	if err != nil || got != 99 {
-		t.Fatalf("got %d, %v", got, err)
+	p, level, err := k.ReadLights(2)
+	if err != nil || level != 99 {
+		t.Fatalf("got level %d, %v", level, err)
+	}
+	if *p != want {
+		t.Error("stored colours differ from the report")
 	}
 	if sf := f.Features(); len(sf) != 1 || !bytes.Equal(sf[0], []byte{0x05, 0x02, 0xb0, 0x00}) {
 		t.Errorf("select frames % x", sf)
+	}
+}
+
+func TestReadLightsRefusesABrightnessOver100(t *testing.T) {
+	r := make([]byte, proto.Len11)
+	copy(r, []byte{0x11, 0x5c, 1, 0, 1, 6, 101})
+	seal(r)
+	f := &device.Fake{}
+	f.QueueFeature([]byte{0x05, 0x01, 0, 0}, r)
+	k, _ := newTest(f)
+	if _, _, err := k.ReadLights(0); err == nil {
+		t.Error("brightness 101 accepted")
 	}
 }

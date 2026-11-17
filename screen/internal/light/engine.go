@@ -223,6 +223,16 @@ func (e *Engine) payload(s *Stack, t time.Duration, in *Input) *proto.LightPaylo
 	return out
 }
 
+// Scaled returns a copy of p with every colour scaled by the brightness, as
+// the payloads the engine renders are.
+func (e *Engine) Scaled(p *proto.LightPayload) *proto.LightPayload {
+	out := new(proto.LightPayload)
+	for i, v := range p {
+		out[i] = e.scale(v)
+	}
+	return out
+}
+
 func (e *Engine) scale(v uint8) byte { return byte(int(v) * e.brightness / 100) }
 
 // prune drops presses older than MaxPressAge at time at and all but the
