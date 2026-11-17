@@ -27,9 +27,12 @@ const (
 	// application button.
 	KindApp = 0x0b
 	// TypeApp is the widget type of an application button in the 0x25 table
-	// and report 0x35. The touch report 0x33 carries the touched position's
-	// widget type as its kind, so an application button's touch has kind
-	// TypeApp.
+	// and report 0x35. The type is not the application button's alone: a
+	// modifier on its own (value 0x01) and a macro (value 0x02) have type 0x05
+	// too, and the value, 0x06 for an application button (see AppType), tells
+	// them apart. The touch report 0x33 carries the touched position's widget
+	// type as its kind, without the value, so a touch of kind TypeApp comes
+	// from an application, modifier or macro button.
 	TypeApp = 0x05
 )
 
@@ -136,7 +139,8 @@ func (t *Table29) Bytes() []byte {
 // TypeEntry is one position of the 0x25 type table.
 type TypeEntry struct{ Type, Value byte }
 
-// AppType is the type of a position that holds an application button.
+// AppType is the type and value of a position that holds an application
+// button.
 var AppType = TypeEntry{TypeApp, 0x06}
 
 // Table25 is the 164-byte type table of one profile. Bytes it does not

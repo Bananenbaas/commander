@@ -16,9 +16,11 @@
 // actions queued before it, so at those points reading waits until they have
 // finished.
 //
-// Only touches of application buttons start an action. A touch of a managed
-// position that the keyboard shows as another widget, such as a key, is
-// ignored: the keyboard acts on it itself.
+// Only touches of kind 0x05, the widget type of application buttons, start
+// an action. Modifier and macro widgets have that type too, and a touch does
+// not tell them apart. A touch of a managed position that the keyboard shows
+// as another widget, such as a key, is ignored: the keyboard acts on it
+// itself.
 package run
 
 import (
@@ -449,7 +451,8 @@ func (l *loop) read(ctx context.Context, timeout time.Duration) {
 // touch queues the action of the button touched or released. A hold chord
 // is pressed once per touch and released only if it was pressed.
 //
-// A touch counts only if it comes from an application button. Any other
+// A touch counts only if its kind is proto.TypeApp, the widget type of an
+// application button, which modifier and macro widgets share. Any other
 // widget on a managed position (a key left there, or put back by Swarm II
 // or restore) makes the keyboard send its own key, and acting as well would
 // fire twice. The release of a pressed chord is not checked, so that it is

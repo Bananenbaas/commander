@@ -294,11 +294,17 @@ path has not been replayed yet and must be tested before it is relied on.
 - On a `0x33` touch: look up the button by active profile and position. Start
   its action (tap) or press its chord (hold). On release: release the hold
   chord. Taps on positions no layout manages are ignored, and so are touches
-  of anything but an application button (kind `0x05`): a position the
-  keyboard shows as a key or another widget is left to the keyboard.
+  of any kind but `0x05`: a position the keyboard shows as a key or another
+  widget is left to the keyboard. Kind `0x05` is the widget type of
+  application buttons, but modifier and macro widgets have it too (values
+  `01` and `02` against `06` in `0x25`), and a touch does not carry the value,
+  so it cannot tell them apart.
 - A profile switch the keyboard does not confirm in time is assumed to have
-  happened. Actions run one at a
-  time in order, on a worker, so the reader never blocks.
+  happened. Actions run one at a time in order, on a worker, so reading the
+  keyboard does not wait for an action, except when held keys must be
+  released (before a profile switch or `0x0e`, on a profile change, when the
+  keyboard is closed and when `run` stops): the release comes after the
+  actions queued before it, and reading waits until they have finished.
 - **Swarm II is polled** every two seconds, like the programs above. While
   Swarm II or its device service runs, `run` releases every held key, closes
   the keyboard and does nothing else; when they have closed, it reopens the
