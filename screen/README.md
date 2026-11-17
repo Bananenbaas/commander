@@ -175,6 +175,10 @@ act; a position that the keyboard shows as something else is left to the
 keyboard. If the keyboard is unplugged, `run` waits for it and sets it up
 again.
 
+`run` reads the configuration folder once, when it starts. After changing the
+folder, stop `run` with Ctrl+C, run `apply`, and start `run` again so that it
+acts on the new buttons.
+
 ## Safety
 
 - **Close Swarm II first.** `check`, `read`, `apply` and `restore` refuse to
@@ -233,4 +237,6 @@ No test opens the keyboard.
 
 GPL-2.0-or-later, like the rest of the repository. The bundled title font is
 Barlow Condensed SemiBold under the SIL Open Font License; its licence text is
-in `internal/picture/fonts/OFL.txt`.
+in `internal/picture/fonts/OFL.txt`. The font is built into the executable, so
+whoever publishes a `kb7screen` executable must ship that `OFL.txt` with it,
+for example next to the executable in the same archive.

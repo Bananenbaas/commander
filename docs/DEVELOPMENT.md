@@ -15,7 +15,11 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 | `kb7tools/analysis.py` | `Capture` (inventory, filtering), hexdump, summary, diff |
 | `kb7tools/cli.py` | `kb7cap summary \| dump \| diff` |
 | `tests/synth.py` | Builds synthetic captures (fake VID:PID 1234:5678) |
+| `screen/` | `kb7screen`, the Go program that puts own buttons on the touchscreen; usage in `screen/README.md` |
+| `screen/cmd/kb7screen/` | Its command line: `check`, `read`, `preview`, `apply`, `restore`, `run` |
+| `screen/internal/` | `proto` (frames), `device` (HID on Windows and Linux), `keyboard` (one frame at a time, no retries), `picture`, `layout`, `ledger`, `apply`, `action` (keystrokes, programs), `procs`, `run` |
 | `docs/PROTOCOL.md` | Protocol knowledge base, with status tags |
+| `docs/design/screen-app.md` | Design of `kb7screen` and what it still needs measured |
 | `docs/CAPTURE-GUIDE.md` | How captures are made and named |
 | `docs/test-images/` | PNGs with known pixel values, for upload captures |
 | `captures/` | Local raw captures, git-ignored (they contain keystrokes) |
@@ -28,8 +32,13 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
   file starts with `# SPDX-License-Identifier: GPL-2.0-or-later`; in Go files
   it is `// SPDX-License-Identifier: GPL-2.0-or-later`, followed by a blank
   line so it does not become the package comment.
-- **Dependencies**: the toolkit is **stdlib only**. No pyshark or tshark
-  dependency; Python 3.10 is the minimum.
+- **Dependencies**: the Python toolkit `kb7tools` is **stdlib only**. No
+  pyshark or tshark dependency; Python 3.10 is the minimum. `kb7screen` (Go
+  1.27) uses `golang.org/x/sys`, `golang.org/x/image` and
+  `github.com/BurntSushi/toml`, and nothing that needs cgo: it must build with
+  `CGO_ENABLED=0`. It bundles the Barlow Condensed SemiBold font with its SIL
+  Open Font License in `screen/internal/picture/fonts/`; a published
+  executable must come with that `OFL.txt`.
 - **No deployment pipeline**: CI runs the tests and nothing else.
 
 ## Invariants
@@ -57,6 +66,17 @@ python -m unittest discover -s tests -t .   # tests
 python -m compileall -q kb7tools tests      # syntax check
 python -m kb7tools summary <capture>        # run without installing
 pip install -e .                            # then: kb7cap summary <capture>
+```
+
+For `kb7screen`, in `screen/`:
+
+```sh
+go vet ./...
+go test ./...                               # no test opens the keyboard
+go test -race ./...                         # needs cgo and a C compiler
+go build ./cmd/kb7screen                    # kb7screen, or kb7screen.exe
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./cmd/kb7screen   # Linux build
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./cmd/kb7screen # Windows build
 ```
 
 ## Known gaps and pitfalls
@@ -111,6 +131,21 @@ pip install -e .                            # then: kb7cap summary <capture>
   until it was unplugged. Use timeouts of several seconds, and wait 200 ms
   between `0x29` and `0x25` as Swarm II does. See "Application buttons" in
   `PROTOCOL.md`.
+- **Unplug and replug after an interrupted upload.** When `kb7screen` reports
+  `keyboard.ErrUploadLeftOpen` (with a banner on the command line), the upload
+  stopped after its opening frame may have been accepted. The keyboard may be
+  waiting for the rest of the picture and does not work as a keyboard until it
+  is unplugged and plugged back in; nothing sent from the PC fixes that, and
+  the same session sends no further upload. The ledger has stopped trusting
+  that slot, so the next `apply` sends the picture again.
+- **Ctrl+C during `apply` stops between pictures.** `apply` and `restore`
+  catch Ctrl+C and the terminate request (on Windows also sent when the
+  console is closed). An upload is never cut short: `apply` stops before the
+  next picture or profile, after writing the tables for the pictures already
+  sent, and the ledger is saved; `restore` stops only before it touches the
+  keyboard. Windows ends a program a few seconds after its console is closed,
+  which can still be too soon for an upload. New keyboard work in `apply`
+  must check its context only at such points.
 - **A test that shows nothing needs a control in the same capture.** "No
   report on tap" means nothing unless the same capture also shows a known
   event getting through (for example a dial turn with `0x0e` written).
