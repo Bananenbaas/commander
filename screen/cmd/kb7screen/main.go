@@ -25,8 +25,8 @@ import (
 	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/procs"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/runlock"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/run"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/runlock"
 )
 
 const ledgerName = ".kb7screen-state.json"
