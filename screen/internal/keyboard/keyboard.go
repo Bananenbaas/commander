@@ -396,11 +396,15 @@ const (
 )
 
 // StreamLights writes the six a1 frames of p, each followed by its
-// acknowledgement. Anything else read while waiting is dropped. A missing
-// acknowledgement returns an error wrapping device.ErrTimeout; a write that
-// times out returns one wrapping ErrStreamStalled instead (and not
-// device.ErrTimeout). Either way no further frame of this set is sent.
+// acknowledgement. Anything else read while waiting is dropped. A set is never
+// left half-written, because the keyboard then waits for the rest and ignores
+// later sets: once one acknowledgement is missing, the remaining banks are
+// written without waiting for theirs, frames still queued are dropped, and an
+// error wrapping device.ErrTimeout names the first bank not acknowledged. A
+// write that fails returns at once: a write that times out wraps
+// ErrStreamStalled (and not device.ErrTimeout), any other error is passed on.
 func (k *KB) StreamLights(p *proto.LightPayload) error {
+	var missed error
 	for i, f := range proto.LightFrames(p) {
 		bank := byte(i + 1)
 		if err := k.d.WriteStream(f); err != nil {
@@ -409,20 +413,34 @@ func (k *KB) StreamLights(p *proto.LightPayload) error {
 			}
 			return fmt.Errorf("keyboard: lighting bank %d: %w", bank, err)
 		}
+		if missed != nil {
+			continue
+		}
 		deadline := k.now().Add(lightAckTimeout)
-		for acked := false; !acked; {
+		for acked := false; !acked && missed == nil; {
 			remaining := deadline.Sub(k.now())
 			if remaining <= 0 {
-				return fmt.Errorf("keyboard: lighting bank %d not acknowledged: %w", bank, device.ErrTimeout)
+				missed = fmt.Errorf("keyboard: lighting bank %d not acknowledged: %w", bank, device.ErrTimeout)
+				break
 			}
 			fr, err := k.d.ReadStream(remaining)
-			if err != nil {
+			if errors.Is(err, device.ErrTimeout) {
+				missed = fmt.Errorf("keyboard: lighting bank %d acknowledgement: %w", bank, err)
+			} else if err != nil {
 				return fmt.Errorf("keyboard: lighting bank %d acknowledgement: %w", bank, err)
+			} else {
+				acked = proto.IsLightAck(fr, bank)
 			}
-			acked = proto.IsLightAck(fr, bank)
 		}
 	}
-	return nil
+	if missed != nil {
+		for i := 0; i < maxDrain; i++ {
+			if _, err := k.d.ReadStream(drainTimeout); err != nil {
+				break
+			}
+		}
+	}
+	return missed
 }
 
 // ReadLights reads report 0x11 of profile p, in one selector read: the

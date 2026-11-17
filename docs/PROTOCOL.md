@@ -335,6 +335,7 @@ whichever frame arrived last, roughly twenty-eight times a second.
 | The device renders the most recent frame; there is no arbitration between writers | observed |
 | A frame streamed after a profile switch stays on the LEDs: switching from the profile `kb7screen run` streamed (SC) to one it does not (DESKTOP), the keyboard first showed DESKTOP's stored `0x11` lighting, then the one frame `run` sent after the switch replaced it and stayed (seen on WASD) | observed (`kb7screen run`, owner's observation, no capture) |
 | The LEDs also keep the last frame when the stream stops without a switch (the streaming program ends or crashes) | hypothesis — expected from the row above, not observed |
+| A set cut short after bank 1 left the LEDs frozen until the keyboard was unplugged; later sets were not acknowledged | observed (owner, `kb7screen run`, no capture); cause: hypothesis — the keyboard waits for banks 2–6 of the started set |
 | Neither writer loses frames under contention: all 1188 of ours and all 3734 of Swarm II's appear in the capture | observed (`13-replay-led-stream-green-1`) |
 
 **The architectural consequence.** Lighting cannot be shared. Whoever streams

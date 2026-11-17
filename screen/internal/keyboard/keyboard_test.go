@@ -658,17 +658,54 @@ func TestStreamLightsWritesSixFramesWithAcks(t *testing.T) {
 	}
 }
 
-func TestStreamLightsStopsOnMissingAck(t *testing.T) {
+func TestStreamLightsFinishesTheSetOnMissingAck(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		acked []byte
+		bank  string
+	}{
+		{"bank 3", []byte{1, 2}, "bank 3"},
+		{"bank 1", nil, "bank 1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &device.Fake{}
+			for _, b := range tc.acked {
+				f.QueueStream(lightAck(b))
+			}
+			k, _ := newTest(f)
+			var p proto.LightPayload
+			proto.SetLED(&p, 3, 9, 8, 7)
+			err := k.StreamLights(&p)
+			if !errors.Is(err, device.ErrTimeout) || errors.Is(err, ErrStreamStalled) {
+				t.Fatalf("err = %v, want a missed acknowledgement", err)
+			}
+			if !strings.Contains(err.Error(), tc.bank) {
+				t.Errorf("err = %v, want it to name %s", err, tc.bank)
+			}
+			fr := f.Frames()
+			want := proto.LightFrames(&p)
+			if len(fr) != 6 {
+				t.Fatalf("%d frames written, want all 6", len(fr))
+			}
+			for i := range fr {
+				if fr[i] != want[i] {
+					t.Errorf("frame %d differs or is out of order", i)
+				}
+			}
+		})
+	}
+}
+
+func TestStreamLightsDropsQueuedFramesAfterAMissedAck(t *testing.T) {
 	f := &device.Fake{}
-	f.QueueStream(lightAck(1), lightAck(2))
+	f.QueueStream(lightAck(1), lightAck(3)) // bank 2 is missing; 3 is stale
 	k, _ := newTest(f)
 	var p proto.LightPayload
-	err := k.StreamLights(&p)
-	if !errors.Is(err, device.ErrTimeout) || errors.Is(err, ErrStreamStalled) {
-		t.Fatalf("err = %v, want a missed acknowledgement", err)
+	if err := k.StreamLights(&p); !errors.Is(err, device.ErrTimeout) {
+		t.Fatalf("err = %v", err)
 	}
-	if n := len(f.Frames()); n != 3 {
-		t.Errorf("%d frames written, want 3", n)
+	if _, err := f.ReadStream(time.Millisecond); !errors.Is(err, device.ErrTimeout) {
+		t.Fatalf("a frame was left queued: %v", err)
 	}
 }
 

@@ -140,7 +140,10 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./cmd/kb7screen # Windows build
   notifications. A stream write that times out returns `ErrStreamStalled`;
   `run` then closes the keyboard and opens it again at the next poll, as it
   does on any stream error other than a missed acknowledgement. `apply` and
-  `restore` must never run alongside a stream (the run lock).
+  `restore` must never run alongside a stream (the run lock). A lighting frame
+  set must never be left half-written: one missing acknowledgement must not
+  stop the remaining banks (`StreamLights` writes all six), or the keyboard
+  waits for the rest and the LEDs freeze until it is unplugged.
 - **Unplug and replug after an interrupted upload.** When `kb7screen` reports
   `keyboard.ErrUploadLeftOpen` (with a banner on the command line), the upload
   stopped after its opening frame may have been accepted. The keyboard may be
