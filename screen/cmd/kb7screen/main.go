@@ -68,6 +68,8 @@ func execute(c command, stdout, stderr io.Writer) error {
 		return doRead(c, stdout)
 	case "preview":
 		return doPreview(c, stdout)
+	case "light-preview":
+		return doLightPreview(c, stdout)
 	case "apply":
 		return doApply(c, stdout)
 	case "restore":

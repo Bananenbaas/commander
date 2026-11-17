@@ -23,7 +23,11 @@ Commands:
   preview <config> [--out DIR]   write the rendered pictures as PNG files
                                  (default DIR: <config>/previews); touches
                                  nothing else
-  apply <config> [--full]        put every layout of the folder on the keyboard;
+  light-preview <config> --profile N [--out FILE]
+                                 write a 4 second GIF of the lighting of
+                                 profile N (default FILE:
+                                 <config>/previews/light-N.gif)
+  apply <config> [--full]      put every layout of the folder on the keyboard;
                                  --full sends every picture again
   restore <config> --profile N   give the positions kb7screen took over in
                                  profile N their original contents back
@@ -72,6 +76,8 @@ func parseArgs(args []string) (command, error) {
 		needsProfile = true
 	case "preview", "apply", "run":
 		needsConfig = true
+	case "light-preview":
+		needsConfig, needsProfile = true, true
 	case "restore":
 		needsConfig, needsProfile = true, true
 	default:
@@ -108,7 +114,7 @@ func parseArgs(args []string) (command, error) {
 	if set["full"] && c.name != "apply" {
 		return c, fmt.Errorf("%s does not take --full", c.name)
 	}
-	if set["out"] && c.name != "preview" {
+	if set["out"] && c.name != "preview" && c.name != "light-preview" {
 		return c, fmt.Errorf("%s does not take --out", c.name)
 	}
 	if set["seconds"] && c.name != "keytest" {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/gif"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -27,6 +28,8 @@ func TestParseArgs(t *testing.T) {
 		{[]string{"preview", "cfg"}, command{name: "preview", config: "cfg"}},
 		{[]string{"preview", "cfg", "--out", "o"}, command{name: "preview", config: "cfg", out: "o"}},
 		{[]string{"preview", "--out", "o", "cfg"}, command{name: "preview", config: "cfg", out: "o"}},
+		{[]string{"light-preview", "cfg", "--profile", "1"}, command{name: "light-preview", config: "cfg", profile: 1}},
+		{[]string{"light-preview", "--out", "o.gif", "cfg", "--profile", "3"}, command{name: "light-preview", config: "cfg", profile: 3, out: "o.gif"}},
 		{[]string{"apply", "cfg"}, command{name: "apply", config: "cfg"}},
 		{[]string{"apply", "cfg", "--full"}, command{name: "apply", config: "cfg", full: true}},
 		{[]string{"apply", "--full", "cfg"}, command{name: "apply", config: "cfg", full: true}},
@@ -57,6 +60,10 @@ func TestParseArgs(t *testing.T) {
 		{"preview"},
 		{"preview", "a", "b"},
 		{"preview", "cfg", "--profile", "1"},
+		{"light-preview", "cfg"},
+		{"light-preview", "--profile", "1"},
+		{"light-preview", "cfg", "--profile", "1", "--full"},
+		{"light-preview", "a", "b", "--profile", "1"},
 		{"apply"},
 		{"apply", "cfg", "--out", "o"},
 		{"restore", "cfg"},
@@ -260,5 +267,107 @@ func TestPreviewRendersBeforeWriting(t *testing.T) {
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("files reported: %q", stdout.String())
+	}
+}
+
+const lightPreviewLayout = `profile = 1
+
+[light]
+fps = 30
+
+[[light.layer]]
+effect = "wave"
+colors = ["#0040FF", "#00C0FF", "#8000FF"]
+speed = 0.5
+direction = "right"
+
+[[light.layer]]
+effect = "ripple"
+color = "#FFFFFF"
+speed = 12
+width = 1.5
+
+[[light.layer]]
+effect = "state"
+name = "gear"
+toggle = "N"
+start = "on"
+keys = ["N"]
+color = "#30E070"
+
+[[light.layer]]
+effect = "state"
+name = "quantum"
+keys = ["B"]
+color = "#00AAFF"
+blink = 0
+
+[[button]]
+page = 1
+position = 1
+state = "gear"
+`
+
+func lightConfig(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "sc.toml"), []byte(lightPreviewLayout), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestLightPreview(t *testing.T) {
+	dir := lightConfig(t)
+	var stdout, stderr bytes.Buffer
+	if code := realMain([]string{"light-preview", dir, "--profile", "1"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+	path := filepath.Join(dir, "previews", "light-1.gif")
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	g, err := gif.DecodeAll(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(g.Image) != 80 {
+		t.Errorf("%d frames, want 80", len(g.Image))
+	}
+	if len(g.Delay) > 0 && g.Delay[0] != 5 {
+		t.Errorf("delay %d, want 5", g.Delay[0])
+	}
+	if !strings.Contains(stdout.String(), path) {
+		t.Errorf("stdout %q lacks the path", stdout.String())
+	}
+}
+
+func TestLightPreviewOut(t *testing.T) {
+	dir := lightConfig(t)
+	out := filepath.Join(t.TempDir(), "x.gif")
+	var stdout, stderr bytes.Buffer
+	if code := realMain([]string{"light-preview", dir, "--profile", "1", "--out", out}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+	if _, err := os.Stat(out); err != nil {
+		t.Error(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "previews")); err == nil {
+		t.Error("default folder created although --out was given")
+	}
+}
+
+func TestLightPreviewWithoutLight(t *testing.T) {
+	dir := testConfig(t)
+	var stdout, stderr bytes.Buffer
+	code := realMain([]string{"light-preview", dir, "--profile", "1"}, &stdout, &stderr)
+	if code != 1 || !strings.Contains(stderr.String(), "profile 1") {
+		t.Errorf("exit %d, stderr %q", code, stderr.String())
+	}
+	code = realMain([]string{"light-preview", lightConfig(t), "--profile", "4"}, &stdout, &stderr)
+	if code != 1 || !strings.Contains(stderr.String(), "profile 4") {
+		t.Errorf("exit %d, stderr %q", code, stderr.String())
 	}
 }
