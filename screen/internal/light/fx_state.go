@@ -40,6 +40,9 @@ func init() {
 					s.def.Hold = h
 				}
 			}
+			if _, ok := v["hold"]; ok && s.def.Toggle == nil {
+				return nil, fmt.Errorf("hold: needs a toggle to hold")
+			}
 			return s, nil
 		},
 	})

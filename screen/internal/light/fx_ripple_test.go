@@ -192,3 +192,14 @@ func TestStateToggleModifiers(t *testing.T) {
 		}
 	}
 }
+
+func TestStateHoldNeedsToggle(t *testing.T) {
+	s := registry["state"]
+	v, err := parseValues(s, map[string]any{"name": "x", "color": "#00FF00", "hold": "400ms"})
+	if err == nil {
+		_, err = s.New(v)
+	}
+	if err == nil || !strings.Contains(err.Error(), "hold") {
+		t.Errorf("err = %v, want a refusal naming hold", err)
+	}
+}

@@ -94,8 +94,12 @@ func NewEngine(stacks map[byte]*Stack, start time.Time) *Engine {
 // Lit reports whether profile p has lighting.
 func (e *Engine) Lit(p byte) bool { return e.stacks[p] != nil }
 
-// SetActive makes p the active profile. States keep their values.
-func (e *Engine) SetActive(p byte) { e.active = p }
+// SetActive makes p the active profile. States keep their values. A hold
+// toggle pressed on the profile left behind never flips.
+func (e *Engine) SetActive(p byte) {
+	e.active = p
+	e.pending = nil
+}
 
 // Key takes a key event of the KB7. A down for a key that is already down,
 // within maxRepeatGap of its previous down event, is an auto-repeat and

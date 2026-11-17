@@ -438,3 +438,18 @@ func TestEngineKeyWithoutLEDTriggersToggle(t *testing.T) {
 		t.Error("F13 alone did not flip only the F13 toggle")
 	}
 }
+
+func TestEngineHoldDroppedOnProfileSwitch(t *testing.T) {
+	l := stateLayer("quantum", "B", "off", "B", "#00FF00")
+	l.Settings["hold"] = "400ms"
+	s := build(t, Config{Layers: []LayerConfig{staticLayer("#000000"), l}})
+	e := NewEngine(map[byte]*Stack{1: s, 2: s}, engineStart)
+	e.SetActive(1)
+	e.Key(action.B, true, at(time.Second))
+	e.SetActive(2)
+	e.SetActive(1)
+	e.Key(action.B, false, at(2*time.Second))
+	if lit(t, e, action.B, at(3*time.Second)) {
+		t.Error("a press started before a profile switch flipped")
+	}
+}
