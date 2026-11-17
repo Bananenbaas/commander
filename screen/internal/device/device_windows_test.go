@@ -343,10 +343,10 @@ func TestWinIoErr(t *testing.T) {
 	}
 }
 
-// A keyboard that has gone away is not asked again with the full length.
-func TestWinFeatureNoFallbackWhenGone(t *testing.T) {
+// A keyboard that has gone away is reported as disconnected.
+func TestWinFeatureGone(t *testing.T) {
 	k := newTestKB(t)
-	set := &featureCalls{fail: map[int]bool{5: true, 1044: true}, err: windows.ERROR_DEVICE_NOT_CONNECTED}
+	set := &featureCalls{fail: map[int]bool{5: true}, err: windows.ERROR_DEVICE_NOT_CONNECTED}
 	k.d.setFeature = set.call
 	if err := k.d.SetFeature([]byte{0x0e, 0x05, 0x01, 0x00, 0x00}); !errors.Is(err, ErrDisconnected) {
 		t.Fatalf("SetFeature: %v, want ErrDisconnected", err)
@@ -354,7 +354,7 @@ func TestWinFeatureNoFallbackWhenGone(t *testing.T) {
 	if got := set.lens(); fmt.Sprint(got) != "[5]" {
 		t.Fatalf("SetFeature buffer lengths %v, want one exact-length call", got)
 	}
-	get := &featureCalls{fail: map[int]bool{4: true, 1044: true}, err: windows.ERROR_DEVICE_REMOVED}
+	get := &featureCalls{fail: map[int]bool{4: true}, err: windows.ERROR_DEVICE_REMOVED}
 	k.d.getFeature = get.call
 	if _, err := k.d.GetFeature(0x05, 4); !errors.Is(err, ErrDisconnected) {
 		t.Fatalf("GetFeature: %v, want ErrDisconnected", err)
@@ -372,17 +372,17 @@ func (f *featureCalls) lens() []int {
 	return n
 }
 
+// A feature report is written once, in a buffer of exactly its length; a
+// write that fails is not sent again.
 func TestWinSetFeature(t *testing.T) {
 	report := []byte{0x0e, 0x05, 0x01, 0x00, 0x00}
 	for _, tc := range []struct {
-		name     string
-		fail     map[int]bool
-		wantLens []int
-		wantErr  bool
+		name    string
+		fail    map[int]bool
+		wantErr bool
 	}{
-		{"exact length works", nil, []int{5}, false},
-		{"falls back to the full length", map[int]bool{5: true}, []int{5, 1044}, false},
-		{"both fail", map[int]bool{5: true, 1044: true}, []int{5, 1044}, true},
+		{"accepted", nil, false},
+		{"refused", map[int]bool{5: true}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			k := newTestKB(t)
@@ -392,22 +392,17 @@ func TestWinSetFeature(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("SetFeature: %v", err)
 			}
-			if tc.wantErr && !errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
-				t.Fatalf("error %v does not carry the first failure", err)
+			if tc.wantErr && (!errors.Is(err, windows.ERROR_INVALID_PARAMETER) || errors.Is(err, ErrDisconnected)) {
+				t.Fatalf("error %v does not carry the failure as it is", err)
 			}
-			if got := calls.lens(); fmt.Sprint(got) != fmt.Sprint(tc.wantLens) {
-				t.Fatalf("buffer lengths %v, want %v", got, tc.wantLens)
-			}
-			for _, b := range calls.bufs {
-				if !bytes.Equal(b[:5], report) || !bytes.Equal(b[5:], make([]byte, len(b)-5)) {
-					t.Fatalf("buffer % x, want the report padded with zeros", b[:8])
-				}
+			if len(calls.bufs) != 1 || !bytes.Equal(calls.bufs[0], report) {
+				t.Fatalf("buffers %x, want the report once, exactly", calls.bufs)
 			}
 		})
 	}
 }
 
-func TestWinSetFeatureFullLengthHasNoFallback(t *testing.T) {
+func TestWinSetFeatureFullLength(t *testing.T) {
 	k := newTestKB(t)
 	calls := &featureCalls{fail: map[int]bool{1044: true}}
 	k.d.setFeature = calls.call
@@ -425,17 +420,16 @@ func TestWinSetFeatureFullLengthHasNoFallback(t *testing.T) {
 	}
 }
 
+// A feature report is read once, into a buffer of exactly the asked length.
 func TestWinGetFeature(t *testing.T) {
 	reply := report(1044, 0x05, 0x01, 0xba, 0x00, 0x99)
 	for _, tc := range []struct {
-		name     string
-		fail     map[int]bool
-		wantLens []int
-		wantErr  bool
+		name    string
+		fail    map[int]bool
+		wantErr bool
 	}{
-		{"exact length works", nil, []int{4}, false},
-		{"falls back to the full length", map[int]bool{4: true}, []int{4, 1044}, false},
-		{"both fail", map[int]bool{4: true, 1044: true}, []int{4, 1044}, true},
+		{"answered", nil, false},
+		{"refused", map[int]bool{4: true}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			k := newTestKB(t)
@@ -445,8 +439,11 @@ func TestWinGetFeature(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("GetFeature: %v", err)
 			}
-			if gotLens := calls.lens(); fmt.Sprint(gotLens) != fmt.Sprint(tc.wantLens) {
-				t.Fatalf("buffer lengths %v, want %v", gotLens, tc.wantLens)
+			if tc.wantErr && !errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+				t.Fatalf("error %v does not carry the failure", err)
+			}
+			if gotLens := calls.lens(); fmt.Sprint(gotLens) != "[4]" {
+				t.Fatalf("buffer lengths %v, want one call with 4 bytes", gotLens)
 			}
 			for _, b := range calls.bufs {
 				if b[0] != 0x05 {

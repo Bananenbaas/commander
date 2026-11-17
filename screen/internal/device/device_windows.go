@@ -475,18 +475,9 @@ func (d *winDevice) SetFeature(b []byte) error {
 		return err
 	}
 	defer d.ioMu.Unlock()
-	err := d.setFeature(d.feature, append([]byte(nil), b...))
-	if err != nil && len(b) < d.featureLen && !gone(err, false) {
-		// A buffer of exactly the report's length is what worked on the
-		// keyboard; the collection's full length is the fallback. A keyboard
-		// that has gone away is not asked again.
-		full := make([]byte, d.featureLen)
-		copy(full, b)
-		if d.setFeature(d.feature, full) == nil {
-			return nil
-		}
-	}
-	if err != nil {
+	// The buffer has exactly the report's length, which is what works on
+	// the keyboard. A write that fails is not sent again.
+	if err := d.setFeature(d.feature, append([]byte(nil), b...)); err != nil {
 		return ioErr(fmt.Sprintf("set feature report 0x%02x", b[0]), err, false)
 	}
 	return nil
@@ -502,16 +493,7 @@ func (d *winDevice) GetFeature(id byte, n int) ([]byte, error) {
 	defer d.ioMu.Unlock()
 	buf := make([]byte, n)
 	buf[0] = id
-	err := d.getFeature(d.feature, buf)
-	if err != nil && n < d.featureLen && !gone(err, false) {
-		full := make([]byte, d.featureLen)
-		full[0] = id
-		if d.getFeature(d.feature, full) == nil {
-			copy(buf, full)
-			return buf, nil
-		}
-	}
-	if err != nil {
+	if err := d.getFeature(d.feature, buf); err != nil {
 		return nil, ioErr(fmt.Sprintf("get feature report 0x%02x", id), err, false)
 	}
 	return buf, nil
