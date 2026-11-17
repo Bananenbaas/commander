@@ -540,13 +540,42 @@ func TestSwitchProfileFresh(t *testing.T) {
 	}
 }
 
-func TestSwitchProfileFreshStopsWhenTheFirstSwitchFails(t *testing.T) {
+func TestSwitchProfileFreshCarriesOnWhenTheFirstSwitchIsNotConfirmed(t *testing.T) {
+	// The keyboard is already on the intermediate profile 2, so the first
+	// switch is not confirmed; the switch to 1 is.
+	s := &switcher{Fake: &device.Fake{}, active: 2}
+	kb, _ := newTest(s)
+	if err := kb.SwitchProfileFresh(1); err != nil {
+		t.Fatal(err)
+	}
+	got := s.Fake.Features()
+	if len(got) != 2 || !bytes.Equal(got[0], proto.SwitchProfile(2)) || !bytes.Equal(got[1], proto.SwitchProfile(1)) {
+		t.Fatalf("frames %x", got)
+	}
+	if s.active != 1 {
+		t.Fatalf("profile %d is active, want 1", s.active)
+	}
+}
+
+func TestSwitchProfileFreshTimesOutWhenNeitherSwitchIsConfirmed(t *testing.T) {
 	f := &device.Fake{}
 	kb, _ := newTest(f)
 	if err := kb.SwitchProfileFresh(1); !errors.Is(err, device.ErrTimeout) {
 		t.Fatalf("got %v", err)
 	}
-	if got := f.Features(); len(got) != 1 || !bytes.Equal(got[0], proto.SwitchProfile(2)) {
+	if got := f.Features(); len(got) != 2 || !bytes.Equal(got[1], proto.SwitchProfile(1)) {
+		t.Fatalf("frames %x", got)
+	}
+}
+
+func TestSwitchProfileFreshReturnsOtherErrorsFromTheFirstSwitch(t *testing.T) {
+	f := &device.Fake{}
+	f.FailAt(device.OpSetFeature, 1, device.ErrDisconnected)
+	kb, _ := newTest(f)
+	if err := kb.SwitchProfileFresh(1); !errors.Is(err, device.ErrDisconnected) {
+		t.Fatalf("got %v", err)
+	}
+	if got := f.Features(); len(got) > 1 {
 		t.Fatalf("frames %x", got)
 	}
 }

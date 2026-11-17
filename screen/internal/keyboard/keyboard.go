@@ -292,12 +292,15 @@ func (k *KB) SwitchProfile(p byte) error {
 // SwitchProfileFresh makes p the active profile even when it already is: the
 // keyboard does not confirm a switch to the active profile, so it first
 // switches to the next profile and waits for that, then to p and waits for
-// that. Use it when the active profile is not known.
+// that. Use it when the active profile is not known. When the first switch is
+// not confirmed the keyboard was most likely already on that profile, so the
+// switch to p is sent anyway; any other error from the first switch is
+// returned.
 func (k *KB) SwitchProfileFresh(p byte) error {
 	if p >= profiles {
 		return fmt.Errorf("keyboard: profile %d: profiles are 0 to %d", p, profiles-1)
 	}
-	if err := k.SwitchProfile((p + 1) % profiles); err != nil {
+	if err := k.SwitchProfile((p + 1) % profiles); err != nil && !errors.Is(err, device.ErrTimeout) {
 		return err
 	}
 	return k.SwitchProfile(p)
