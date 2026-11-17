@@ -25,6 +25,7 @@ import (
 	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/procs"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/runlock"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/run"
 )
 
@@ -192,12 +193,30 @@ func loadLedger(dir string) (*ledger.Ledger, func() error, error) {
 	return l, func() error { return l.Save(path) }, nil
 }
 
+// errRunHoldsKeyboard is reported by apply and restore while run is active.
+var errRunHoldsKeyboard = errors.New("stop kb7screen run first: its lighting stream and the picture uploads share the keyboard's interface 1")
+
+// refuseWhileRun returns an error when run holds the lock of dir.
+func refuseWhileRun(dir string) error {
+	held, err := runlock.Held(dir)
+	if err != nil {
+		return err
+	}
+	if held {
+		return errRunHoldsKeyboard
+	}
+	return nil
+}
+
 func doApply(c command, stdout io.Writer) error {
 	if err := refuseWhileSwarm("apply"); err != nil {
 		return err
 	}
 	cfg, err := layout.Load(c.config)
 	if err != nil {
+		return err
+	}
+	if err := refuseWhileRun(cfg.Dir); err != nil {
 		return err
 	}
 	l, save, err := loadLedger(cfg.Dir)
@@ -230,6 +249,9 @@ func doRestore(c command, stdout io.Writer) error {
 	}
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 		return fmt.Errorf("%s is not a folder", c.config)
+	}
+	if err := refuseWhileRun(dir); err != nil {
+		return err
 	}
 	l, save, err := loadLedger(dir)
 	if err != nil {
@@ -305,6 +327,14 @@ func doRun(c command, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	releaseLock, err := runlock.Acquire(cfg.Dir)
+	if errors.Is(err, runlock.ErrHeld) {
+		return errors.New("kb7screen run is already running for this folder")
+	}
+	if err != nil {
+		return err
+	}
+	defer releaseLock()
 	inj, err := action.NewInjector()
 	if err != nil {
 		return err

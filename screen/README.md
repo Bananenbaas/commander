@@ -188,6 +188,12 @@ again.
 folder, stop `run` with Ctrl+C, run `apply`, and start `run` again so that it
 acts on the new buttons.
 
+`run` holds a lock file, `.kb7screen-run.lock`, in the configuration folder.
+A second `run` for the same folder refuses to start, and `apply` and `restore`
+refuse while `run` holds the lock, because its lighting stream and the picture
+uploads share the keyboard's interface 1. The system frees the lock when `run`
+ends, however it ends.
+
 ## Safety
 
 - **Close Swarm II first.** `check`, `read`, `apply` and `restore` refuse to
