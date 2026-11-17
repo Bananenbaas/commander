@@ -125,6 +125,45 @@ func TestForget(t *testing.T) {
 	mustAssign(t, l, c, "h2", 2, false)
 }
 
+func TestForgetSlot(t *testing.T) {
+	l := &Ledger{}
+	mustAssign(t, l, a, "h1", 1, true)
+	mustAssign(t, l, b, "h1", 1, false)
+	mustAssign(t, l, c, "h2", 2, true)
+	l.ForgetSlot(1)
+	l.ForgetSlot(5) // a free slot: nothing happens
+	mustAssign(t, l, a, "h1", 1, true)
+	mustAssign(t, l, b, "h1", 1, false)
+	mustAssign(t, l, c, "h2", 2, false)
+	if _, ok := l.SlotOf(Owner{1, 1, 5}); ok {
+		t.Fatal("forgetting a free slot created an owner")
+	}
+}
+
+func TestOwners(t *testing.T) {
+	l := &Ledger{}
+	if got := l.Owners(1); len(got) != 0 {
+		t.Fatalf("Owners of an empty ledger = %v", got)
+	}
+	mustAssign(t, l, Owner{1, 1, 7}, "h1", 1, true)
+	mustAssign(t, l, Owner{2, 1, 0}, "h1", 1, false)
+	mustAssign(t, l, Owner{1, 1, 2}, "h2", 2, true)
+	mustAssign(t, l, Owner{1, 1, 4}, "h1", 1, false)
+	l.RecordOriginal(Owner{1, 1, 9}, Original{}) // an original alone is not an owner
+	want := []Owner{{1, 1, 2}, {1, 1, 4}, {1, 1, 7}}
+	got := l.Owners(1)
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("Owners(1) = %v, want %v", got, want)
+	}
+	if got := l.Owners(2); fmt.Sprint(got) != fmt.Sprint([]Owner{{2, 1, 0}}) {
+		t.Fatalf("Owners(2) = %v", got)
+	}
+	l.Release(Owner{1, 1, 4})
+	if got := l.Owners(1); fmt.Sprint(got) != fmt.Sprint([]Owner{{1, 1, 2}, {1, 1, 7}}) {
+		t.Fatalf("Owners(1) after release = %v", got)
+	}
+}
+
 func TestSaveLoadRoundTrip(t *testing.T) {
 	l := &Ledger{}
 	mustAssign(t, l, a, "h1", 1, true)

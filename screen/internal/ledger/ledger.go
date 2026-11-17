@@ -142,6 +142,28 @@ func (l *Ledger) Forget() {
 	}
 }
 
+// ForgetSlot clears the hash of slot n but keeps its users, so the next
+// Assign of a picture to it uploads again. A free slot is left alone.
+func (l *Ledger) ForgetSlot(n byte) {
+	if s := l.slots[n]; s != nil {
+		s.hash = ""
+	}
+}
+
+// Owners returns the owners of the given profile that hold a slot, sorted by
+// page and position.
+func (l *Ledger) Owners(profile int) []Owner {
+	m := map[Owner]bool{}
+	for _, s := range l.slots {
+		for o := range s.users {
+			if o.Profile == profile {
+				m[o] = true
+			}
+		}
+	}
+	return sortedOwners(m)
+}
+
 type fileSlot struct {
 	Slot  byte     `json:"slot"`
 	Hash  string   `json:"hash"`
