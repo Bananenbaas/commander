@@ -178,13 +178,16 @@ type Supervisor struct {
 // request file left in dir (by a crash: nothing could take it while the lock
 // was free). A lock held by another process gives an error wrapping
 // runlock.ErrUserHeld (a loop runs for another folder) or runlock.ErrHeld (a
-// loop runs for dir). The locks are kept until Serve returns.
+// loop runs for dir). The locks are kept until Serve returns, or Close is
+// called instead of Serve.
 func New(dir string, o Options) (*Supervisor, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
 	}
-	if fi, err := os.Stat(abs); err != nil || !fi.IsDir() {
+	if fi, err := os.Stat(abs); err != nil {
+		return nil, fmt.Errorf("%s is not a folder: %w", dir, err)
+	} else if !fi.IsDir() {
 		return nil, fmt.Errorf("%s is not a folder", dir)
 	}
 	releaseUser, err := acquireUser()
@@ -246,8 +249,23 @@ func New(dir string, o Options) (*Supervisor, error) {
 		}
 		s.loop = s.runLoop(&action.Executor{In: inj, L: action.NewLauncher(), Sleep: time.Sleep})
 	}
-	s.release = release
+	var once sync.Once
+	var releaseErr error
+	s.release = func() error {
+		once.Do(func() { releaseErr = release() })
+		return releaseErr
+	}
 	return s, nil
+}
+
+// Close gives back the locks and what else New took, when Serve was never
+// called; Serve may not be called after it. While or after Serve runs it does
+// nothing: Serve gives them back when it returns.
+func (s *Supervisor) Close() error {
+	if !s.served.CompareAndSwap(false, true) {
+		return nil
+	}
+	return s.release()
 }
 
 // Dir returns the configuration folder, absolute.
@@ -259,7 +277,8 @@ func (s *Supervisor) Reload() { s.push(opReload) }
 
 // Apply asks Serve to load the configuration, stop the loop, apply the
 // buttons and start the loop again with that configuration, also when the
-// apply was refused or failed. Requests made meanwhile wait for it.
+// apply was refused or failed; not when the next request is a stop. Requests
+// made meanwhile wait for it.
 func (s *Supervisor) Apply() { s.push(opApply) }
 
 // Stop asks Serve to stop the loop and return.
@@ -273,6 +292,13 @@ func (s *Supervisor) push(o op) {
 	case s.wake <- struct{}{}:
 	default:
 	}
+}
+
+// stopNext reports whether the next queued request is a stop.
+func (s *Supervisor) stopNext() bool {
+	s.qmu.Lock()
+	defer s.qmu.Unlock()
+	return len(s.queue) > 0 && s.queue[0] == opStop
 }
 
 func (s *Supervisor) pop() (op, bool) {
@@ -319,12 +345,25 @@ func (s *Supervisor) status(rs run.Status) {
 // requests until ctx ends, Stop is called or a stop request file arrives.
 // A running Apply is waited for in every case; once ctx ends, it stops after
 // the current picture. Serve then stops the loop, reports Stopped, gives the
-// locks back and returns nil, or the error of giving them back. It may be
-// called once.
-func (s *Supervisor) Serve(ctx context.Context) error {
+// locks back and returns nil, or the error of giving them back. The loop is
+// stopped and the locks given back also when Serve panics. It may be called
+// once, and not after Close.
+func (s *Supervisor) Serve(ctx context.Context) (err error) {
 	if !s.served.CompareAndSwap(false, true) {
-		return errors.New("supervisor: Serve called twice")
+		return errors.New("supervisor: Serve called twice or after Close")
 	}
+	defer func() {
+		if rerr := s.release(); rerr != nil && err == nil {
+			err = fmt.Errorf("giving back the locks: %w", rerr)
+		}
+	}()
+	defer func() {
+		s.stopLoop()
+		s.update(func(st *State) bool {
+			st.Phase, st.Run = Stopped, noStatus
+			return true
+		})
+	}()
 	s.set(State{Phase: Starting, Run: noStatus})
 	s.reload(ctx)
 	tick := time.NewTicker(s.poll)
@@ -348,14 +387,6 @@ func (s *Supervisor) Serve(ctx context.Context) error {
 		case r := <-s.applyDone:
 			s.applyEnded(ctx, r)
 		}
-	}
-	s.stopLoop()
-	s.update(func(st *State) bool {
-		st.Phase, st.Run = Stopped, noStatus
-		return true
-	})
-	if err := s.release(); err != nil {
-		return fmt.Errorf("giving back the locks: %w", err)
 	}
 	return nil
 }
@@ -432,10 +463,12 @@ func (s *Supervisor) reload(ctx context.Context) {
 
 // start starts the loop with cfg and reports Running with errMsg and note.
 func (s *Supervisor) start(ctx context.Context, cfg *layout.Config, errMsg, note string) {
+	// Running is reported first, so the loop's status reports are taken,
+	// and so a panic in OnState leaves no loop behind.
+	s.set(State{Phase: Running, Run: noStatus, Err: errMsg, Note: note})
 	lctx, cancel := context.WithCancel(ctx)
 	cur := &loopRun{cancel: cancel, done: make(chan error, 1)}
 	s.cur = cur
-	s.set(State{Phase: Running, Run: noStatus, Err: errMsg, Note: note})
 	go func() { cur.done <- s.loop(lctx, cfg, s.status) }()
 }
 
@@ -456,7 +489,11 @@ func (s *Supervisor) loopEnded(ctx context.Context, err error) {
 	s.cur.cancel()
 	s.cur = nil
 	if ctx.Err() != nil {
-		return // Serve is stopping
+		// Serve is stopping.
+		if err != nil {
+			s.logf("the loop ended with an error: %v", err)
+		}
+		return
 	}
 	msg := "the loop ended unexpectedly"
 	if err != nil {
@@ -489,7 +526,7 @@ func (s *Supervisor) startApply(ctx context.Context) {
 }
 
 // applyEnded reports the outcome of an Apply and starts the loop again,
-// unless Serve is stopping.
+// unless Serve is stopping: its ctx has ended or the next request is a stop.
 func (s *Supervisor) applyEnded(ctx context.Context, r applyResult) {
 	s.applyDone = nil
 	errMsg := ""
@@ -500,7 +537,7 @@ func (s *Supervisor) applyEnded(ctx context.Context, r applyResult) {
 		errMsg = "buttons not applied: " + oneLine(r.err)
 		s.logf("%s", errMsg)
 	}
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || s.stopNext() {
 		// Serve is stopping: the outcome goes with the Stopped state.
 		s.update(func(st *State) bool {
 			st.Err, st.Note = errMsg, r.summary

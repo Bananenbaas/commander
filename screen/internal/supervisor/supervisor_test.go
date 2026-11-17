@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -397,6 +398,117 @@ func TestRequestsWaitForApply(t *testing.T) {
 	}
 	if st := f.states[len(f.states)-1]; st.Phase != Stopped {
 		t.Fatalf("last state %+v, want Stopped", st)
+	}
+}
+
+func TestStopRequestFileDuringApply(t *testing.T) {
+	f := newFake()
+	f.applyFor = 300 * time.Millisecond
+	s, dir := newSupervisor(t, f)
+	done := serve(t, s)
+	eventually(t, "a start", func() bool { return f.nStarts() == 1 })
+	s.Apply()
+	<-f.applied
+	if err := request.Write(dir, request.Stop); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the request taken", func() bool {
+		_, err := os.Stat(filepath.Join(dir, request.FileName))
+		return os.IsNotExist(err)
+	})
+	waitServe(t, done)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.finished.IsZero() {
+		t.Fatal("Serve returned before Apply finished")
+	}
+	if len(f.starts) != 1 {
+		t.Fatalf("%d starts, want no restart after the Apply", len(f.starts))
+	}
+	st := f.states[len(f.states)-1]
+	if st.Phase != Stopped || st.Note != "2 pictures uploaded, 3 unchanged" {
+		t.Fatalf("last state %+v, want Stopped with the Apply's summary", st)
+	}
+}
+
+func TestReloadAfterApplyStillRestarts(t *testing.T) {
+	f := newFake()
+	f.applyFor = 100 * time.Millisecond
+	s, _ := newSupervisor(t, f)
+	serve(t, s)
+	eventually(t, "a start", func() bool { return f.nStarts() == 1 })
+	s.Apply()
+	<-f.applied
+	s.Reload()
+	eventually(t, "a third start", func() bool { return f.nStarts() == 3 })
+}
+
+func TestCloseWithoutServe(t *testing.T) {
+	f := newFake()
+	s, dir := newSupervisor(t, f)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if held, err := runlock.Held(dir); err != nil || held {
+		t.Fatalf("folder lock held after Close: %v, %v", held, err)
+	}
+	if userHeld() {
+		t.Fatal("user lock held after Close")
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("second Close = %v", err)
+	}
+	if err := s.Serve(context.Background()); err == nil {
+		t.Fatal("Serve after Close succeeded")
+	}
+}
+
+func TestCloseAfterServeDoesNothing(t *testing.T) {
+	f := newFake()
+	s, _ := newSupervisor(t, f)
+	done := serve(t, s)
+	eventually(t, "a start", func() bool { return f.nStarts() == 1 })
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !userHeld() {
+		t.Fatal("Close released the locks while Serve runs")
+	}
+	s.Stop()
+	waitServe(t, done)
+	if userHeld() {
+		t.Fatal("user lock held after Serve")
+	}
+}
+
+func TestPanicInServeReleasesTheLocks(t *testing.T) {
+	f := newFake()
+	o := f.options()
+	var panicked atomic.Bool
+	o.OnState = func(st State) {
+		if st.Phase == Running && panicked.CompareAndSwap(false, true) {
+			panic("boom")
+		}
+	}
+	dir := t.TempDir()
+	s, err := New(dir, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.set(func() { f.status = nil })
+	func() {
+		defer func() {
+			if r := recover(); r != "boom" {
+				t.Fatalf("recovered %v, want the panic", r)
+			}
+		}()
+		s.Serve(context.Background())
+	}()
+	if held, err := runlock.Held(dir); err != nil || held {
+		t.Fatalf("folder lock held after a panic: %v, %v", held, err)
+	}
+	if userHeld() {
+		t.Fatal("user lock held after a panic")
 	}
 }
 
