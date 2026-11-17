@@ -50,17 +50,40 @@ func TestConfirmReleasedTooSoonDoesNothing(t *testing.T) {
 
 func TestConfirmFiresOnceWhileHeld(t *testing.T) {
 	test(t, func(h *harness) {
-		h.scripts = [][]item{{
-			touch(confirmPos, true), idleFor(600 * time.Millisecond),
-			touch(confirmPos, true), // auto-repeat: does not restart the wait
-			idleFor(900 * time.Millisecond),
-			touch(confirmPos, true), // after it fired: no second action
-			idleFor(100 * time.Millisecond),
-			touch(confirmPos, false),
-		}}
+		h.scripts = [][]item{{touch(confirmPos, true), idleFor(1500 * time.Millisecond), touch(confirmPos, false)}}
 		h.onPoll[1] = h.cancel
 		h.run(confirmConfig(time.Second))
 		h.wantFiredOnce()
+	})
+}
+
+func TestConfirmRestartsOnEveryTouch(t *testing.T) {
+	test(t, func(h *harness) {
+		// The release of the first touch is lost: it fired, and the next
+		// touch must fire again after its own full wait.
+		h.scripts = [][]item{{
+			touch(confirmPos, true), idleFor(1500 * time.Millisecond),
+			touch(confirmPos, true), idleFor(1500 * time.Millisecond),
+		}}
+		h.onPoll[2] = h.cancel
+		h.run(confirmConfig(time.Second))
+		h.want("poll", "open", "notify", "fresh 0", "down A", "up A", "poll", "down A", "up A", "poll", "close")
+		if len(h.downAt) != 2 || h.downAt[1] < 2500*time.Millisecond || h.downAt[1] > 2500*time.Millisecond+readTimeout {
+			h.t.Errorf("fired at %v, want the second from 2.5s", h.downAt)
+		}
+	})
+	test(t, func(h *harness) {
+		// Unfired and unreleased, then touched again 0.3 s later: the wait
+		// starts over from the second touch.
+		h.scripts = [][]item{{
+			touch(confirmPos, true), idleFor(300 * time.Millisecond),
+			touch(confirmPos, true), idleFor(1500 * time.Millisecond),
+		}}
+		h.onPoll[1] = h.cancel
+		h.run(confirmConfig(time.Second))
+		if len(h.downAt) != 1 || h.downAt[0] < 1300*time.Millisecond || h.downAt[0] > 1300*time.Millisecond+readTimeout {
+			h.t.Errorf("fired at %v, want once from 1.3s", h.downAt)
+		}
 	})
 }
 

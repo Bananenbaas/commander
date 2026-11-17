@@ -102,6 +102,8 @@ const (
 // spot is a button's place: profile and position on page 1.
 type spot struct{ profile, position byte }
 
+func (s spot) String() string { return fmt.Sprintf("profile %d position %d", s.profile, s.position) }
+
 // loop is the state of Run, used by its goroutine only.
 type loop struct {
 	cfg     *layout.Config
@@ -557,21 +559,19 @@ func (l *loop) read(ctx context.Context, timeout time.Duration) {
 // always released.
 func (l *loop) touch(ev proto.Touch) {
 	s := spot{l.active, ev.Position}
-	if l.confirm != nil && (!ev.Down || l.confirm.s != s) {
-		l.confirm = nil // released, or the finger went to another button
-	}
+	l.confirm = nil // a release, or a new touch, ends the one waiting
 	b, ok := l.buttons[s]
 	if !ok || (ev.Down && ev.Kind != proto.TypeApp) {
 		return
 	}
-	what := fmt.Sprintf("profile %d position %d", s.profile, s.position)
+	what := s.String()
 	switch {
 	case b.Mode == layout.Tap:
 		if ev.Down {
 			if b.Confirm > 0 {
-				if l.confirm == nil { // a repeated touch does not start the wait again
-					l.confirm = &pendingTap{s: s, b: b, since: l.now()}
-				}
+				// The keyboard sends one touch per press, so every touch
+				// starts a fresh wait, also after a release that was lost.
+				l.confirm = &pendingTap{s: s, b: b, since: l.now()}
 				return
 			}
 			l.tapAction(s, b, what)
@@ -590,8 +590,8 @@ func (l *loop) touch(ev proto.Touch) {
 	}
 }
 
-// pendingTap is a touch of a button with Confirm. It stays until the touch is
-// released, so that a repeated touch report does not act a second time.
+// pendingTap is the latest touch of a button with Confirm. It stays until the
+// next touch or release.
 type pendingTap struct {
 	s     spot
 	b     layout.Button
@@ -620,7 +620,7 @@ func (l *loop) confirmDue() (time.Duration, bool) {
 		return left, true
 	}
 	c.done = true
-	l.tapAction(c.s, c.b, fmt.Sprintf("profile %d position %d", c.s.profile, c.s.position))
+	l.tapAction(c.s, c.b, c.s.String())
 	return 0, false
 }
 
