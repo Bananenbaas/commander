@@ -235,3 +235,23 @@ func TestPreviewOutFolderAndErrors(t *testing.T) {
 		t.Fatalf("empty folder: code %d, stderr %q", code, stderr.String())
 	}
 }
+
+// A button that cannot be rendered stops preview before any file is written.
+func TestPreviewRendersBeforeWriting(t *testing.T) {
+	dir := testConfig(t)
+	bad := "profile = 2\n\n[[button]]\npage = 1\nposition = 1\ntitle = \"A title far too long to fit on one button at any size\"\naction = [\"F6\"]\n"
+	if err := os.WriteFile(filepath.Join(dir, "z.toml"), []byte(bad), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "previews")
+	var stdout, stderr bytes.Buffer
+	if code := realMain([]string{"preview", dir, "--out", out}, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "z.toml: page 1 position 1") {
+		t.Fatalf("code %d, stderr %q", code, stderr.String())
+	}
+	if _, err := os.Stat(out); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("output folder after the failure: %v, want none", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("files reported: %q", stdout.String())
+	}
+}

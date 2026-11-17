@@ -25,13 +25,19 @@ const (
 
 var panelBackground = color.NRGBA{R: 10, G: 10, B: 14, A: 0xFF}
 
+// preview is one PNG file to write.
+type preview struct {
+	name string
+	img  image.Image
+}
+
 // writePreviews renders every button exactly as apply would and writes one
 // PNG per button, <profile>-<page>-<position>.png, and one panel-<profile>.png
-// per profile, into out. It touches nothing else.
+// per profile, into out. Everything is rendered before anything is written,
+// so a button that cannot be rendered leaves out as it was. It touches
+// nothing else.
 func writePreviews(cfg *layout.Config, out string, stdout io.Writer) error {
-	if err := os.MkdirAll(out, 0o755); err != nil {
-		return err
-	}
+	var files []preview
 	for _, p := range cfg.Profiles {
 		panel := newPanel()
 		for _, b := range p.Buttons {
@@ -39,18 +45,20 @@ func writePreviews(cfg *layout.Config, out string, stdout io.Writer) error {
 			if err != nil {
 				return fmt.Errorf("%s: page %d position %d: %w", filepath.Base(p.File), b.Page, b.Position, err)
 			}
-			name := fmt.Sprintf("%d-%d-%d.png", p.Number, b.Page, b.Position)
-			if err := writePNG(filepath.Join(out, name), img); err != nil {
-				return err
-			}
-			fmt.Fprintln(stdout, filepath.Join(out, name))
+			files = append(files, preview{fmt.Sprintf("%d-%d-%d.png", p.Number, b.Page, b.Position), img})
 			placeOnPanel(panel, b.Position, img)
 		}
-		name := fmt.Sprintf("panel-%d.png", p.Number)
-		if err := writePNG(filepath.Join(out, name), panel); err != nil {
+		files = append(files, preview{fmt.Sprintf("panel-%d.png", p.Number), panel})
+	}
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		return err
+	}
+	for _, f := range files {
+		path := filepath.Join(out, f.name)
+		if err := writePNG(path, f.img); err != nil {
 			return err
 		}
-		fmt.Fprintln(stdout, filepath.Join(out, name))
+		fmt.Fprintln(stdout, path)
 	}
 	return nil
 }
