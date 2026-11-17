@@ -255,3 +255,46 @@ func TestStateHoldNeedsToggle(t *testing.T) {
 		t.Errorf("err = %v, want a refusal naming hold", err)
 	}
 }
+
+func rippleDriftColour(t *testing.T, drift float64, at time.Duration) color.NRGBA {
+	t.Helper()
+	e := makeFx(t, "ripple", map[string]any{
+		"mode": "wave", "colors": []any{"#FF0000", "#00FF00", "#0000FF"},
+		"spread": 8.0, "speed": 12.0, "width": 6.0, "life": "5s", "drift": drift,
+	})
+	in := &Input{Presses: []Press{{LED: spaceLED, At: at - 20*time.Millisecond}}}
+	return renderIn(e, at, in)[spaceLED]
+}
+
+func TestRippleDrift(t *testing.T) {
+	cols := []color.NRGBA{{255, 0, 0, 255}, {0, 255, 0, 255}, {0, 0, 255, 255}}
+	a := rippleDriftColour(t, 0.5, 500*time.Millisecond)
+	b := rippleDriftColour(t, 0.5, 1500*time.Millisecond)
+	c := rippleDriftColour(t, 0.5, 2500*time.Millisecond)
+	if a.R == b.R && a.G == b.G && a.B == b.B {
+		t.Errorf("colour at the pressed key does not change over 1 s: %v", a)
+	}
+	if a.R != c.R || a.G != c.G || a.B != c.B {
+		t.Errorf("colour after 2 s = %v, want %v", c, a)
+	}
+	want := waveColor(cols, 0, 8, 0.5, 0.5)
+	if a.R != want.R || a.G != want.G || a.B != want.B {
+		t.Errorf("colour = %v, want the wave layer's %v", a, want)
+	}
+	z0 := rippleDriftColour(t, 0, 500*time.Millisecond)
+	z1 := rippleDriftColour(t, 0, 1500*time.Millisecond)
+	if z0.R != z1.R || z0.G != z1.G || z0.B != z1.B {
+		t.Errorf("drift 0 changes the colour: %v then %v", z0, z1)
+	}
+}
+
+func TestRippleDriftNeedsWave(t *testing.T) {
+	s := registry["ripple"]
+	v, err := parseValues(s, map[string]any{"drift": 0.5})
+	if err == nil {
+		_, err = s.New(v)
+	}
+	if err == nil || !strings.Contains(err.Error(), "drift") {
+		t.Errorf("drift with mode press: err = %v", err)
+	}
+}

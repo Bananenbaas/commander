@@ -315,7 +315,9 @@ reader (see Key presses below). Only keys of the KB7 count. Give `color` or
 With `mode = "wave"` the ring runs through `colors` as it spreads: the colour at
 each key is the cyclic blend of the list at the key's distance from the pressed
 key, `spread` keys per full run. Wave mode needs `colors` with at least two
-colours and no `color`.
+colours and no `color`. With `drift` above 0 the colours also move with time;
+give it the `speed` of a `wave` layer with the same `colors` and the ring shows
+the colours that layer shows at that moment, so the two keep in step.
 
 | Setting | Kind | Default | Range | Meaning |
 |---|---|---|---|---|
@@ -323,6 +325,7 @@ colours and no `color`.
 | `colors` | colour list | | not together with `color` | Colours of the rings in turn, by press number |
 | `mode` | choice | `"press"` | `press`, `wave` | `press`: one colour per press; `wave`: the ring runs through `colors` |
 | `spread` | number | 8 | 2 to 30 | Wave mode: keys per full run through `colors` |
+| `drift` | number | 0 | 0 to 5 | Wave mode: cycles per second the colours move through `colors` |
 | `speed` | number | 12 | 2 to 60 | Keys per second the ring spreads |
 | `width` | number | 1.5 | 0.5 to 6 | Width of the ring in keys |
 | `life` | duration | `"1.2s"` | 0.2 s to 5 s | How long a ring lasts |
