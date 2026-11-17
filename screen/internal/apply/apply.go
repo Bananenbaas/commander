@@ -213,14 +213,19 @@ func Apply(ctx context.Context, kb Keyboard, cfg *layout.Config, l *ledger.Ledge
 			continue
 		}
 		done, err := send(ctx, s, l, p, jobs[p], read[p], uploaded, &rep)
-		if errors.Is(err, ErrStopped) {
-			pending := append([]job(nil), jobs[p][done:]...)
+		if err != nil {
+			// A stop leaves the jobs not taken unwritten; any other error
+			// may have come before the tables of this profile were
+			// written, so all of its jobs count as pending.
+			first := 0
+			if errors.Is(err, ErrStopped) {
+				first = done
+			}
+			pending := append([]job(nil), jobs[p][first:]...)
 			for _, q := range profiles[i+1:] {
 				pending = append(pending, jobs[q]...)
 			}
 			distrust(l, uploaded, pending)
-		}
-		if err != nil {
 			return rep, err
 		}
 		if err := saveLedger(save); err != nil {
@@ -234,7 +239,7 @@ func Apply(ctx context.Context, kb Keyboard, cfg *layout.Config, l *ledger.Ledge
 }
 
 // distrust forgets the content of every slot sent in this Apply that one of
-// the pending jobs, whose positions were not written, still uses: those
+// the pending jobs, whose positions may not have been written, still uses: those
 // positions were not redrawn, and the next Apply must send the slot again to
 // redraw them.
 func distrust(l *ledger.Ledger, uploaded map[byte]bool, pending []job) {

@@ -876,6 +876,33 @@ func TestFailedUploadKeepsPositionManaged(t *testing.T) {
 	checkType(t, f, 1, 3, keyType(3))
 }
 
+// A picture uploaded before a later upload fails was not written to its
+// position; the next apply sends it again and redraws it.
+func TestErrorAfterAnUploadDistrustsUploadedSlots(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(4, "Two"))), l, false)
+	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "Uno"), btn(4, "Dos")))
+	uploads := 0
+	f.uploadErr = func(byte) error {
+		uploads++
+		if uploads == 2 {
+			return keyboard.ErrOpenerRefused
+		}
+		return nil
+	}
+	if _, err := Apply(context.Background(), f, cfg, l, false, nothingRuns, nil); !errors.Is(err, keyboard.ErrOpenerRefused) {
+		t.Fatalf("err = %v, want ErrOpenerRefused", err)
+	}
+	f.uploadErr = nil
+	n := len(f.calls)
+	mustApply(t, f, cfg, l, false)
+	got := f.since(n)
+	if strings.Count(got, "upload") != 2 || !strings.Contains(got, "type 3") || !strings.Contains(got, "type 4") {
+		t.Fatalf("second apply: %s, want both pictures uploaded and both positions redrawn", got)
+	}
+}
+
 func TestFailedUploadIntoSharedSlotIsNotTrusted(t *testing.T) {
 	f := newFake(t)
 	l := &ledger.Ledger{}
