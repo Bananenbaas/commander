@@ -101,6 +101,9 @@ func buildLayer(lc LayerConfig) (stackLayer, error) {
 	if err != nil {
 		return stackLayer{}, fmt.Errorf("%s: %w", spec.Name, err)
 	}
+	if sl.effect == nil {
+		return stackLayer{}, fmt.Errorf("%s: made no effect", spec.Name)
+	}
 	return sl, nil
 }
 

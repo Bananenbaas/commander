@@ -86,6 +86,10 @@ func Register(s Spec) {
 			panic(fmt.Sprintf("light: effect %q: choice %q has no choices", s.Name, st.Name))
 		case st.Required && st.Default != nil:
 			panic(fmt.Sprintf("light: effect %q: setting %q is required and has a default", s.Name, st.Name))
+		case (st.Kind == KindNumber || st.Kind == KindDuration) && st.Max < st.Min:
+			// Also catches a minimum given without a maximum; 0/0 is unbounded.
+			panic(fmt.Sprintf("light: effect %q: setting %q has maximum %v below minimum %v",
+				s.Name, st.Name, st.Max, st.Min))
 		}
 		seen[st.Name] = true
 		if st.Default != nil {

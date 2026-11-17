@@ -64,6 +64,7 @@ func TestBuildRefuses(t *testing.T) {
 	}}, "layer 2", "test-solid", "spede")
 	buildErr(t, Config{Layers: []LayerConfig{solid("#FF0000", 255, "W", "Nope")}}, "layer 1", "Nope")
 	buildErr(t, Config{Layers: []LayerConfig{{Effect: "test-keys"}}}, "layer 1", "test-keys", "keys")
+	buildErr(t, Config{Layers: []LayerConfig{{Effect: "test-nil"}}}, "layer 1", "test-nil")
 }
 
 func TestNeedsKeysWithKeys(t *testing.T) {

@@ -28,9 +28,6 @@ type testState struct{ def StateDef }
 func (testState) Render(*Layer, time.Duration, *Input) {}
 func (s testState) State() StateDef                    { return s.def }
 
-// lastAll keeps the values the "test-all" effect was last built with.
-var lastAll Values
-
 func init() {
 	Register(Spec{
 		Name: "test-solid",
@@ -71,6 +68,11 @@ func init() {
 		},
 	})
 	Register(Spec{
+		Name: "test-nil",
+		Help: "Test only: New returns no effect and no error.",
+		New:  func(Values) (Effect, error) { return nil, nil },
+	})
+	Register(Spec{
 		Name: "test-all",
 		Help: "Test only: one setting of each kind.",
 		Settings: []Setting{
@@ -84,10 +86,7 @@ func init() {
 			{Name: "name", Kind: KindName, Default: "gear"},
 			{Name: "optional", Kind: KindNumber},
 		},
-		New: func(v Values) (Effect, error) {
-			lastAll = v
-			return testSolid{}, nil
-		},
+		New: func(Values) (Effect, error) { return testSolid{}, nil },
 	})
 }
 
@@ -257,7 +256,16 @@ func TestRegisterRefusesMistakes(t *testing.T) {
 		Register(Spec{Name: "test-reserved", New: newNil,
 			Settings: []Setting{{Name: "keys", Kind: KindName}}})
 	})
-	for _, n := range []string{"test-no-new", "test-bad-default", "test-no-kind", "test-reserved"} {
+	mustPanic(t, "minimum without maximum", func() {
+		Register(Spec{Name: "test-half-open", New: newNil,
+			Settings: []Setting{{Name: "n", Kind: KindNumber, Min: 0.5}}})
+	})
+	mustPanic(t, "maximum below minimum", func() {
+		Register(Spec{Name: "test-inverted", New: newNil,
+			Settings: []Setting{{Name: "d", Kind: KindDuration, Min: 5, Max: 1}}})
+	})
+	for _, n := range []string{"test-no-new", "test-bad-default", "test-no-kind", "test-reserved",
+		"test-half-open", "test-inverted"} {
 		if _, ok := registry[n]; ok {
 			t.Errorf("%q registered despite the panic", n)
 		}
