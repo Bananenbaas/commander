@@ -17,7 +17,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
+	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/picture"
@@ -29,6 +31,7 @@ import (
 type Keyboard interface {
 	EnableNotifications() error
 	SwitchProfile(p byte) error
+	NextEvent(timeout time.Duration) (any, error)
 	ReadButtons(p byte) (*proto.Table29, error)
 	ReadTypes(p byte) (*proto.Table25, error)
 	Upload(slot byte, data []byte) error
@@ -48,7 +51,62 @@ const (
 	maxProfile  = 4
 	page        = 1  // the only page that is measured
 	maxPosition = 11 // positions of page 1
+
+	noProfile = -1               // the active profile is not known
+	eventWait = time.Millisecond // longest wait for one report of waiting input
+	maxEvents = 64               // most waiting reports read before a switch is left out
 )
+
+// session is the keyboard during one Apply or Restore. It remembers the
+// profile the keyboard last confirmed, so that a switch to the profile that
+// is already active is not sent: whether the keyboard confirms such a switch
+// is not measured. The first switch is always sent, as the active profile
+// cannot be read.
+type session struct {
+	kb     Keyboard
+	active int // the profile the keyboard last confirmed, or noProfile
+}
+
+func newSession(kb Keyboard) *session { return &session{kb: kb, active: noProfile} }
+
+// switchTo makes p the active profile. The switch is left out when the
+// keyboard last confirmed p and the input that waits reports no change since.
+// A failed switch leaves the active profile unknown.
+func (s *session) switchTo(p byte) error {
+	if s.active == int(p) {
+		s.follow()
+		if s.active == int(p) {
+			return nil
+		}
+	}
+	s.active = noProfile
+	if err := s.kb.SwitchProfile(p); err != nil {
+		return fmt.Errorf("profile %d: %w", p, err)
+	}
+	s.active = int(p)
+	return nil
+}
+
+// follow reads the input that waits, which the next switch would drop
+// unread, and takes the active profile from its profile notifications: the
+// profile may have been changed on the keyboard itself. Input that cannot be
+// read, or more than maxEvents reports of it, leaves the profile unknown.
+func (s *session) follow() {
+	for range maxEvents {
+		ev, err := s.kb.NextEvent(eventWait)
+		if errors.Is(err, device.ErrTimeout) {
+			return
+		}
+		if err != nil {
+			s.active = noProfile
+			return
+		}
+		if c, ok := ev.(proto.ProfileChanged); ok {
+			s.active = int(c.Profile)
+		}
+	}
+	s.active = noProfile
+}
 
 // job is one configured button with its rendered picture.
 type job struct {
@@ -107,9 +165,10 @@ func Apply(kb Keyboard, cfg *layout.Config, l *ledger.Ledger, full bool, running
 	if err := kb.EnableNotifications(); err != nil {
 		return rep, err
 	}
+	s := newSession(kb)
 	read := map[byte]tables{}
 	for _, p := range profiles {
-		t, err := prepare(kb, l, p, jobs[p], &rep)
+		t, err := prepare(s, l, p, jobs[p], &rep)
 		if err != nil {
 			return rep, err
 		}
@@ -123,18 +182,14 @@ func Apply(kb Keyboard, cfg *layout.Config, l *ledger.Ledger, full bool, running
 		if len(jobs[p]) == 0 {
 			continue
 		}
-		if err := send(kb, l, p, jobs[p], read[p], uploaded, &rep); err != nil {
+		if err := send(s, l, p, jobs[p], read[p], uploaded, &rep); err != nil {
 			return rep, err
 		}
 		if err := saveLedger(save); err != nil {
 			return rep, err
 		}
 	}
-	final := finalProfile(cfg, running)
-	if err := kb.SwitchProfile(final); err != nil {
-		return rep, fmt.Errorf("profile %d: %w", final, err)
-	}
-	return rep, nil
+	return rep, s.switchTo(finalProfile(cfg, running))
 }
 
 func saveLedger(save func() error) error {
@@ -264,15 +319,15 @@ func showsSlot(e proto.Entry29, n byte) bool {
 // and releases the positions no longer in the layout, records originals and
 // stops trusting slots that a position no longer shows. Nothing else is
 // written.
-func prepare(kb Keyboard, l *ledger.Ledger, p byte, jobs []job, rep *Report) (tables, error) {
-	if err := kb.SwitchProfile(p); err != nil {
-		return tables{}, fmt.Errorf("profile %d: %w", p, err)
+func prepare(s *session, l *ledger.Ledger, p byte, jobs []job, rep *Report) (tables, error) {
+	if err := s.switchTo(p); err != nil {
+		return tables{}, err
 	}
-	t29, err := kb.ReadButtons(p)
+	t29, err := s.kb.ReadButtons(p)
 	if err != nil {
 		return tables{}, fmt.Errorf("profile %d: %w", p, err)
 	}
-	t25, err := kb.ReadTypes(p)
+	t25, err := s.kb.ReadTypes(p)
 	if err != nil {
 		return tables{}, fmt.Errorf("profile %d: %w", p, err)
 	}
@@ -287,7 +342,7 @@ func prepare(kb Keyboard, l *ledger.Ledger, p byte, jobs []job, rep *Report) (ta
 			gone = append(gone, o)
 		}
 	}
-	if err := restore(kb, l, t29, t25, gone, rep); err != nil {
+	if err := restore(s.kb, l, t29, t25, gone, rep); err != nil {
 		return tables{}, fmt.Errorf("profile %d: %w", p, err)
 	}
 
@@ -310,19 +365,7 @@ func prepare(kb Keyboard, l *ledger.Ledger, p byte, jobs []job, rep *Report) (ta
 // changed and the type of every position to redraw. It switches to the
 // profile only when there is something to send. uploaded collects the slots
 // sent during this Apply, so every position showing one is redrawn.
-func send(kb Keyboard, l *ledger.Ledger, p byte, jobs []job, t tables, uploaded map[byte]bool, rep *Report) error {
-	switched := false
-	activate := func() error {
-		if switched {
-			return nil
-		}
-		if err := kb.SwitchProfile(p); err != nil {
-			return fmt.Errorf("profile %d: %w", p, err)
-		}
-		switched = true
-		return nil
-	}
-
+func send(s *session, l *ledger.Ledger, p byte, jobs []job, t tables, uploaded map[byte]bool, rep *Report) error {
 	slots := make([]byte, len(jobs))
 	for i, j := range jobs {
 		slot, up, err := l.Assign(j.o, j.hash)
@@ -334,9 +377,9 @@ func send(kb Keyboard, l *ledger.Ledger, p byte, jobs []job, t tables, uploaded 
 			rep.Skipped = append(rep.Skipped, j.o)
 			continue
 		}
-		err = activate()
+		err = s.switchTo(p)
 		if err == nil {
-			if err = kb.Upload(slot, j.data); err != nil {
+			if err = s.kb.Upload(slot, j.data); err != nil {
 				err = fmt.Errorf("%s, slot %d: %w", where(j.o), slot, err)
 			}
 		}
@@ -370,16 +413,16 @@ func send(kb Keyboard, l *ledger.Ledger, p byte, jobs []job, t tables, uploaded 
 	if len(redraw) == 0 {
 		return nil
 	}
-	if err := activate(); err != nil {
+	if err := s.switchTo(p); err != nil {
 		return err
 	}
 	if changed {
-		if err := kb.WriteButtons(t.t29); err != nil {
+		if err := s.kb.WriteButtons(t.t29); err != nil {
 			return fmt.Errorf("profile %d: %w", p, err)
 		}
 	}
 	for _, pos := range redraw {
-		if err := kb.WriteType(pos, proto.AppType); err != nil {
+		if err := s.kb.WriteType(pos, proto.AppType); err != nil {
 			return fmt.Errorf("profile %d position %d: %w", p, pos, err)
 		}
 	}
@@ -424,8 +467,8 @@ func Restore(kb Keyboard, l *ledger.Ledger, profile byte, save func() error) (Re
 	if err := kb.EnableNotifications(); err != nil {
 		return rep, err
 	}
-	if err := kb.SwitchProfile(profile); err != nil {
-		return rep, fmt.Errorf("profile %d: %w", profile, err)
+	if err := newSession(kb).switchTo(profile); err != nil {
+		return rep, err
 	}
 	t29, err := kb.ReadButtons(profile)
 	if err != nil {

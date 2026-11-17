@@ -271,6 +271,12 @@ program is running, otherwise the desktop profile (the lowest managed profile
 without `switch_when_running`; when every layout has one, the lowest profile
 that no layout gives a program, which then has no layout).
 
+Within one apply or restore, a switch to the profile the keyboard last
+confirmed is not sent again, unless the input that has arrived since reports
+another profile (someone may have switched on the keyboard itself) or cannot
+be read.
+The first switch is always sent, as the active profile cannot be read.
+
 ### Restore
 
 Writes the recorded original `0x29` entries, then — 200 ms later — the
@@ -364,8 +370,9 @@ In this order:
 7. The keyboard on Linux (hidraw nodes, feature reports, the interface 1
    stream).
 8. Whether the keyboard confirms a switch to the profile that is already
-   active. Until that is measured, an unconfirmed switch is assumed to have
-   happened.
+   active. Until that is measured, `run` assumes an unconfirmed switch has
+   happened, and `apply` and `restore` do not send a switch to the profile
+   the keyboard last confirmed.
 
 ## Left to the builder
 

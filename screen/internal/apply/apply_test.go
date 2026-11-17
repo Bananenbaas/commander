@@ -13,7 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/keyboard"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
@@ -22,8 +24,8 @@ import (
 )
 
 // fakeKB models the keyboard: a 0x29 and a 0x25 table per profile, the
-// picture slots and the active profile. Writes go to the active profile, and
-// every call is recorded.
+// picture slots, the active profile and the input waiting to be read. Writes
+// go to the active profile, and every call but NextEvent is recorded.
 type fakeKB struct {
 	t         *testing.T
 	b29       map[byte]*proto.Table29
@@ -32,7 +34,10 @@ type fakeKB struct {
 	active    int // -1 until the first switch
 	notified  bool
 	calls     []string
-	uploadErr func(slot byte) error
+	events    []any                 // input waiting to be read
+	eventErr  error                 // returned once by NextEvent, before the events
+	hook      func(call string)     // called with every recorded call
+	uploadErr func(slot byte) error // after the upload is recorded
 	switchErr func(p byte) error
 }
 
@@ -86,7 +91,28 @@ func newFake(t *testing.T) *fakeKB {
 }
 
 func (f *fakeKB) record(format string, args ...any) {
-	f.calls = append(f.calls, fmt.Sprintf(format, args...))
+	c := fmt.Sprintf(format, args...)
+	f.calls = append(f.calls, c)
+	if f.hook != nil {
+		f.hook(c)
+	}
+}
+
+// switches counts the profile switches recorded from call n on.
+func (f *fakeKB) switches(n int) int {
+	count := 0
+	for _, c := range f.calls[n:] {
+		if strings.HasPrefix(c, "switch ") {
+			count++
+		}
+	}
+	return count
+}
+
+// userSwitch changes the profile on the keyboard itself, which reports it.
+func (f *fakeKB) userSwitch(p byte) {
+	f.active = int(p)
+	f.events = append(f.events, proto.ProfileChanged{Profile: p})
 }
 
 func (f *fakeKB) since(n int) string { return strings.Join(f.calls[n:], ", ") }
@@ -103,8 +129,10 @@ func (f *fakeKB) EnableNotifications() error {
 	return nil
 }
 
+// SwitchProfile drops the waiting input first, as the keyboard package does.
 func (f *fakeKB) SwitchProfile(p byte) error {
 	f.record("switch %d", p)
+	f.events = nil
 	if !f.notified {
 		return errors.New("fake: no profile notification without 0x0e")
 	}
@@ -115,6 +143,19 @@ func (f *fakeKB) SwitchProfile(p byte) error {
 	}
 	f.active = int(p)
 	return nil
+}
+
+func (f *fakeKB) NextEvent(time.Duration) (any, error) {
+	if err := f.eventErr; err != nil {
+		f.eventErr = nil
+		return nil, err
+	}
+	if len(f.events) == 0 {
+		return nil, device.ErrTimeout
+	}
+	ev := f.events[0]
+	f.events = f.events[1:]
+	return ev, nil
 }
 
 func (f *fakeKB) ReadButtons(p byte) (*proto.Table29, error) {
@@ -360,7 +401,7 @@ func TestUnchangedSecondApply(t *testing.T) {
 	mustApply(t, f, cfg, l, false)
 	n := len(f.calls)
 	rep := mustApply(t, f, cfg, l, false)
-	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, switch 1")
+	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1")
 	sameOwners(t, "Uploaded", rep.Uploaded, nil)
 	sameOwners(t, "Skipped", rep.Skipped, []ledger.Owner{own(1, 3), own(1, 4)})
 	if len(rep.Notes) != 0 {
@@ -375,7 +416,7 @@ func TestFullUploadsEverything(t *testing.T) {
 	mustApply(t, f, cfg, l, false)
 	n := len(f.calls)
 	rep := mustApply(t, f, cfg, l, true)
-	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, switch 1, upload 1, upload 2, type 3, type 4, switch 1")
+	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, upload 1, upload 2, type 3, type 4")
 	sameOwners(t, "Uploaded", rep.Uploaded, []ledger.Owner{own(1, 3), own(1, 4)})
 	// The ledger knows the pictures again afterwards.
 	n = len(f.calls)
@@ -391,7 +432,7 @@ func TestIdenticalPicturesShareSlot(t *testing.T) {
 	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "Same"), btn(5, "Same"), btn(4, "Other")))
 	rep := mustApply(t, f, cfg, l, false)
 	checkCalls(t, f, 0, "notify, switch 1, read29 1, read25 1, "+
-		"switch 1, upload 1, upload 2, write29 1, type 3, type 4, type 5, switch 1")
+		"upload 1, upload 2, write29 1, type 3, type 4, type 5")
 	checkEntry(t, f, 1, 3, proto.AppEntry(1, ""))
 	checkEntry(t, f, 1, 4, proto.AppEntry(2, ""))
 	checkEntry(t, f, 1, 5, proto.AppEntry(1, ""))
@@ -426,7 +467,7 @@ func TestPositionChangedBySwarm(t *testing.T) {
 	}
 	n := len(f.calls)
 	rep := mustApply(t, f, cfg, l, false)
-	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, switch 1, upload 1, write29 1, type 3, switch 1")
+	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, upload 1, write29 1, type 3")
 	checkEntry(t, f, 1, 3, proto.AppEntry(1, ""))
 	sameOwners(t, "Uploaded", rep.Uploaded, []ledger.Owner{own(1, 3)})
 	sameOwners(t, "Skipped", rep.Skipped, []ledger.Owner{own(1, 4)})
@@ -447,7 +488,7 @@ func TestPositionChangedBySwarmSharedSlot(t *testing.T) {
 	mustApply(t, f, cfg, l, false)
 	// The slot may have been reused, so it is sent again once, and both
 	// positions that show it are redrawn.
-	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, switch 1, upload 1, write29 1, type 3, type 5, switch 1")
+	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, upload 1, write29 1, type 3, type 5")
 	checkEntry(t, f, 1, 5, proto.AppEntry(1, ""))
 }
 
@@ -494,7 +535,7 @@ func TestRemovedButtonGetsOriginalBack(t *testing.T) {
 	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(4, "Two"))), l, false)
 	n := len(f.calls)
 	rep := mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"))), l, false)
-	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, write29 1, write25 1, switch 1")
+	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, write29 1, write25 1")
 	checkEntry(t, f, 1, 4, keyEntry(4))
 	checkType(t, f, 1, 4, keyType(4))
 	checkEntry(t, f, 1, 3, proto.AppEntry(1, ""))
@@ -602,21 +643,21 @@ func TestFinalProfile(t *testing.T) {
 		name    string
 		cfg     *layout.Config
 		running func(string) bool
-		want    string
+		want    int
 	}{
-		{"game running", desktopAndGame(), func(n string) bool { return n == "StarCitizen.exe" }, "switch 2"},
-		{"game not running", desktopAndGame(), nothingRuns, "switch 0"},
-		{"no running check", desktopAndGame(), nil, "switch 0"},
-		{"game only, not running", cfgOf(prof(1, "sc.toml", "StarCitizen.exe", btn(3, "One"))), nothingRuns, "switch 0"},
+		{"game running", desktopAndGame(), func(n string) bool { return n == "StarCitizen.exe" }, 2},
+		{"game not running", desktopAndGame(), nothingRuns, 0},
+		{"no running check", desktopAndGame(), nil, 0},
+		{"game only, not running", cfgOf(prof(1, "sc.toml", "StarCitizen.exe", btn(3, "One"))), nothingRuns, 0},
 		{"desktop is not the lowest", cfgOf(
 			prof(0, "sc.toml", "StarCitizen.exe", btn(3, "One")),
 			prof(1, "desktop.toml", "", btn(0, "Zero")),
-		), nothingRuns, "switch 1"},
+		), nothingRuns, 1},
 		{"first running profile wins", cfgOf(
 			prof(3, "b.toml", "B.exe", btn(0, "Zero")),
 			prof(1, "a.toml", "A.exe", btn(3, "One")),
 			prof(0, "desktop.toml", "", btn(4, "Four")),
-		), func(string) bool { return true }, "switch 1"},
+		), func(string) bool { return true }, 1},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -624,9 +665,72 @@ func TestFinalProfile(t *testing.T) {
 			if _, err := Apply(f, c.cfg, &ledger.Ledger{}, false, c.running, nil); err != nil {
 				t.Fatal(err)
 			}
-			if len(f.calls) == 0 || f.calls[len(f.calls)-1] != c.want {
-				t.Fatalf("calls %v, want %q last", f.calls, c.want)
+			if f.active != c.want {
+				t.Fatalf("profile %d is active, want %d; calls %v", f.active, c.want, f.calls)
 			}
+		})
+	}
+}
+
+func TestOneSwitchForOneProfile(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(4, "Two")))
+	for _, c := range []struct {
+		name string
+		full bool
+	}{{"first apply", false}, {"unchanged apply", false}, {"full apply", true}} {
+		n := len(f.calls)
+		if _, err := Apply(f, cfg, l, c.full, nothingRuns, nil); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if got := f.switches(n); got != 1 {
+			t.Errorf("%s: %d profile switches, want 1: %s", c.name, got, f.since(n))
+		}
+	}
+	n := len(f.calls)
+	if _, err := Restore(f, l, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.switches(n); got != 1 {
+		t.Errorf("restore: %d profile switches, want 1: %s", got, f.since(n))
+	}
+}
+
+func TestSwitchAgainAfterAProfileChange(t *testing.T) {
+	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "One")))
+	cases := []struct {
+		name  string
+		input func(f *fakeKB)
+		want  string
+	}{
+		{"changed on the keyboard", func(f *fakeKB) { f.userSwitch(0) },
+			"notify, switch 1, read29 1, read25 1, switch 1, upload 1, write29 1, type 3"},
+		{"changed there and back", func(f *fakeKB) { f.userSwitch(3); f.userSwitch(1) },
+			"notify, switch 1, read29 1, read25 1, upload 1, write29 1, type 3"},
+		{"other input only", func(f *fakeKB) { f.events = append(f.events, proto.Redraw{View: 0x20}) },
+			"notify, switch 1, read29 1, read25 1, upload 1, write29 1, type 3"},
+		{"input unreadable", func(f *fakeKB) { f.eventErr = errors.New("read failed") },
+			"notify, switch 1, read29 1, read25 1, switch 1, upload 1, write29 1, type 3"},
+		{"too much input", func(f *fakeKB) {
+			for range maxEvents {
+				f.events = append(f.events, proto.Redraw{View: 0x20})
+			}
+		}, "notify, switch 1, read29 1, read25 1, switch 1, upload 1, write29 1, type 3"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFake(t)
+			f.hook = func(call string) {
+				if call == "read25 1" {
+					c.input(f)
+				}
+			}
+			if _, err := Apply(f, cfg, &ledger.Ledger{}, false, nothingRuns, nil); err != nil {
+				t.Fatal(err)
+			}
+			checkCalls(t, f, 0, c.want)
+			shows(t, f, 1, 3, "One")
 		})
 	}
 }
@@ -728,7 +832,7 @@ func TestUploadLeftOpenStops(t *testing.T) {
 	if !strings.Contains(err.Error(), "unplug") || !strings.Contains(err.Error(), "position 4") {
 		t.Errorf("error %q lost the advice or the position", err)
 	}
-	checkCalls(t, f, 0, "notify, switch 1, read29 1, read25 1, switch 1, upload 1, upload 2")
+	checkCalls(t, f, 0, "notify, switch 1, read29 1, read25 1, upload 1, upload 2")
 	// The position stays managed, and its slot is not trusted.
 	if s, ok := l.SlotOf(own(1, 4)); !ok || s != 2 {
 		t.Errorf("SlotOf(position 4) = %d, %v; want 2, true", s, ok)
@@ -802,6 +906,13 @@ func TestSwitchFailureBeforeUploadIsNotTrusted(t *testing.T) {
 		}
 		return nil
 	}
+	// The profile is changed on the keyboard after the first pass, so the
+	// second pass switches again, and that switch fails.
+	f.hook = func(call string) {
+		if call == "read25 1" {
+			f.userSwitch(0)
+		}
+	}
 	n := len(f.calls)
 	if _, err := Apply(f, cfg, l, true, nothingRuns, nil); !errors.Is(err, timeout) {
 		t.Fatalf("err = %v, want the switch error", err)
@@ -809,7 +920,7 @@ func TestSwitchFailureBeforeUploadIsNotTrusted(t *testing.T) {
 	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, switch 1")
 	// Slot 1 was to be sent again but was not, while position 3 shows it:
 	// the next apply sends it.
-	f.switchErr = nil
+	f.switchErr, f.hook = nil, nil
 	n = len(f.calls)
 	mustApply(t, f, cfg, l, false)
 	if got := f.since(n); !strings.Contains(got, "upload 1") {
