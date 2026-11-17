@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Bananenbaas/kb7-commander/screen/internal/apply"
 )
@@ -320,8 +321,12 @@ func lightConfig(t *testing.T) string {
 func TestLightPreview(t *testing.T) {
 	dir := lightConfig(t)
 	var stdout, stderr bytes.Buffer
+	begin := time.Now()
 	if code := realMain([]string{"light-preview", dir, "--profile", "1"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+	if d := time.Since(begin); d > 3*time.Second {
+		t.Errorf("rendering took %v, want well under 3 s", d)
 	}
 	path := filepath.Join(dir, "previews", "light-1.gif")
 	f, err := os.Open(path)

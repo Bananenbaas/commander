@@ -7,7 +7,6 @@ import (
 	"image"
 	"image/color"
 	"image/color/palette"
-	"image/draw"
 	"image/gif"
 	"io"
 	"math"
@@ -33,7 +32,7 @@ const (
 	lightPressGap = 100 * time.Millisecond
 )
 
-var lightBoard = color.NRGBA{R: 0x1A, G: 0x1A, B: 0x1A, A: 0xFF}
+var lightBoard = color.RGBA{R: 0x1A, G: 0x1A, B: 0x1A, A: 0xFF}
 
 // lightEvent is a key event or a state flip at a time of the simulation.
 type lightEvent struct {
@@ -122,7 +121,7 @@ func renderLightGIF(p byte, stack *light.Stack) *gif.GIF {
 
 	script := lightScript(stack)
 	next := 0
-	g := &gif.GIF{}
+	var colours [][]color.RGBA
 	for k := 0; k < lightFrames; k++ {
 		at := time.Duration(k) * lightStep
 		for next < len(script) && script[next].at <= at {
@@ -135,21 +134,73 @@ func renderLightGIF(p byte, stack *light.Stack) *gif.GIF {
 			}
 		}
 		pl := e.Payload(t0.Add(at))
-		img := image.NewNRGBA(image.Rect(0, 0, w, h))
-		draw.Draw(img, img.Bounds(), image.NewUniform(lightBoard), image.Point{}, draw.Src)
-		for _, i := range leds {
-			pt, _ := light.Pos(i)
+		cols := make([]color.RGBA, len(leds))
+		for n, i := range leds {
 			r, gr, b := ledColour(pl, i)
+			cols[n] = color.RGBA{R: r, G: gr, B: b, A: 0xFF}
+		}
+		colours = append(colours, cols)
+	}
+
+	pal, index := lightPalette(colours)
+	g := &gif.GIF{}
+	for _, cols := range colours {
+		frame := image.NewPaletted(image.Rect(0, 0, w, h), pal)
+		bg := index(lightBoard)
+		for k := range frame.Pix {
+			frame.Pix[k] = bg
+		}
+		for n, i := range leds {
+			pt, _ := light.Pos(i)
 			cx := lightMargin + int(math.Round(pt.X*lightCell))
 			cy := lightMargin + int(math.Round(pt.Y*lightCell))
-			fillSquare(img, cx, cy, color.NRGBA{R: r, G: gr, B: b, A: 0xFF})
+			fillSquare(frame, cx, cy, index(cols[n]))
 		}
-		frame := image.NewPaletted(img.Bounds(), palette.Plan9)
-		draw.FloydSteinberg.Draw(frame, frame.Bounds(), img, image.Point{})
 		g.Image = append(g.Image, frame)
 		g.Delay = append(g.Delay, lightDelay)
 	}
 	return g
+}
+
+// lightPalette returns the palette for the whole GIF and a function that maps
+// a colour to its index. The squares are flat colours, so no dithering is
+// needed: when the board and all LED colours of all frames number at most 256,
+// the palette holds exactly those colours; otherwise it is palette.Plan9 and
+// each colour maps to its nearest entry (looked up once per distinct colour).
+func lightPalette(frames [][]color.RGBA) (color.Palette, func(color.RGBA) uint8) {
+	board := lightBoard
+	seen := map[color.RGBA]uint8{board: 0}
+	pal := color.Palette{board}
+	exact := true
+	for _, f := range frames {
+		for _, c := range f {
+			if _, ok := seen[c]; ok {
+				continue
+			}
+			if len(pal) == 256 {
+				exact = false
+				break
+			}
+			seen[c] = uint8(len(pal))
+			pal = append(pal, c)
+		}
+		if !exact {
+			break
+		}
+	}
+	if exact {
+		return pal, func(c color.RGBA) uint8 { return seen[c] }
+	}
+	plan9 := color.Palette(palette.Plan9)
+	cache := map[color.RGBA]uint8{}
+	return plan9, func(c color.RGBA) uint8 {
+		if i, ok := cache[c]; ok {
+			return i
+		}
+		i := uint8(plan9.Index(c))
+		cache[c] = i
+		return i
+	}
 }
 
 // ledColour reads the colour of LED i from a payload.
@@ -160,7 +211,7 @@ func ledColour(pl *proto.LightPayload, i int) (r, g, b byte) {
 
 // fillSquare draws a square of lightSquare pixels centred on (cx, cy) with
 // rounded corners.
-func fillSquare(img *image.NRGBA, cx, cy int, c color.NRGBA) {
+func fillSquare(img *image.Paletted, cx, cy int, c uint8) {
 	half := lightSquare / 2
 	for y := 0; y < lightSquare; y++ {
 		for x := 0; x < lightSquare; x++ {
@@ -170,7 +221,7 @@ func fillSquare(img *image.NRGBA, cx, cy int, c color.NRGBA) {
 			if dx*dx+dy*dy > lightRound*lightRound {
 				continue
 			}
-			img.SetNRGBA(cx-half+x, cy-half+y, c)
+			img.SetColorIndex(cx-half+x, cy-half+y, c)
 		}
 	}
 }
