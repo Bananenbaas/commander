@@ -10,6 +10,7 @@ import (
 const (
 	rtIcon      = 3
 	rtGroupIcon = 14
+	rtManifest  = 24
 	langUS      = 0x0409
 	subdirFlag  = 0x80000000
 )
@@ -43,9 +44,10 @@ func parseICO(ico []byte) ([]iconEntry, error) {
 }
 
 // Syso converts an ICO file to a COFF object for amd64 whose .rsrc section
-// holds one RT_GROUP_ICON (ID 1, language 0x0409) and the RT_ICON images
-// (IDs 1..n). The Go linker includes such a .syso file in a Windows build.
-func Syso(ico []byte) ([]byte, error) {
+// holds one RT_GROUP_ICON (ID 1) and the RT_ICON images (IDs 1..n) and, when
+// manifest is not empty, an RT_MANIFEST (ID 1) with it, all in language
+// 0x0409. The Go linker includes such a .syso file in a Windows build.
+func Syso(ico, manifest []byte) ([]byte, error) {
 	icons, err := parseICO(ico)
 	if err != nil {
 		return nil, err
@@ -65,14 +67,44 @@ func Syso(ico []byte) ([]byte, error) {
 		le.PutUint16(e[12:], uint16(i+1))
 	}
 
-	// Layout: root, the RT_ICON directory, the RT_GROUP_ICON directory, one
-	// language directory per resource, the data entries, then the data.
+	// The resources, ordered by type and then ID, as the directories must be.
+	type resource struct {
+		typ, id uint32
+		data    []byte
+	}
+	var res []resource
+	for i, ic := range icons {
+		res = append(res, resource{rtIcon, uint32(i + 1), ic.data})
+	}
+	res = append(res, resource{rtGroupIcon, 1, grp})
+	if len(manifest) > 0 {
+		res = append(res, resource{rtManifest, 1, manifest})
+	}
+	// types lists each type once with the number of its resources.
+	type typeDir struct {
+		typ   uint32
+		count int
+	}
+	var types []typeDir
+	for _, r := range res {
+		if len(types) == 0 || types[len(types)-1].typ != r.typ {
+			types = append(types, typeDir{r.typ, 0})
+		}
+		types[len(types)-1].count++
+	}
+
+	// Layout: root, one directory per type, one language directory per
+	// resource, the data entries, then the data.
 	dirSize := func(entries int) int { return 16 + 8*entries }
-	iconDirOff := dirSize(2)
-	grpDirOff := iconDirOff + dirSize(n)
-	langOff := grpDirOff + dirSize(1)
-	dataEntOff := langOff + (n+1)*dirSize(1)
-	dataOff := dataEntOff + (n+1)*16
+	typeOff := make([]int, len(types))
+	off := dirSize(len(types))
+	for i, td := range types {
+		typeOff[i] = off
+		off += dirSize(td.count)
+	}
+	langOff := off
+	dataEntOff := langOff + len(res)*dirSize(1)
+	dataOff := dataEntOff + len(res)*16
 
 	var sec []byte
 	put32 := func(v uint32) { sec = le.AppendUint32(sec, v) }
@@ -87,28 +119,30 @@ func Syso(ico []byte) ([]byte, error) {
 	}
 	entry := func(id, target uint32) { put32(id); put32(target) }
 
-	dirHeader(2)
-	entry(rtIcon, subdirFlag|uint32(iconDirOff))
-	entry(rtGroupIcon, subdirFlag|uint32(grpDirOff))
-	dirHeader(n)
-	for i := 0; i < n; i++ {
-		entry(uint32(i+1), subdirFlag|uint32(langOff+i*dirSize(1)))
+	dirHeader(len(types))
+	for i, td := range types {
+		entry(td.typ, subdirFlag|uint32(typeOff[i]))
 	}
-	dirHeader(1)
-	entry(1, subdirFlag|uint32(langOff+n*dirSize(1)))
-	for i := 0; i <= n; i++ {
+	k := 0 // index of the first resource of the type
+	for _, td := range types {
+		dirHeader(td.count)
+		for j := 0; j < td.count; j++ {
+			entry(res[k+j].id, subdirFlag|uint32(langOff+(k+j)*dirSize(1)))
+		}
+		k += td.count
+	}
+	for i := range res {
 		dirHeader(1)
 		entry(langUS, uint32(dataEntOff+i*16))
 	}
 
 	// Data entries; their RVA fields need relocations.
 	var relocs []uint32
-	datas := make([][]byte, 0, n+1)
-	for _, ic := range icons {
-		datas = append(datas, ic.data)
+	datas := make([][]byte, 0, len(res))
+	for _, r := range res {
+		datas = append(datas, r.data)
 	}
-	datas = append(datas, grp)
-	off := dataOff
+	off = dataOff
 	for _, d := range datas {
 		relocs = append(relocs, uint32(len(sec)))
 		put32(uint32(off))

@@ -7,7 +7,7 @@
 //	go run internal/icon/gen/main.go
 //
 // It writes cmd/commander/commander.ico, cmd/commander/rsrc_windows_amd64.syso
-// and internal/icon/helmet-256.png.
+// (the icon and the application manifest) and internal/icon/helmet-256.png.
 package main
 
 import (
@@ -25,7 +25,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	syso, err := icon.Syso(ico)
+	syso, err := icon.Syso(ico, []byte(icon.Manifest))
 	if err != nil {
 		log.Fatal(err)
 	}
