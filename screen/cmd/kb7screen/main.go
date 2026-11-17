@@ -196,11 +196,19 @@ func loadLedger(dir string) (*ledger.Ledger, func() error, error) {
 }
 
 // errRunHoldsKeyboard is reported by apply and restore while run is active.
-var errRunHoldsKeyboard = errors.New("stop kb7screen run first: its lighting stream and the picture uploads share the keyboard's interface 1")
+var errRunHoldsKeyboard = errors.New("Commander or kb7screen run is running; stop it first (its lighting stream and the picture uploads share the keyboard's interface 1)")
 
-// refuseWhileRun returns an error when run holds the lock of dir.
+// refuseWhileRun returns an error when a run loop of this user, or run for
+// dir, holds the keyboard.
 func refuseWhileRun(dir string) error {
-	held, err := runlock.Held(dir)
+	held, err := runlock.UserHeld()
+	if err != nil {
+		return err
+	}
+	if held {
+		return errRunHoldsKeyboard
+	}
+	held, err = runlock.Held(dir)
 	if err != nil {
 		return err
 	}
@@ -329,6 +337,14 @@ func doRun(c command, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	releaseUser, err := runlock.AcquireUser()
+	if errors.Is(err, runlock.ErrUserHeld) {
+		return errors.New("Commander or kb7screen run is already running for another folder")
+	}
+	if err != nil {
+		return err
+	}
+	defer releaseUser()
 	releaseLock, err := runlock.Acquire(cfg.Dir)
 	if errors.Is(err, runlock.ErrHeld) {
 		return errors.New("kb7screen run is already running for this folder")

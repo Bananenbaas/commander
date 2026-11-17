@@ -1918,3 +1918,59 @@ func TestPanicInTheRestFrameStillCloses(t *testing.T) {
 			"poll", "frames", "poll", "close")
 	})
 }
+
+// statusRun runs testConfig with a Status callback and returns the reports.
+func statusRun(h *harness) *[]Status {
+	var got []Status
+	d := h.deps()
+	d.Status = func(s Status) { got = append(got, s) }
+	if err := Run(h.ctx, testConfig(), d); err != nil {
+		h.t.Fatalf("Run: %v", err)
+	}
+	return &got
+}
+
+func TestStatusReports(t *testing.T) {
+	test(t, func(h *harness) {
+		h.scripts = [][]item{{event(proto.ProfileChanged{Profile: 2})}}
+		h.onPoll[1] = func() { h.running[procs.Swarm[0]] = true }
+		h.onPoll[3] = func() { h.running[procs.Swarm[0]] = false }
+		h.onPoll[5] = h.cancel
+		got := statusRun(h)
+		want := []Status{
+			{Profile: -1, Waiting: "keyboard"},
+			{Profile: 0},
+			{Profile: 2},
+			{Profile: -1, Waiting: "Swarm II"},
+			{Profile: 0},
+		}
+		if !slices.Equal(*got, want) {
+			h.t.Errorf("reports\n got %v\nwant %v", *got, want)
+		}
+	})
+}
+
+func TestStatusKeyboardAbsent(t *testing.T) {
+	test(t, func(h *harness) {
+		h.openErr = func(n int) error {
+			if n < 2 {
+				return device.ErrNotFound
+			}
+			return nil
+		}
+		h.onPoll[4] = h.cancel
+		got := statusRun(h)
+		want := []Status{{Profile: -1, Waiting: "keyboard"}, {Profile: 0}}
+		if !slices.Equal(*got, want) {
+			h.t.Errorf("reports\n got %v\nwant %v", *got, want)
+		}
+	})
+}
+
+func TestStatusNilIsFine(t *testing.T) {
+	test(t, func(h *harness) {
+		h.running[procs.Swarm[0]] = true
+		h.onPoll[2] = h.cancel
+		h.run(testConfig()) // h.deps() has no Status
+	})
+}

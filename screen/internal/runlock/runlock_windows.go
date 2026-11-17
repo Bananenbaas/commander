@@ -39,3 +39,26 @@ func mapCreateError(path string, err error) error {
 	}
 	return fmt.Errorf("cannot create the lock file %s: %w (is the folder writable?)", path, err)
 }
+
+// userMutexName is the per-user mutex of the run loop.
+const userMutexName = `Local\Commander-KB7`
+
+// acquireUser creates the named mutex and keeps its handle open until
+// release; the system closes it when the process dies.
+func acquireUser() (release func() error, err error) {
+	name, err := windows.UTF16PtrFromString(userMutexName)
+	if err != nil {
+		return nil, err
+	}
+	h, err := windows.CreateMutex(nil, false, name)
+	if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+		if h != 0 {
+			windows.CloseHandle(h)
+		}
+		return nil, ErrUserHeld
+	}
+	if err != nil {
+		return nil, fmt.Errorf("cannot create the user lock: %w", err)
+	}
+	return func() error { return windows.CloseHandle(h) }, nil
+}

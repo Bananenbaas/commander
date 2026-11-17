@@ -57,3 +57,29 @@ func TestDifferentDirsDoNotInterfere(t *testing.T) {
 	}
 	b()
 }
+
+func TestUserLockSecondAcquireIsHeld(t *testing.T) {
+	release, err := AcquireUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AcquireUser(); !errors.Is(err, ErrUserHeld) {
+		t.Fatalf("second AcquireUser = %v, want ErrUserHeld", err)
+	}
+	held, err := UserHeld()
+	if err != nil || !held {
+		t.Fatalf("UserHeld = %v, %v; want true, nil", held, err)
+	}
+	if err := release(); err != nil {
+		t.Fatal(err)
+	}
+	held, err = UserHeld()
+	if err != nil || held {
+		t.Fatalf("UserHeld after release = %v, %v; want false, nil", held, err)
+	}
+	release, err = AcquireUser()
+	if err != nil {
+		t.Fatalf("AcquireUser after release: %v", err)
+	}
+	release()
+}

@@ -61,6 +61,15 @@ type Keyboard interface {
 	Close() error
 }
 
+// Status is what the loop is doing, for a display such as a tray icon.
+type Status struct {
+	// Profile is the keyboard's active profile, -1 when unknown.
+	Profile int
+	// Waiting says what the loop waits for: "" (nothing, the keyboard is in
+	// use), "keyboard" (not connected) or "Swarm II" (left to Swarm II).
+	Waiting string
+}
+
 // Deps is what Run works with.
 type Deps struct {
 	// Open opens the keyboard. It returns an error matching
@@ -90,6 +99,10 @@ type Deps struct {
 	// Keys brings the key presses of the KB7 (nil: none). It is read only
 	// when there is lighting, and may be closed.
 	Keys <-chan keys.Event
+	// Status is called from Run's goroutine whenever the status differs from
+	// the last one reported, first with {Profile: -1, Waiting: "keyboard"}
+	// before the keyboard is opened for the first time. Nil: no reports.
+	Status func(Status)
 }
 
 const (
@@ -113,6 +126,8 @@ type loop struct {
 	every   time.Duration
 	logf    func(string, ...any)
 	w       *worker
+	status  func(Status)
+	last    Status // the last status reported
 
 	names     []string         // programs checked at every poll: Swarm II first
 	switchers []layout.Profile // profiles with switch_when_running, ascending
@@ -188,6 +203,7 @@ func Run(ctx context.Context, cfg *layout.Config, d Deps) error {
 	}
 	l.w = startWorker(d.Exec, l.logf)
 	defer l.stop() // also when a call panics: keys released, keyboard closed, worker ended
+	l.report(Status{Profile: -1, Waiting: "keyboard"})
 	next := l.now()
 	for ctx.Err() == nil {
 		l.drainKeys() // so a frame sent below shows every key event so far
@@ -228,7 +244,7 @@ func newLoop(cfg *layout.Config, d Deps) (*loop, error) {
 		return nil, errors.New("run: no executor")
 	}
 	l := &loop{
-		cfg: cfg, open: d.Open, running: d.Running, now: d.Now, every: d.Poll, logf: d.Logf,
+		cfg: cfg, open: d.Open, status: d.Status, running: d.Running, now: d.Now, every: d.Poll, logf: d.Logf,
 		buttons: map[spot]layout.Button{}, chords: map[spot]action.Chord{}, held: map[spot]action.Chord{},
 		flips: map[spot]string{}, wasRunning: map[string]bool{},
 	}
@@ -292,6 +308,18 @@ func newLoop(cfg *layout.Config, d Deps) (*loop, error) {
 	return l, nil
 }
 
+// report passes s to the status callback unless it is what was reported last.
+func (l *loop) report(s Status) {
+	if l.status == nil || s == l.last {
+		return
+	}
+	l.last = s
+	l.status(s)
+}
+
+// ready reports the active profile, with the keyboard in use.
+func (l *loop) ready() { l.report(Status{Profile: int(l.active)}) }
+
 // sleep waits for d or until ctx is cancelled.
 func sleep(ctx context.Context, d time.Duration) {
 	if d <= 0 {
@@ -330,6 +358,7 @@ func (l *loop) poll(ctx context.Context) {
 			l.paused, l.recheck = true, true
 			l.logf("Swarm II is running; leaving the keyboard to it until it closes")
 			l.shut(ctx, true)
+			l.report(Status{Profile: -1, Waiting: "Swarm II"})
 		}
 		return
 	}
@@ -349,10 +378,13 @@ func (l *loop) poll(ctx context.Context) {
 		// The keyboard does not confirm a switch to the active profile.
 		l.logf("profile %d is already active", want)
 		l.expected = want
+		l.ready()
 		return
 	}
 	l.logf("switching to profile %d", want)
-	l.switchTo(ctx, want, false)
+	if l.switchTo(ctx, want, false) {
+		l.ready()
+	}
 }
 
 func anyOf(running map[string]bool, names []string) bool {
@@ -385,6 +417,7 @@ func (l *loop) connect(ctx context.Context, want byte) {
 			msg = "waiting for the keyboard"
 		}
 		l.logOnce(&l.openMsg, msg)
+		l.report(Status{Profile: -1, Waiting: "keyboard"})
 		return
 	}
 	l.openMsg = ""
@@ -403,6 +436,7 @@ func (l *loop) connect(ctx context.Context, want byte) {
 		return
 	}
 	l.logf("keyboard ready on profile %d", want)
+	l.ready()
 	if l.recheck {
 		l.check(ctx)
 	}
@@ -438,7 +472,12 @@ func (l *loop) switchTo(ctx context.Context, p byte, fresh bool) bool {
 
 // drop releases held keys and closes the keyboard, after a keyboard error:
 // no rest frame is sent.
-func (l *loop) drop(ctx context.Context) { l.shut(ctx, false) }
+func (l *loop) drop(ctx context.Context) {
+	l.shut(ctx, false)
+	if l.kb == nil {
+		l.report(Status{Profile: -1, Waiting: "keyboard"})
+	}
+}
 
 // shut releases held keys, sends the rest frame if rest is set and closes
 // the keyboard. If ctx is cancelled first, the keyboard stays open for stop
@@ -543,7 +582,9 @@ func (l *loop) read(ctx context.Context, timeout time.Duration) {
 		}
 		l.active = ev.Profile
 		l.logf("profile %d is active", ev.Profile)
-		l.activate(ctx)
+		if l.activate(ctx) {
+			l.ready()
+		}
 	case proto.Touch:
 		l.touch(ev)
 	case proto.Brightness:
