@@ -14,6 +14,10 @@ dist/
 .venv/
 .env
 
+# Built kb7screen executables
+screen/kb7screen
+screen/kb7screen.exe
+
 # Editor and OS cruft
 .idea/
 .vscode/

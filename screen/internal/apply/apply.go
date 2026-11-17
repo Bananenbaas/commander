@@ -175,32 +175,34 @@ func renderAll(cfg *layout.Config) (map[byte][]job, error) {
 	return jobs, nil
 }
 
-// render returns the encoded picture of a button: its own picture fitted, or
-// the built-in style with its symbol and title.
+// render returns the encoded picture of a button.
 func render(b layout.Button) ([]byte, error) {
-	var img *image.NRGBA
+	img, err := RenderButton(b)
+	if err != nil {
+		return nil, err
+	}
+	return picture.Encode(img)
+}
+
+// RenderButton draws a button's picture: its own picture fitted, or the
+// built-in style with its symbol and title. Apply sends exactly this image.
+func RenderButton(b layout.Button) (*image.NRGBA, error) {
 	if b.Picture != "" {
 		src, err := loadPNG(b.Picture)
 		if err != nil {
 			return nil, err
 		}
-		img = picture.Fit(src)
-	} else {
-		var sym image.Image
-		if b.Symbol != "" {
-			s, err := loadPNG(b.Symbol)
-			if err != nil {
-				return nil, err
-			}
-			sym = s
-		}
-		r, err := picture.Render(picture.Style{Color: b.Color, Symbol: sym, Title: b.Title})
+		return picture.Fit(src), nil
+	}
+	var sym image.Image
+	if b.Symbol != "" {
+		s, err := loadPNG(b.Symbol)
 		if err != nil {
 			return nil, err
 		}
-		img = r
+		sym = s
 	}
-	return picture.Encode(img)
+	return picture.Render(picture.Style{Color: b.Color, Symbol: sym, Title: b.Title})
 }
 
 func loadPNG(path string) (image.Image, error) {

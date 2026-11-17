@@ -69,6 +69,13 @@ recognised as HID and is not filtered. Review any output before you share it.
 
 Tests: `python -m unittest discover -s tests -t .`
 
+## `kb7screen`: your own buttons on the screen
+
+`kb7screen` is a Go program (Windows, with a Linux build) that puts your own
+pictures and titles on the KB7's touchscreen buttons and carries out their
+actions on the PC, without Swarm II: key combinations, sequences with pauses,
+programs, websites. See [`screen/README.md`](screen/README.md).
+
 ## Contributing
 
 Captures are the bottleneck in Phase 0, so a good capture is the most useful

@@ -31,6 +31,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
   both layouts, and the device-inventory test runs against each.
 
 ### Added
+- `kb7screen`, a Go program in `screen/` that puts own buttons (built-in style
+  or own PNG pictures) on the KB7's touchscreen per profile and carries out
+  their actions on the PC: key chords, sequences with waits, programs, URLs.
+  Commands: `check`, `read`, `preview`, `apply`, `restore` and `run`, which
+  also switches profile when a named program starts. Builds for Windows and
+  Linux.
 - Application buttons: a screen button whose picture is uploaded by the host.
   The upload (`a5 41`) is 142 x 148 RGB565 followed by a one-byte-per-pixel
   alpha mask. A picture uploaded from our own code was drawn with its

@@ -154,7 +154,7 @@ command line.
 |---|---|
 | `kb7screen check` | finds the keyboard, reports whether Swarm II is running, reads the profile names |
 | `kb7screen read --profile N` | prints a profile's button table (`0x29` and `0x25`) |
-| `kb7screen preview <config>` | writes the rendered pictures as PNG files, touching nothing |
+| `kb7screen preview <config> [--out DIR]` | writes the rendered pictures as PNG files (`<profile>-<page>-<position>.png`, and one `panel-<profile>.png` per profile), touching nothing else |
 | `kb7screen apply <config> [--full]` | puts every layout of the folder on the keyboard; `--full` re-uploads every picture |
 | `kb7screen restore <config> --profile N` | gives the profile's positions back their recorded original contents |
 | `kb7screen run <config>` | writes `0x0e`, switches profiles with programs, carries out taps until stopped |
@@ -177,7 +177,6 @@ A layout file:
 ```toml
 profile = 1                      # which of the five profiles this file owns
 switch_when_running = "StarCitizen.exe"   # optional
-font = "fonts/BarlowCondensed-SemiBold.ttf"
 
 [[button]]
 page = 1
@@ -202,6 +201,7 @@ color = "#FFAA00"
 action = ["open https://example.org"]
 ```
 
+- There is no `font` key in this version: the title font is the bundled one.
 - A button has either `symbol` (built-in style) or `picture` (own PNG of any
   size, fitted into 142 x 148 keeping its alpha). Without either, the built-in
   style draws only the frame and the title.
@@ -233,7 +233,8 @@ the first time kb7screen takes the position over.
   stable, so unchanged pictures are never sent again. Buttons with identical
   pictures share a slot.
 - Until the highest slot is measured, allocation stops at 9 and refuses beyond
-  it.
+  it. Apply counts the different pictures of all layouts before it touches the
+  keyboard and refuses a configuration that needs more pictures than slots.
 - **A missing or stale ledger is safe**: pictures cannot be read back, so
   without a matching ledger entry a picture is simply uploaded again. Apply also
   reads each managed profile's `0x29` and re-sends whatever differs from the
@@ -241,17 +242,29 @@ the first time kb7screen takes the position over.
 
 ### Apply
 
-For each managed profile:
+`Apply` returns a `Report` (pictures uploaded and skipped, positions restored,
+notes) and an error. It first renders every picture, so a bad file or a title
+that does not fit stops it before anything is sent. It then works in two
+passes over the managed profiles (those of the configuration and those the
+ledger still holds positions in), in ascending order, and saves the ledger
+during the run: after the first pass and after each profile of the second. The
+caller saves it once more when `Apply` returns, whether or not it failed.
+
+First pass, for each profile:
 
 1. Switch to it with `0x06` and wait for `03 00 01 <profile>` (as Swarm II
    does before writing a profile).
-2. Read its `0x29` and `0x25`. Record originals for positions taken over for
-   the first time.
-3. Render every picture; upload those whose slot does not hold the same hash.
-4. Write `0x29` once with all changed entries; wait 200 ms; write `0x35` for
+2. Read its `0x29` and `0x25`.
+3. A position that was managed but is no longer in the layout gets its
+   original contents back (as in `restore`), which frees its slot.
+4. Record originals for positions taken over for the first time. Stop
+   trusting the slot of a position that no longer shows it.
+
+Second pass, for each profile with buttons:
+
+5. Assign slots; upload the pictures whose slot does not hold the same hash.
+6. Write `0x29` once with all changed entries; wait 200 ms; write `0x35` for
    each changed position (that also makes the keyboard redraw it).
-5. A position that was managed but is no longer in the layout gets its original
-   contents back (as in `restore`).
 
 Finish on the profile that `run` would choose: the game's profile if its
 program is running, otherwise the desktop profile (the lowest managed profile
@@ -273,7 +286,11 @@ path has not been replayed yet and must be tested before it is relied on.
   to that profile when one starts, back to the desktop profile when it ends.
 - On a `0x33` touch: look up the button by active profile and position. Start
   its action (tap) or press its chord (hold). On release: release the hold
-  chord. Taps on positions no layout manages are ignored. Actions run one at a
+  chord. Taps on positions no layout manages are ignored, and so are touches
+  of anything but an application button (kind `0x05`): a position the
+  keyboard shows as a key or another widget is left to the keyboard.
+- A profile switch the keyboard does not confirm in time is assumed to have
+  happened. Actions run one at a
   time in order, on a worker, so the reader never blocks.
 - **Swarm II is polled** every two seconds, like the programs above. While
   Swarm II or its device service runs, `run` releases every held key, closes
@@ -313,7 +330,9 @@ Alt). Linux: a uinput virtual keyboard.
 - Upload: an opener that is not echoed exactly ends the upload before any
   data; once it is echoed, the upload runs to `a5 ff` or the program reports
   that the keyboard must be unplugged.
-- No retries of writes that failed, apart from reconnecting after an unplug.
+- No retries of writes that failed. The only writes repeated are the
+  reconnect writes, `0x0e` and `0x06`, which are sent again on every connect
+  and reconnect; they are idempotent.
 
 ## Testing
 
@@ -343,6 +362,9 @@ In this order:
    chords arrive.
 7. The keyboard on Linux (hidraw nodes, feature reports, the interface 1
    stream).
+8. Whether the keyboard confirms a switch to the profile that is already
+   active. Until that is measured, an unconfirmed switch is assumed to have
+   happened.
 
 ## Left to the builder
 
