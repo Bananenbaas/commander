@@ -491,12 +491,12 @@ func (d *winDevice) GetFeature(id byte, n int) ([]byte, error) {
 		return nil, err
 	}
 	defer d.ioMu.Unlock()
-	buf := make([]byte, n)
-	buf[0] = id
-	if err := d.getFeature(d.feature, buf); err != nil {
-		return nil, ioErr(fmt.Sprintf("get feature report 0x%02x", id), err, false)
-	}
-	return buf, nil
+	return readFeature(id, n, d.featureLen, func(buf []byte) error {
+		if err := d.getFeature(d.feature, buf); err != nil {
+			return ioErr(fmt.Sprintf("get feature report 0x%02x", id), err, false)
+		}
+		return nil
+	})
 }
 
 func (d *winDevice) WriteStream(f [64]byte) error {

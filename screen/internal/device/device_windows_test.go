@@ -420,16 +420,19 @@ func TestWinSetFeatureFullLength(t *testing.T) {
 	}
 }
 
-// A feature report is read once, into a buffer of exactly the asked length.
+// A feature report is read into a buffer of exactly the asked length; a
+// refused read is tried once more with 64 bytes.
 func TestWinGetFeature(t *testing.T) {
 	reply := report(1044, 0x05, 0x01, 0xba, 0x00, 0x99)
 	for _, tc := range []struct {
 		name    string
 		fail    map[int]bool
 		wantErr bool
+		lens    string
 	}{
-		{"answered", nil, false},
-		{"refused", map[int]bool{4: true}, true},
+		{"answered", nil, false, "[4]"},
+		{"refused short, answered long", map[int]bool{4: true}, false, "[4 64]"},
+		{"refused both", map[int]bool{4: true, 64: true}, true, "[4 64]"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			k := newTestKB(t)
@@ -442,8 +445,8 @@ func TestWinGetFeature(t *testing.T) {
 			if tc.wantErr && !errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
 				t.Fatalf("error %v does not carry the failure", err)
 			}
-			if gotLens := calls.lens(); fmt.Sprint(gotLens) != "[4]" {
-				t.Fatalf("buffer lengths %v, want one call with 4 bytes", gotLens)
+			if gotLens := calls.lens(); fmt.Sprint(gotLens) != tc.lens {
+				t.Fatalf("buffer lengths %v, want %s", gotLens, tc.lens)
 			}
 			for _, b := range calls.bufs {
 				if b[0] != 0x05 {

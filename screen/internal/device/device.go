@@ -114,6 +114,40 @@ func checkFeatureLen(n, max int) error {
 	return nil
 }
 
+// retryLen is the length of the one longer read tried after a feature read
+// of n bytes failed: the keyboard may refuse a short status read until a
+// longer one has succeeded.
+func retryLen(n int) int {
+	if n <= 64 {
+		return 64
+	}
+	return 1044
+}
+
+// readFeature reads feature report id with exactly n bytes. If that fails
+// with an error that is not ErrDisconnected, it reads once more with a
+// longer buffer (when the device can take one) and returns the first n
+// bytes. get does one read of the given length; max is the largest length
+// the device can move. Only reads are retried.
+func readFeature(id byte, n, max int, get func(buf []byte) error) ([]byte, error) {
+	buf := make([]byte, n)
+	buf[0] = id
+	err := get(buf)
+	if err == nil {
+		return buf, nil
+	}
+	rl := retryLen(n)
+	if errors.Is(err, ErrDisconnected) || rl <= n || rl > max {
+		return nil, err
+	}
+	long := make([]byte, rl)
+	long[0] = id
+	if get(long) != nil {
+		return nil, err
+	}
+	return long[:n:n], nil
+}
+
 // millis converts a timeout to whole milliseconds for the operating
 // system's wait calls. A positive timeout is rounded up, so it never becomes
 // a zero wait, and capped at max; zero or less means do not wait.

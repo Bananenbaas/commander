@@ -239,12 +239,12 @@ func (d *linuxDevice) GetFeature(id byte, n int) ([]byte, error) {
 		return nil, err
 	}
 	defer d.ioMu.Unlock()
-	buf := make([]byte, n)
-	buf[0] = id
-	if _, err := ioctl(d.ctrl, hidioc(hidiocGFeature, n), buf); err != nil {
-		return nil, ioErr(fmt.Sprintf("get feature report 0x%02x", id), err)
-	}
-	return buf, nil
+	return readFeature(id, n, maxIoctlLen, func(buf []byte) error {
+		if _, err := ioctl(d.ctrl, hidioc(hidiocGFeature, len(buf)), buf); err != nil {
+			return ioErr(fmt.Sprintf("get feature report 0x%02x", id), err)
+		}
+		return nil
+	})
 }
 
 func (d *linuxDevice) WriteStream(f [64]byte) error {
