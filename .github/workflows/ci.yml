@@ -49,6 +49,8 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go build ./cmd/kb7screen
+      - if: runner.os == 'Windows'
+        run: go build -ldflags=-H=windowsgui ./cmd/commander
       # The race detector needs cgo, which the released executables do not use.
       - if: runner.os == 'Linux'
         env:

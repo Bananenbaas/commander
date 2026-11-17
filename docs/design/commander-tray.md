@@ -1,8 +1,8 @@
 # Commander — a tray program around `kb7screen run`
 
 Design for stopping, reloading and starting `run` without a terminal or Task
-Manager. Status: draft for approval. Builds on
-[`screen-app.md`](screen-app.md) and [`lighting.md`](lighting.md).
+Manager. Status: approved; implemented, desktop acceptance pending. Builds
+on [`screen-app.md`](screen-app.md) and [`lighting.md`](lighting.md).
 
 ## Intent
 

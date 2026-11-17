@@ -21,6 +21,14 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 | `screen/internal/light/` | Lighting: the LED table (names, groups, positions), the effects (`fx_*.go`, each declaring its settings, listed by `light.Specs()`), the layer stack and the engine that `run` streams from |
 | `screen/internal/keys/` | The KB7's key presses, for the ripple and the states: Raw Input on Windows, `/dev/input/event*` on Linux; what `kb7screen keytest` prints |
 | `screen/internal/runlock/` | The lock file `.kb7screen-run.lock` that makes `apply` and `restore` refuse while `run` runs |
+| `screen/internal/supervisor/` | Starts, stops and restarts `run` inside Commander, and the apply pause |
+| `screen/internal/request/` | The `stop` and `reload` requests a running `run` answers (`kb7screen stop \| reload <folder>`) |
+| `screen/internal/access/` | Who owns the keyboard: the per-user lock and the run status reports |
+| `screen/internal/tray/` | The notification-area icon, menu, tooltip and balloons (Windows) |
+| `screen/internal/autostart/` | Start with Windows (the per-user Run key) |
+| `screen/internal/appdata/` | Settings (`%APPDATA%\Commander\settings.toml`) and the log (`%LOCALAPPDATA%\Commander\commander.log`) |
+| `screen/internal/icon/` | The helmet icon: the generator (`gen/`), the ICO and the Windows resource with the DPI manifest; `helmet-256.png` is the reference render |
+| `screen/cmd/commander/` | Commander, the windowless tray program; design in `docs/design/commander-tray.md` |
 | `docs/PROTOCOL.md` | Protocol knowledge base, with status tags |
 | `docs/design/screen-app.md` | Design of `kb7screen` and what it still needs measured |
 | `docs/CAPTURE-GUIDE.md` | How captures are made and named |
@@ -80,6 +88,8 @@ go test -race ./...                         # needs cgo and a C compiler
 go build ./cmd/kb7screen                    # kb7screen, or kb7screen.exe
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./cmd/kb7screen   # Linux build
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./cmd/kb7screen # Windows build
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=-H=windowsgui ./cmd/commander # Commander, no console
+go run internal/icon/gen/main.go            # regenerate the icon: writes cmd/commander/commander.ico and rsrc_windows_amd64.syso
 ```
 
 ## Known gaps and pitfalls
@@ -159,6 +169,10 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./cmd/kb7screen # Windows build
   keyboard. Windows ends a program a few seconds after its console is closed,
   which can still be too soon for an upload. New keyboard work in `apply`
   must check its context only at such points.
+- **Tests of the per-user lock skip when a Commander or run is live.** The
+  lock is per user and machine (a named mutex on Windows, a `flock` file on
+  Linux), so those tests skip with a message when a real Commander or `run`
+  holds it. Quit it before running `go test ./...` if you want them to run.
 - **A test that shows nothing needs a control in the same capture.** "No
   report on tap" means nothing unless the same capture also shows a known
   event getting through (for example a dial turn with `0x0e` written).

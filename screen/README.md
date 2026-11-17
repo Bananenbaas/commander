@@ -13,6 +13,61 @@ The design and the measurements behind it are in
 [`docs/design/screen-app.md`](../docs/design/screen-app.md) and
 [`docs/PROTOCOL.md`](../docs/PROTOCOL.md).
 
+## Commander
+
+Commander is a small program for the Windows notification area that keeps
+`kb7screen run` going for you. It shows a helmet icon, replaces the hidden
+`run`, and lets you reload the configuration, apply the buttons, and quit
+cleanly from a menu, without a terminal or Task Manager.
+
+![The Commander helmet icon](internal/icon/helmet-256.png)
+
+Build it without a console window:
+
+```sh
+cd screen
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=-H=windowsgui ./cmd/commander
+```
+
+Start it the first time with your configuration folder:
+
+```sh
+commander.exe D:\path\to\config-folder
+```
+
+Commander remembers the folder in its settings, so after that it can be started
+without an argument. Right-click the icon for the menu:
+
+- **Reload configuration**: the running program reads the folder again.
+- **Apply buttons**: puts the layouts on the keyboard for you. Commander pauses
+  its own run for the moment, applies, and starts it again.
+- **Start with Windows**: ticked, Commander starts when you sign in, on the
+  folder it uses now.
+- **Open configuration folder** and **Open log**.
+- **Quit**: stops cleanly, releases held keys and puts the stored lighting
+  back.
+
+The tooltip reads "Commander - KB7:" followed by the state. A red dot on the
+icon means the last start or reload failed, for example after a typing mistake
+in a file; the old configuration keeps running and the tooltip and a balloon
+say what is wrong. Fix the file and choose Reload again.
+
+Settings are in `%APPDATA%\Commander\settings.toml`. The log is
+`%LOCALAPPDATA%\Commander\commander.log`; it is moved to `commander.log.1`
+once it passes 1 MB.
+
+Only one program owns the keyboard per user: a second Commander, or a `run`
+while Commander runs, refuses to start. `apply` and `restore` refuse while
+Commander or `run` runs; use **Apply buttons** in the menu, which does it for
+you.
+
+Linux has no tray program. There, start `kb7screen run <config>` yourself and
+use `kb7screen stop <config>` and `kb7screen reload <config>` from another
+terminal.
+
+The program has been built and tested, but the check on the real desktop
+(icon, menu, Start with Windows) is still pending.
+
 ## Build
 
 You need Go 1.27 or newer. There are no other dependencies to install and no C
@@ -41,7 +96,7 @@ kb7screen <command> [flags] [config-folder]
 | `kb7screen check` | reports whether Swarm II runs; if not, finds the keyboard and prints its five profile names |
 | `kb7screen read --profile N` | prints the button table of profile N (0 to 4): for each position 0 to 11 the `0x29` entry (modifier, key, kind, slot, label) and the `0x25` type and value |
 | `kb7screen preview <config> [--out DIR]` | writes the rendered pictures as PNG files, exactly as `apply` would send them. Default folder: `<config>/previews`. Touches nothing else |
-| `kb7screen apply <config> [--full]` | puts every layout of the folder on the keyboard. `--full` sends every picture again |
+| `kb7screen apply <config> [--full]` | puts every layout of the folder on the keyboard. `--full` sends every picture again. Refuses while Commander or `run` runs |
 | `kb7screen restore <config> --profile N` | gives the positions kb7screen took over in profile N their original contents back |
 | `kb7screen run <config>` | carries out the buttons' actions and streams the lighting until you press Ctrl+C |
 | `kb7screen stop <config>` | asks the run for that folder to stop and waits up to 10 s for it to do so |
@@ -190,8 +245,10 @@ keyboard. If the keyboard is unplugged, `run` waits for it and sets it up
 again.
 
 `run` reads the configuration folder once, when it starts. After changing the
-folder, stop `run` with Ctrl+C, run `apply`, and start `run` again so that it
-acts on the new buttons.
+folder, run `kb7screen reload <config>` (or choose Reload configuration in
+Commander) to make it read the folder again. To change the pictures on the
+keyboard, stop `run` with Ctrl+C, run `apply`, and start `run` again, or use
+Apply buttons in Commander.
 
 `run` holds a lock file, `.kb7screen-run.lock`, in the configuration folder.
 A second `run` for the same folder refuses to start, and `apply` and `restore`

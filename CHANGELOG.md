@@ -6,6 +6,19 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Commander, a program for the Windows notification area that keeps
+  `kb7screen run` going. Its menu reloads the configuration, applies the
+  buttons, switches Start with Windows and opens the configuration folder and
+  the log. A red dot and a balloon show when a start or reload failed, and the
+  old configuration keeps running. It is built from `internal/supervisor`,
+  `internal/tray`, `internal/autostart`, `internal/appdata` and
+  `internal/icon`, and it is not yet checked on the desktop.
+- `kb7screen stop <config>` and `kb7screen reload <config>` ask the running
+  `run` for that folder to end cleanly or read its configuration again.
+- One program owns the keyboard per user: a second Commander or `run` refuses
+  to start, and `apply` and `restore` refuse while one of them runs.
+
 ### Fixed
 - Transfers were timestamped and ordered by when the request was queued rather
   than when it completed. For interrupt IN that is wrong by up to the gap
