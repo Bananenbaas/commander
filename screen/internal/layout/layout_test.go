@@ -3,6 +3,7 @@
 package layout
 
 import (
+	"fmt"
 	"image/color"
 	"os"
 	"path/filepath"
@@ -109,6 +110,22 @@ func TestDesktopProfileFallback(t *testing.T) {
 		if got := cfg.DesktopProfile(); got != c.want {
 			t.Errorf("%s: DesktopProfile() = %d, want %d", c.name, got, c.want)
 		}
+	}
+}
+
+func TestLoadRefusesNoDesktopProfile(t *testing.T) {
+	files := map[string]string{}
+	for n := 0; n <= 4; n++ {
+		files[fmt.Sprintf("p%d.toml", n)] = fmt.Sprintf("profile = %d\nswitch_when_running = \"g%d.exe\"\n", n, n)
+	}
+	_, err := Load(folder(t, files))
+	if err == nil || !strings.Contains(err.Error(), "desktop") {
+		t.Fatalf("Load = %v, want an error about the desktop profile", err)
+	}
+	// One layout without a program is enough.
+	files["p2.toml"] = "profile = 2\n"
+	if _, err := Load(folder(t, files)); err != nil {
+		t.Fatalf("Load with a desktop layout: %v", err)
 	}
 }
 

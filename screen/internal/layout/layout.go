@@ -108,6 +108,17 @@ func Load(dir string) (*Config, error) {
 		owner[p.Number] = name
 		cfg.Profiles = append(cfg.Profiles, *p)
 	}
+	if len(cfg.Profiles) == maxProfile+1 {
+		desktop := false
+		for _, p := range cfg.Profiles {
+			if p.SwitchWhenRunning == "" {
+				desktop = true
+			}
+		}
+		if !desktop {
+			return nil, fmt.Errorf("every profile 0 to %d has switch_when_running, so no profile is left for the desktop; remove it from one layout", maxProfile)
+		}
+	}
 	return cfg, nil
 }
 
