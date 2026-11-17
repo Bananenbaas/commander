@@ -63,6 +63,9 @@ func userLockPath() (string, error) {
 func acquireUser() (release func() error, err error) {
 	path, err := userLockPath()
 	if err != nil {
+		return nil, fmt.Errorf("cannot find a folder for the user lock file: %w", err)
+	}
+	if err != nil {
 		return nil, err
 	}
 	// O_NOFOLLOW: a symbolic link planted at the path is not followed.
