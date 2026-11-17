@@ -13,24 +13,21 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/Bananenbaas/kb7-commander/screen/internal/access"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/apply"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/keyboard"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/keys"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/procs"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/request"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/run"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/runlock"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/supervisor"
 )
-
-const ledgerName = ".kb7screen-state.json"
 
 func main() {
 	os.Exit(realMain(os.Args[1:], os.Stdout, os.Stderr))
@@ -85,43 +82,8 @@ func execute(c command, stdout, stderr io.Writer) error {
 	return fmt.Errorf("unknown command %q", c.name)
 }
 
-// swarmRunning returns the names of the Swarm II programs that run.
-func swarmRunning() ([]string, error) {
-	m, err := procs.Running(procs.Swarm)
-	if err != nil {
-		return nil, fmt.Errorf("cannot tell whether Swarm II runs: %w", err)
-	}
-	var names []string
-	for _, n := range procs.Swarm {
-		if m[n] {
-			names = append(names, n)
-		}
-	}
-	return names, nil
-}
-
-// refuseWhileSwarm returns an error when Swarm II or its device service runs.
-func refuseWhileSwarm(what string) error {
-	names, err := swarmRunning()
-	if err != nil {
-		return err
-	}
-	if len(names) > 0 {
-		return fmt.Errorf("%s is running; close it first, then %s again (it would overwrite the buttons and receive the taps)", strings.Join(names, " and "), what)
-	}
-	return nil
-}
-
-func openKeyboard() (*keyboard.KB, error) {
-	dev, err := device.Open()
-	if err != nil {
-		return nil, err
-	}
-	return keyboard.New(dev), nil
-}
-
 func doCheck(stdout io.Writer) error {
-	names, err := swarmRunning()
+	names, err := access.SwarmRunning()
 	if err != nil {
 		return err
 	}
@@ -130,7 +92,7 @@ func doCheck(stdout io.Writer) error {
 		return errors.New("close Swarm II before using the keyboard from kb7screen")
 	}
 	fmt.Fprintln(stdout, "Swarm II is not running.")
-	kb, err := openKeyboard()
+	kb, err := access.OpenKeyboard()
 	if err != nil {
 		return err
 	}
@@ -147,10 +109,10 @@ func doCheck(stdout io.Writer) error {
 }
 
 func doRead(c command, stdout io.Writer) error {
-	if err := refuseWhileSwarm("read"); err != nil {
+	if err := access.RefuseWhileSwarm("read"); err != nil {
 		return err
 	}
-	kb, err := openKeyboard()
+	kb, err := access.OpenKeyboard()
 	if err != nil {
 		return err
 	}
@@ -187,17 +149,6 @@ func doPreview(c command, stdout io.Writer) error {
 	return writePreviews(cfg, out, stdout)
 }
 
-// loadLedger loads the ledger of a config folder and returns a function that
-// saves it again.
-func loadLedger(dir string) (*ledger.Ledger, func() error, error) {
-	path := filepath.Join(dir, ledgerName)
-	l, err := ledger.Load(path)
-	if err != nil {
-		return nil, nil, err
-	}
-	return l, func() error { return l.Save(path) }, nil
-}
-
 // errRunHoldsKeyboard is reported by apply and restore while run is active.
 var errRunHoldsKeyboard = errors.New("Commander or kb7screen run is running; stop it first (its lighting stream and the picture uploads share the keyboard's interface 1)")
 
@@ -222,7 +173,7 @@ func refuseWhileRun(dir string) error {
 }
 
 func doApply(c command, stdout io.Writer) error {
-	if err := refuseWhileSwarm("apply"); err != nil {
+	if err := access.RefuseWhileSwarm("apply"); err != nil {
 		return err
 	}
 	cfg, err := layout.Load(c.config)
@@ -232,28 +183,24 @@ func doApply(c command, stdout io.Writer) error {
 	if err := refuseWhileRun(cfg.Dir); err != nil {
 		return err
 	}
-	l, save, err := loadLedger(cfg.Dir)
+	l, save, err := access.LoadLedger(cfg.Dir)
 	if err != nil {
 		return err
 	}
 	ctx, stop := stopOnSignal()
 	defer stop()
-	kb, err := openKeyboard()
+	kb, err := access.OpenKeyboard()
 	if err != nil {
 		return err
 	}
 	defer kb.Close()
 
-	running := func(name string) bool {
-		m, err := procs.Running([]string{name})
-		return err == nil && m[name]
-	}
-	rep, err := apply.Apply(ctx, kb, cfg, l, c.full, running, save)
+	rep, err := apply.Apply(ctx, kb, cfg, l, c.full, access.ProgramRunning, save)
 	return finish(stdout, rep, err, save, errApplyStopped)
 }
 
 func doRestore(c command, stdout io.Writer) error {
-	if err := refuseWhileSwarm("restore"); err != nil {
+	if err := access.RefuseWhileSwarm("restore"); err != nil {
 		return err
 	}
 	dir, err := filepath.Abs(c.config)
@@ -266,13 +213,13 @@ func doRestore(c command, stdout io.Writer) error {
 	if err := refuseWhileRun(dir); err != nil {
 		return err
 	}
-	l, save, err := loadLedger(dir)
+	l, save, err := access.LoadLedger(dir)
 	if err != nil {
 		return err
 	}
 	ctx, stop := stopOnSignal()
 	defer stop()
-	kb, err := openKeyboard()
+	kb, err := access.OpenKeyboard()
 	if err != nil {
 		return err
 	}
@@ -285,7 +232,7 @@ func doRestore(c command, stdout io.Writer) error {
 // The errors reported when apply or restore was stopped and the ledger was
 // saved.
 var (
-	errApplyStopped   = errors.New("stopped after the current picture; the ledger is saved")
+	errApplyStopped   = access.ErrApplyStopped
 	errRestoreStopped = errors.New("stopped before anything was changed; the ledger is saved")
 )
 
@@ -301,17 +248,9 @@ func stopOnSignal() (context.Context, context.CancelFunc) {
 // the report and returns the error to report: the work's, the save's, or both.
 // Work stopped by a signal is reported as stopped once the ledger is saved.
 func finish(stdout io.Writer, rep apply.Report, workErr error, save func() error, stopped error) error {
-	saveErr := save()
+	err := access.SaveAfter(workErr, save, stopped)
 	printReport(stdout, rep)
-	switch {
-	case workErr != nil && saveErr != nil:
-		return errors.Join(workErr, fmt.Errorf("saving the ledger: %w", saveErr))
-	case saveErr != nil:
-		return fmt.Errorf("saving the ledger: %w", saveErr)
-	case errors.Is(workErr, apply.ErrStopped):
-		return stopped
-	}
-	return workErr
+	return err
 }
 
 func printReport(w io.Writer, rep apply.Report) {
@@ -335,71 +274,47 @@ func printReport(w io.Writer, rep apply.Report) {
 	}
 }
 
+// doRun runs the loop for the config folder until Ctrl+C or a stop request.
+// A configuration that cannot be loaded, or a loop that ends with an error,
+// ends it with that error.
 func doRun(c command, stderr io.Writer) error {
-	cfg, err := layout.Load(c.config)
-	if err != nil {
-		return err
-	}
-	releaseUser, err := runlock.AcquireUser()
-	if errors.Is(err, runlock.ErrUserHeld) {
-		return errors.New("Commander or kb7screen run is already running for another folder")
-	}
-	if err != nil {
-		return err
-	}
-	defer releaseUser()
-	releaseLock, err := runlock.Acquire(cfg.Dir)
-	if errors.Is(err, runlock.ErrHeld) {
-		return errors.New("kb7screen run is already running for this folder")
-	}
-	if err != nil {
-		return err
-	}
-	defer releaseLock()
-	inj, err := action.NewInjector()
-	if err != nil {
-		return err
-	}
-	if cl, ok := inj.(io.Closer); ok {
-		defer cl.Close()
-	}
-	exec := &action.Executor{In: inj, L: action.NewLauncher(), Sleep: time.Sleep}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	deps := run.Deps{
-		Open: func() (run.Keyboard, error) {
-			kb, err := openKeyboard()
-			if err != nil {
-				return nil, err
-			}
-			return kb, nil
-		},
-		Running: procs.Running,
-		Exec:    exec,
+	var mu sync.Mutex
+	var failed string
+	s, err := supervisor.New(c.config, supervisor.Options{
 		Logf: func(format string, args ...any) {
 			fmt.Fprintf(stderr, "%s %s\n", time.Now().Format("15:04:05"), fmt.Sprintf(format, args...))
 		},
+		OnState: func(st supervisor.State) {
+			if st.Phase == supervisor.Failed {
+				mu.Lock()
+				failed = st.Err
+				mu.Unlock()
+				cancel()
+			}
+		},
+	})
+	switch {
+	case errors.Is(err, runlock.ErrUserHeld):
+		return errors.New("Commander or kb7screen run is already running for another folder")
+	case errors.Is(err, runlock.ErrHeld):
+		return errors.New("Commander or kb7screen run is already running for this folder")
+	case err != nil:
+		return err
 	}
-	stacks := map[byte]*light.Stack{}
-	for _, p := range cfg.Profiles {
-		if p.Light != nil {
-			stacks[p.Number] = p.Light
-		}
+	if err := s.Serve(ctx); err != nil {
+		return err
 	}
-	if len(stacks) > 0 {
-		deps.Light = light.NewEngine(stacks, time.Now())
-		keyCtx, endKeys := context.WithCancel(ctx)
-		defer endKeys()
-		ch, err := keys.Listen(keyCtx)
-		if err != nil {
-			deps.Logf("ripple and key toggles are off: %v", err)
-		} else {
-			deps.Keys = ch
-		}
+	mu.Lock()
+	defer mu.Unlock()
+	if failed != "" {
+		return errors.New(failed)
 	}
-	return run.Run(ctx, cfg, deps)
+	return nil
 }
 
 // doRequest asks the loop running for the config folder to stop or reload.
