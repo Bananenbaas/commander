@@ -15,10 +15,23 @@ const (
 	MaxPresses  = 32
 )
 
+// maxRepeatGap is the longest gap between two down events of a key that still
+// makes the second an auto-repeat. Windows repeats about every 30 ms after an
+// initial delay of up to 1 s. A down after a longer gap is a new press: the
+// key-up in between was lost, as happens to keys pressed during Alt+Tab.
+const maxRepeatGap = 1100 * time.Millisecond
+
 // modifiers are the keys a toggle chord may hold before its last key.
 var modifiers = map[action.Key]bool{
 	action.LCtrl: true, action.RCtrl: true, action.LShift: true, action.RShift: true,
 	action.LAlt: true, action.RAlt: true, action.LWin: true, action.RWin: true,
+}
+
+// toggle is a state's toggle chord taken apart for matching.
+type toggle struct {
+	name    string
+	trigger action.Key          // last key of the chord
+	mods    map[action.Key]bool // the keys before it
 }
 
 // Engine keeps what the lighting of the KB7 depends on besides the
@@ -31,9 +44,10 @@ type Engine struct {
 	start      time.Time
 	active     byte
 	states     map[byte]map[string]bool // per lit profile, every declared state
-	down       map[action.Key]bool
-	presses    []Press // oldest first
-	count      int     // presses with an LED since the start
+	toggles    map[byte][]toggle        // per lit profile, the states with a toggle
+	down       map[action.Key]time.Time // keys held, with the time of their last down event
+	presses    []Press                  // oldest first
+	count      int                      // presses with an LED since the start
 	brightness int
 }
 
@@ -45,7 +59,8 @@ func NewEngine(stacks map[byte]*Stack, start time.Time) *Engine {
 		stacks:     map[byte]*Stack{},
 		start:      start,
 		states:     map[byte]map[string]bool{},
-		down:       map[action.Key]bool{},
+		toggles:    map[byte][]toggle{},
+		down:       map[action.Key]time.Time{},
 		brightness: 100,
 	}
 	for p, s := range stacks {
@@ -55,6 +70,13 @@ func NewEngine(stacks map[byte]*Stack, start time.Time) *Engine {
 		e.stacks[p] = s
 		e.states[p] = map[string]bool{}
 		e.Start(p)
+		for _, d := range s.states {
+			if d.Toggle == nil || len(d.Toggle.Keys) == 0 {
+				continue
+			}
+			n := len(d.Toggle.Keys) - 1
+			e.toggles[p] = append(e.toggles[p], toggle{d.Name, d.Toggle.Keys[n], keySet(d.Toggle.Keys[:n])})
+		}
 	}
 	return e
 }
@@ -65,31 +87,33 @@ func (e *Engine) Lit(p byte) bool { return e.stacks[p] != nil }
 // SetActive makes p the active profile. States keep their values.
 func (e *Engine) SetActive(p byte) { e.active = p }
 
-// Key takes a key event of the KB7. A down for a key that is already down is
-// an auto-repeat and ignored. A fresh down adds a press when the key has an
-// LED, and flips each state of the active profile whose toggle ends in k while
-// exactly the toggle's other keys are the modifiers held.
+// Key takes a key event of the KB7. A down for a key that is already down,
+// within maxRepeatGap of its previous down event, is an auto-repeat and
+// ignored. A fresh down adds a press when the key has an LED, and flips each
+// state of the active profile whose toggle ends in k while exactly the
+// toggle's other keys are the modifiers held.
 func (e *Engine) Key(k action.Key, down bool, at time.Time) {
 	if !down {
 		delete(e.down, k)
 		return
 	}
-	if e.down[k] {
+	last, held := e.down[k]
+	e.down[k] = at
+	if held && at.Sub(last) <= maxRepeatGap {
 		return
 	}
-	e.down[k] = true
 	if led, ok := LEDOfKey(k); ok {
 		e.presses = append(e.presses, Press{LED: led, At: at.Sub(e.start), N: e.count})
 		e.count++
 		e.prune(at)
 	}
-	held := map[action.Key]bool{}
+	mods := map[action.Key]bool{}
 	for d := range e.down {
 		if d != k && modifiers[d] {
-			held[d] = true
+			mods[d] = true
 		}
 	}
-	e.flipToggles(k, held)
+	e.flipToggles(k, mods)
 }
 
 // Sent takes a chord that a screen button sent to the game: it flips the
@@ -105,17 +129,10 @@ func (e *Engine) Sent(c action.Chord) {
 // flipToggles flips each state of the active profile whose toggle has last
 // key k and exactly the keys in mods before it.
 func (e *Engine) flipToggles(k action.Key, mods map[action.Key]bool) {
-	s := e.stacks[e.active]
-	if s == nil {
-		return
-	}
-	for _, d := range s.states {
-		if d.Toggle == nil || len(d.Toggle.Keys) == 0 {
-			continue
-		}
-		n := len(d.Toggle.Keys) - 1
-		if d.Toggle.Keys[n] == k && sameSet(keySet(d.Toggle.Keys[:n]), mods) {
-			e.states[e.active][d.Name] = !e.states[e.active][d.Name]
+	st := e.states[e.active]
+	for _, tg := range e.toggles[e.active] {
+		if tg.trigger == k && sameSet(tg.mods, mods) {
+			st[tg.name] = !st[tg.name]
 		}
 	}
 }

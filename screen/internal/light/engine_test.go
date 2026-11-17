@@ -289,3 +289,60 @@ func TestEngineKeyWithoutLED(t *testing.T) {
 		t.Errorf("a key without LED added %d presses", len(e.presses))
 	}
 }
+
+func TestEngineDownAfterLongGapIsNewPress(t *testing.T) {
+	// A lost key-up leaves N marked down; the next real press must count.
+	e := twoProfiles(t)
+	e.Key(action.N, true, at(time.Second))
+	e.Key(action.N, true, at(3*time.Second))
+	if lit(t, e, action.N, at(3*time.Second)) {
+		t.Error("a down 2 s after the last one did not flip gear back")
+	}
+	if len(e.presses) != 2 {
+		t.Errorf("presses = %d, want 2", len(e.presses))
+	}
+}
+
+func TestEngineHeldKeyRepeatsAreOnePress(t *testing.T) {
+	e := twoProfiles(t)
+	for d := time.Second; d <= 3*time.Second; d += 30 * time.Millisecond {
+		e.Key(action.N, true, at(d))
+	}
+	if !lit(t, e, action.N, at(3*time.Second)) {
+		t.Error("a key held for 2 s flipped gear more than once")
+	}
+	if len(e.presses) != 1 {
+		t.Errorf("presses = %d, want 1", len(e.presses))
+	}
+}
+
+func TestEngineKeyWithoutLEDTriggersToggle(t *testing.T) {
+	if _, ok := LEDOfKey(action.F13); ok {
+		t.Fatal("F13 has an LED; pick another key without one")
+	}
+	s := build(t, Config{Layers: []LayerConfig{
+		staticLayer("#000000"),
+		stateLayer("plain", "F13", "off", "N", "#00FF00"),
+		stateLayer("ctrl", "LCtrl+F13", "off", "M", "#00FF00"),
+	}})
+	e := NewEngine(map[byte]*Stack{1: s}, engineStart)
+	e.SetActive(1)
+
+	e.Key(action.LCtrl, true, at(time.Second))
+	e.Key(action.F13, true, at(time.Second))
+	if lit(t, e, action.N, at(time.Second)) || !lit(t, e, action.M, at(time.Second)) {
+		t.Error("LCtrl+F13 did not flip only the LCtrl+F13 toggle")
+	}
+	for _, p := range e.presses {
+		if p.LED != ledOf(t, action.LCtrl) {
+			t.Errorf("press on LED %d; F13 has no LED and must add none", p.LED)
+		}
+	}
+
+	e.Key(action.F13, false, at(2*time.Second))
+	e.Key(action.LCtrl, false, at(2*time.Second))
+	e.Key(action.F13, true, at(2*time.Second))
+	if !lit(t, e, action.N, at(2*time.Second)) || !lit(t, e, action.M, at(2*time.Second)) {
+		t.Error("F13 alone did not flip only the F13 toggle")
+	}
+}
