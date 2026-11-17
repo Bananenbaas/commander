@@ -56,10 +56,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
   `ripple`, `state`), each declaring its own settings, which `run` streams to
   the LEDs. `run` reads the brightness at start and after a profile switch,
   scales the colours by the brightness notifications, keeps streaming while
-  the RGB button has the LEDs off, and ends with a rest frame. Buttons can flip a lighting state with
-  `state = "name"`, with or without an action. Hardware acceptance is pending:
-  the brightness handling, the RGB button and the start-up brightness read have
-  not been tried on the keyboard yet.
+  the RGB button has the LEDs off, and when the stream stops leaves the active
+  profile's stored lighting (report `0x11`, read with the brightness) on the
+  LEDs, or the last lit profile's layers at rest when that cannot be read.
+  Buttons can flip a lighting state with `state = "name"`, with or without an
+  action. The start-up brightness read has run on the keyboard without an
+  error; the rest is pending hardware acceptance: whether that level is right,
+  the brightness handling and the RGB button have not been tried yet.
 - Reading the KB7's own key presses for the ripple and the states: Raw Input on
   Windows (measured with Star Citizen focused), `/dev/input/event*` on Linux,
   with an optional udev rule; the Linux reader has not been run on hardware.

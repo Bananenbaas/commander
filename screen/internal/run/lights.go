@@ -206,8 +206,8 @@ func (l *loop) rest() error {
 		return nil
 	}
 	if _, ok := l.stored[l.active]; !ok {
-		if err := l.readLights(); err != nil {
-			return err // the keyboard is gone
+		if err := l.readLights(); err != nil { // the keyboard is gone
+			return fmt.Errorf("reading the stored lighting of profile %d: %w", l.active, err)
 		}
 	}
 	return l.sendRest()
@@ -249,7 +249,12 @@ func (l *loop) readLights() error {
 	case errors.Is(err, device.ErrDisconnected) || errors.Is(err, device.ErrClosed):
 		return err
 	case err != nil:
-		l.logOnce(&l.brightMsg, fmt.Sprintf("reading the brightness: %v; keeping the last level", err))
+		colours := "using the last lit profile's colours"
+		if l.stored[l.active] != nil {
+			colours = "the stored lighting read before"
+		}
+		l.logOnce(&l.brightMsg, fmt.Sprintf("reading the stored lighting of profile %d: %v; keeping the last brightness and %s",
+			l.active, err, colours))
 		return nil
 	}
 	l.brightMsg = ""
@@ -272,7 +277,7 @@ func (l *loop) activate(ctx context.Context) bool {
 	}
 	l.eng.SetActive(l.active)
 	if err := l.readLights(); err != nil {
-		l.logf("reading the brightness: %v; opening the keyboard again", err)
+		l.logf("reading the stored lighting of profile %d: %v; opening the keyboard again", l.active, err)
 		l.drop(ctx)
 		return false
 	}

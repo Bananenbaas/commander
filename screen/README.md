@@ -395,8 +395,9 @@ No frame is sent for 2.5 seconds after `run` has enabled the notifications, as
 the keyboard does not answer on interface 1 for about 2 seconds then. A slow
 or missed frame is skipped, never queued. After a missed acknowledgement the
 stream pauses for 2.5 seconds, and a stalled write closes and reopens the
-keyboard. The keyboard keeps the last frame it was streamed, also after a
-profile switch. So when the stream stops, because the active profile has no
+keyboard. A frame streamed after a profile switch stays on the LEDs (seen on
+the keyboard), and the same is expected when `run` ends. So when the stream
+stops, because the active profile has no
 `[light]`, Swarm II started, or `run` ends, `run` sends one last frame after
 the held keys are released: the lighting stored on the keyboard for the active
 profile (what it shows without Swarm II), at the current brightness. `run`

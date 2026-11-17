@@ -1565,6 +1565,7 @@ func TestRestFallsBackWhenTheReadFails(t *testing.T) {
 				h.t.Error("the frame sent on the switch is not profile 0's rest frame")
 			}
 			h.wantLogged(1, "no answer")
+			h.wantLogged(1, "stored lighting of profile 4", "no answer", "last lit profile's colours")
 		})
 	})
 	t.Run("a table read before on this connection stays", func(t *testing.T) {
@@ -1590,6 +1591,7 @@ func TestRestFallsBackWhenTheReadFails(t *testing.T) {
 				h.t.Error("the frame sent on the second switch to profile 4 is not its stored table")
 			}
 			h.wantLogged(1, "no answer")
+			h.wantLogged(1, "stored lighting of profile 4", "no answer", "the stored lighting read before")
 		})
 	})
 	t.Run("forgotten on reconnecting", func(t *testing.T) {
@@ -1632,6 +1634,44 @@ func TestRestFallsBackWhenTheReadFails(t *testing.T) {
 				h.t.Error("the frame sent on stopping is not profile 0's rest frame")
 			}
 			h.wantLogged(1, "no answer")
+		})
+	})
+	t.Run("the keyboard gone before the last frame", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.brightErr = errors.New("no answer")
+			h.onPoll[2] = func() {
+				h.brightErr = fmt.Errorf("%w: reading feature", device.ErrDisconnected)
+				h.cancel()
+			}
+			h.run(cfg)
+			h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0",
+				"poll", "frames",
+				"poll", "lights 0", "close")
+			h.wantLogged(1, "leaving the keyboard's lighting", "stored lighting of profile 0", "disconnected")
+			h.wantLogged(0, "lighting the keyboard")
+		})
+	})
+	t.Run("Swarm II with no table read", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.stored = map[byte]proto.LightPayload{0: storedBlue()}
+			h.brightErr = errors.New("no answer")
+			h.onPoll[2] = func() {
+				h.brightErr = nil
+				h.running[procs.Swarm[0]] = true
+			}
+			h.onPoll[3] = h.cancel
+			h.run(cfg)
+			h.wantCompact("poll", "open", "notify", "fresh 0", "lights 0",
+				"poll", "frames",
+				"poll", "lights 0", "frame (gear off)", "close",
+				"poll")
+			if got := *h.frameAt(4 * time.Second); got != storedBlue() {
+				h.t.Error("the frame sent before closing for Swarm II is not the stored table")
+			}
 		})
 	})
 }

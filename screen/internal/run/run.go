@@ -139,7 +139,7 @@ type loop struct {
 	streamed   bool                         // a frame was sent since the keyboard was opened or the last rest frame
 	shown      byte                         // the profile of the last frame sent
 	ackLogged  bool                         // a missing acknowledgement was logged since the keyboard was opened
-	brightMsg  string                       // why the brightness could not be read, as last logged
+	brightMsg  string                       // why report 0x11 could not be read, as last logged
 	stored     map[byte]*proto.LightPayload // each profile's 0x11 colours read since the keyboard was opened, unscaled
 }
 
@@ -449,7 +449,7 @@ func (l *loop) shut(ctx context.Context, rest bool) {
 	}
 	if rest {
 		if err := l.rest(); err != nil {
-			l.logf("lighting the keyboard: %v", err)
+			l.logf("leaving the keyboard's lighting: %v", err)
 		}
 	}
 	l.streamed = false
@@ -647,7 +647,7 @@ func (l *loop) stop() {
 		l.kb = nil
 	}()
 	if err := l.rest(); err != nil {
-		l.logf("lighting the keyboard: %v", err)
+		l.logf("leaving the keyboard's lighting: %v", err)
 	}
 }
 

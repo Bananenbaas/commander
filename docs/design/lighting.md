@@ -76,16 +76,21 @@ report `0x11`", "LED map" and "Device notifications":
 
 Not measured, needed before relying on it:
 
-1. ~~**What the keyboard shows when the stream stops** (run ends or crashes):
-   the last frame, or the stored `0x11` of the active profile.~~ **Measured
-   2026-11-17** from `kb7screen run` (the owner's observation, no capture):
-   the last frame. Switching from the lit SC profile to the unlit DESKTOP
-   profile, the keyboard first showed DESKTOP's stored lighting, then the rest
-   frame `run` sent after the switch (the SC layers at t = 0) and kept it. So
-   the keyboard keeps the last frame streamed, also after a profile switch,
-   and `run` now leaves the stored table behind instead (see Run below).
+1. **What the keyboard shows when the stream stops** (run ends or crashes):
+   the last frame, or the stored `0x11` of the active profile. **Measured for
+   a profile switch only**, 2026-11-17, from `kb7screen run` (the owner's
+   observation, no capture): switching from the lit SC profile to the unlit
+   DESKTOP profile, the keyboard first showed DESKTOP's stored lighting, then
+   the rest frame `run` sent after the switch (the SC layers at t = 0, seen on
+   WASD) replaced it and stayed. When `run` ends or crashes without a switch
+   the keyboard is expected to keep the last frame as well; that is a
+   hypothesis, not observed. `run` now sends the stored table as its last
+   frame in every case (see Run below).
 2. **What a profile switch does to a running stream**: whether the stored
-   table of the new profile flashes before our next frame.
+   table of the new profile flashes before our next frame. Partly observed in
+   the session of measurement 1: on a switch to a profile without `[light]`
+   the new profile's stored table showed first, before the frame `run` sent
+   after the switch. A switch between two lit profiles has not been watched.
 3. ~~Reading key presses of the KB7 through Windows Raw Input while another
    program has the focus.~~ **Measured 2026-11-17** with `kb7screen keytest`:
    with Notepad focused, `wasd` arrived as four key-down/key-up pairs; with
