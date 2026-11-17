@@ -696,7 +696,7 @@ func TestStreamLightsFinishesTheSetOnMissingAck(t *testing.T) {
 	}
 }
 
-func TestStreamLightsDropsQueuedFramesAfterAMissedAck(t *testing.T) {
+func TestStreamLightsIgnoresAStaleAckAfterAMissedOne(t *testing.T) {
 	f := &device.Fake{}
 	f.QueueStream(lightAck(1), lightAck(3)) // bank 2 is missing; 3 is stale
 	k, _ := newTest(f)
