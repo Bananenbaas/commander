@@ -24,6 +24,12 @@ var (
 	// ErrUploadLeftOpen means a picture upload stopped half way, or without
 	// knowing whether it started, so the keyboard may be waiting for the rest.
 	ErrUploadLeftOpen = errors.New("keyboard: the picture upload was interrupted and the keyboard may be left in upload mode; unplug the keyboard and plug it back in")
+
+	// ErrStreamStalled means the keyboard did not take a lighting frame: the
+	// write itself timed out, after up to 5 s. It does not match
+	// device.ErrTimeout, which StreamLights keeps for a missed
+	// acknowledgement.
+	ErrStreamStalled = errors.New("keyboard: the keyboard did not take the lighting frame")
 )
 
 const (
@@ -391,12 +397,16 @@ const (
 
 // StreamLights writes the six a1 frames of p, each followed by its
 // acknowledgement. Anything else read while waiting is dropped. A missing
-// acknowledgement returns an error wrapping device.ErrTimeout and no further
-// frame of this set is sent.
+// acknowledgement returns an error wrapping device.ErrTimeout; a write that
+// times out returns one wrapping ErrStreamStalled instead (and not
+// device.ErrTimeout). Either way no further frame of this set is sent.
 func (k *KB) StreamLights(p *proto.LightPayload) error {
 	for i, f := range proto.LightFrames(p) {
 		bank := byte(i + 1)
 		if err := k.d.WriteStream(f); err != nil {
+			if errors.Is(err, device.ErrTimeout) {
+				return fmt.Errorf("keyboard: lighting bank %d: %w", bank, ErrStreamStalled)
+			}
 			return fmt.Errorf("keyboard: lighting bank %d: %w", bank, err)
 		}
 		deadline := k.now().Add(lightAckTimeout)

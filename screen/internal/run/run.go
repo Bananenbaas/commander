@@ -168,8 +168,9 @@ type loop struct {
 // the button's action sends the state's toggle, which flips it already. When
 // the stream stops, because the active profile is not lit, Swarm II runs or
 // Run stops, a rest frame of the profile last shown is sent after the held
-// keys are released; not when the keyboard failed. A frame the keyboard does
-// not acknowledge is skipped; any other stream error closes the keyboard.
+// keys are released; not when the keyboard failed. After a frame the
+// keyboard does not acknowledge, the next one waits 2.5 s; any other stream
+// error, a write the keyboard does not take included, closes the keyboard.
 //
 // If a call panics, Run still releases every held key and closes the
 // keyboard before the panic goes on.
@@ -585,14 +586,17 @@ func (l *loop) stop() {
 	if !l.w.stop(stopTimeout) {
 		l.logf("an action is still running; stopping without waiting for it, keys it holds may stay pressed")
 	}
-	if l.kb != nil {
-		if err := l.rest(); err != nil {
-			l.logf("lighting the keyboard: %v", err)
-		}
+	if l.kb == nil {
+		return
+	}
+	defer func() { // also when the rest frame panics
 		if err := l.kb.Close(); err != nil {
 			l.logf("closing the keyboard: %v", err)
 		}
 		l.kb = nil
+	}()
+	if err := l.rest(); err != nil {
+		l.logf("lighting the keyboard: %v", err)
 	}
 }
 

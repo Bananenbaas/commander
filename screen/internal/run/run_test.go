@@ -149,6 +149,7 @@ type harness struct {
 	// Lighting calls, used only by the goroutine that runs Run.
 	frames      []frame
 	streams     int
+	streamAt    []time.Duration // every StreamLights call, failed or not
 	streamErr   func(n int) error
 	brightReads int
 	bright      int
@@ -420,6 +421,7 @@ func (k *fakeKB) StreamLights(p *proto.LightPayload) error {
 	defer k.leave()
 	n := k.h.streams
 	k.h.streams++
+	k.h.streamAt = append(k.h.streamAt, time.Since(k.h.start))
 	if k.h.streamErr != nil {
 		if err := k.h.streamErr(n); err != nil {
 			k.h.record("stream failed")
@@ -1368,26 +1370,69 @@ func TestStreamErrors(t *testing.T) {
 			h.wantLogged(1, "lighting", "writing")
 		})
 	})
-	t.Run("missed acknowledgement", func(t *testing.T) {
+	t.Run("missed acknowledgements", func(t *testing.T) {
 		test(t, func(h *harness) {
 			cfg := litConfig(t)
 			h.lit(cfg)
 			h.streamErr = func(n int) error {
-				if n >= 3 && n < 6 {
+				if n >= 3 {
 					return fmt.Errorf("keyboard: lighting bank 2 not acknowledged: %w", device.ErrTimeout)
 				}
 				return nil
 			}
-			h.onPoll[2] = h.cancel
+			h.onPoll[2] = func() { h.push(tap(3)...) }
+			h.onPoll[5] = h.cancel
 			h.run(cfg)
-			// The ticks are skipped, not caught up on.
+			// After a missed acknowledgement the next frame waits as long as
+			// after enabling notifications; touches are read meanwhile.
 			h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
-				"poll", "frames", "stream failed", "stream failed", "stream failed", "frames",
-				"poll", "frame (gear off)", "close")
-			if n := h.framesBetween(0, 4*time.Second); n != 27 {
-				h.t.Errorf("%d frames, want 27", n)
+				"poll", "frames", "stream failed",
+				"poll", "down A", "up A", "stream failed",
+				"poll", "stream failed",
+				"poll",
+				"poll", "stream failed", "close")
+			for i := 4; i < len(h.streamAt)-1; i++ { // the last one is the rest frame
+				if gap := h.streamAt[i] - h.streamAt[i-1]; gap < quietGap {
+					h.t.Errorf("frame %d tried %v after the one before, want at least %v", i, gap, quietGap)
+				}
+			}
+			if h.maxWait > 100*time.Millisecond {
+				h.t.Errorf("NextEvent waited up to %v, want at most 100ms", h.maxWait)
+			}
+			want := []time.Duration{0, 2 * time.Second, 4 * time.Second, 6 * time.Second, 8 * time.Second, 10 * time.Second}
+			if !slices.Equal(h.pollTimes, want) {
+				h.t.Errorf("polls at %v, want %v", h.pollTimes, want)
 			}
 			h.wantLogged(1, "not acknowledged")
+		})
+	})
+	t.Run("stalled write", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.streamErr = func(n int) error {
+				if n == 0 {
+					time.Sleep(5 * time.Second) // how long a write the keyboard does not take lasts
+					return fmt.Errorf("keyboard: lighting bank 1: %w", keyboard.ErrStreamStalled)
+				}
+				return nil
+			}
+			h.onPoll[5] = h.cancel
+			h.run(cfg)
+			// The keyboard is closed, not tried again every tick; it is opened
+			// again at the next poll and the polls go on two seconds apart.
+			h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
+				"poll", "stream failed", "close",
+				"poll", "open", "notify", "fresh 0", "brightness 0",
+				"poll", "frames",
+				"poll", "frames",
+				"poll", "frame (gear off)", "close")
+			want := []time.Duration{0, 2 * time.Second, 7500 * time.Millisecond, 9500 * time.Millisecond,
+				11500 * time.Millisecond, 13500 * time.Millisecond}
+			if !slices.Equal(h.pollTimes, want) {
+				h.t.Errorf("polls at %v, want %v", h.pollTimes, want)
+			}
+			h.wantLogged(1, "did not take")
 		})
 	})
 }
@@ -1539,6 +1584,33 @@ func TestBrightness(t *testing.T) {
 			h.wantLogged(1, "no answer")
 		})
 	})
+	t.Run("a new failure after a read is logged again", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.brightErr = errors.New("no answer")
+			h.onPoll[1] = func() { h.brightErr = nil; h.push(event(proto.ProfileChanged{Profile: 0})) }
+			h.onPoll[2] = func() { h.brightErr = errors.New("no answer"); h.push(event(proto.ProfileChanged{Profile: 0})) }
+			h.onPoll[3] = h.cancel
+			h.run(cfg)
+			h.wantLogged(2, "no answer")
+		})
+	})
+	t.Run("disconnect", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.brightErr = fmt.Errorf("%w: reading feature", device.ErrDisconnected)
+			h.onPoll[1] = func() { h.brightErr = nil }
+			h.onPoll[2] = h.cancel
+			h.run(cfg)
+			h.want("poll", "open", "notify", "fresh 0", "brightness 0", "close",
+				"poll", "open", "notify", "fresh 0", "brightness 0",
+				"poll", "close")
+			h.wantLogged(0, "keyboard ready on profile 0", "reading")
+			h.wantLogged(1, "keyboard ready on profile 0")
+		})
+	})
 	t.Run("read", func(t *testing.T) {
 		test(t, func(h *harness) {
 			cfg := litConfig(t)
@@ -1609,5 +1681,30 @@ func TestProgramStartResetsStates(t *testing.T) {
 				h.t.Error("gear not back at its start value")
 			}
 		})
+	})
+}
+
+func TestPanicInTheRestFrameStillCloses(t *testing.T) {
+	test(t, func(h *harness) {
+		cfg := litConfig(t)
+		h.lit(cfg)
+		h.streamErr = func(n int) error {
+			if h.ctx.Err() != nil {
+				panic("boom")
+			}
+			return nil
+		}
+		h.onPoll[2] = h.cancel
+		func() {
+			defer func() {
+				if r := recover(); r != "boom" {
+					h.t.Errorf("recovered %v, want the rest frame's panic", r)
+				}
+			}()
+			_ = Run(h.ctx, cfg, h.deps())
+			h.t.Error("Run returned")
+		}()
+		h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
+			"poll", "frames", "poll", "close")
 	})
 }

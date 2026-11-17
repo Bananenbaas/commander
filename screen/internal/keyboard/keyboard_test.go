@@ -664,11 +664,37 @@ func TestStreamLightsStopsOnMissingAck(t *testing.T) {
 	k, _ := newTest(f)
 	var p proto.LightPayload
 	err := k.StreamLights(&p)
-	if !errors.Is(err, device.ErrTimeout) {
-		t.Fatalf("err = %v", err)
+	if !errors.Is(err, device.ErrTimeout) || errors.Is(err, ErrStreamStalled) {
+		t.Fatalf("err = %v, want a missed acknowledgement", err)
 	}
 	if n := len(f.Frames()); n != 3 {
 		t.Errorf("%d frames written, want 3", n)
+	}
+}
+
+func TestStreamLightsReportsAStalledWrite(t *testing.T) {
+	f := &device.Fake{}
+	f.QueueStream(lightAck(1))
+	f.FailAt(device.OpWriteStream, 2, device.ErrTimeout)
+	k, _ := newTest(f)
+	var p proto.LightPayload
+	err := k.StreamLights(&p)
+	if !errors.Is(err, ErrStreamStalled) || errors.Is(err, device.ErrTimeout) {
+		t.Fatalf("err = %v, want ErrStreamStalled only", err)
+	}
+	if n := len(f.Frames()); n != 1 {
+		t.Errorf("%d frames written, want 1", n)
+	}
+}
+
+func TestStreamLightsPassesOtherWriteErrors(t *testing.T) {
+	f := &device.Fake{}
+	f.FailAt(device.OpWriteStream, 1, device.ErrDisconnected)
+	k, _ := newTest(f)
+	var p proto.LightPayload
+	err := k.StreamLights(&p)
+	if !errors.Is(err, device.ErrDisconnected) || errors.Is(err, ErrStreamStalled) {
+		t.Fatalf("err = %v", err)
 	}
 }
 

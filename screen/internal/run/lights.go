@@ -10,6 +10,7 @@ import (
 
 	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/keyboard"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
@@ -146,37 +147,45 @@ func (l *loop) frameDue() (time.Time, bool) {
 }
 
 // frame sends the active profile's lighting and schedules the next frame. A
-// tick that is missed is skipped, not caught up on. Any keyboard error other
-// than a missing acknowledgement closes the keyboard.
+// tick that is missed is skipped, not caught up on. After a missing
+// acknowledgement the next frame waits as long as after enabling
+// notifications, so that a keyboard that stopped answering does not hold up
+// the loop every tick. Any other keyboard error, a stalled write included,
+// closes the keyboard; the next poll opens it again.
 func (l *loop) frame(ctx context.Context) {
-	p := l.eng.Payload(l.now())
-	if p != nil {
-		if err := l.stream(p); err != nil {
+	every := time.Second / time.Duration(l.eng.FPS())
+	next := l.nextFrame.Add(every)
+	if p := l.eng.Payload(l.now()); p != nil {
+		missed, err := l.stream(p)
+		if err != nil {
 			l.logf("lighting the keyboard: %v; opening it again", err)
 			l.drop(ctx)
 			return
 		}
 		l.streamed, l.shown = true, l.active
+		if missed {
+			next = l.now().Add(quiet)
+		}
 	}
-	every := time.Second / time.Duration(l.eng.FPS())
-	l.nextFrame = l.nextFrame.Add(every)
-	if now := l.now(); !l.nextFrame.After(now) {
-		l.nextFrame = now.Add(every)
+	if now := l.now(); !next.After(now) {
+		next = now.Add(every)
 	}
+	l.nextFrame = next
 }
 
-// stream sends p. A missing acknowledgement is logged once per opening of
-// the keyboard and otherwise ignored; any other error is returned.
-func (l *loop) stream(p *proto.LightPayload) error {
-	err := l.kb.StreamLights(p)
-	if err == nil || !errors.Is(err, device.ErrTimeout) {
-		return err
+// stream sends p. A missing acknowledgement is reported as missed, logged
+// once per opening of the keyboard and otherwise ignored; any other error,
+// keyboard.ErrStreamStalled included, is returned.
+func (l *loop) stream(p *proto.LightPayload) (missed bool, err error) {
+	err = l.kb.StreamLights(p)
+	if err == nil || errors.Is(err, keyboard.ErrStreamStalled) || !errors.Is(err, device.ErrTimeout) {
+		return false, err
 	}
 	if !l.ackLogged {
 		l.ackLogged = true
-		l.logf("lighting the keyboard: %v; skipping the frames it does not acknowledge", err)
+		l.logf("lighting the keyboard: %v; waiting before the next frame", err)
 	}
-	return nil
+	return true, nil
 }
 
 // rest sends the rest frame of the profile last streamed, if a frame was
@@ -190,13 +199,15 @@ func (l *loop) rest() error {
 	if p == nil {
 		return nil
 	}
-	return l.stream(p)
+	_, err := l.stream(p)
+	return err
 }
 
 // activate follows a change of the active profile: the engine renders it
 // from the next frame on, a rest frame is sent when it is not lit, and its
-// brightness is read; when that read fails, the last level stays. It
-// reports false when the keyboard failed and was closed.
+// brightness is read; when that read fails, the last level stays, unless
+// the keyboard is gone: then it is closed. It reports false when the
+// keyboard failed and was closed.
 func (l *loop) activate(ctx context.Context) bool {
 	if l.eng == nil {
 		return true
@@ -210,10 +221,16 @@ func (l *loop) activate(ctx context.Context) bool {
 		}
 	}
 	level, err := l.kb.ReadBrightness(l.active)
-	if err != nil {
+	switch {
+	case errors.Is(err, device.ErrDisconnected) || errors.Is(err, device.ErrClosed):
+		l.logf("reading the brightness: %v; opening the keyboard again", err)
+		l.drop(ctx)
+		return false
+	case err != nil:
 		l.logOnce(&l.brightMsg, fmt.Sprintf("reading the brightness: %v; keeping the last level", err))
 		return true
 	}
+	l.brightMsg = ""
 	l.eng.SetBrightness(level)
 	return true
 }
