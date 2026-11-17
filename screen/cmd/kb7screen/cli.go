@@ -36,6 +36,9 @@ Commands:
                                  saved
   run <config>                   carry out the buttons' actions until stopped
                                  with Ctrl+C
+  stop <config>                  ask the run for that folder to stop
+  reload <config>                ask the run for that folder to read its
+                                 configuration again
 
 check, read, apply and restore refuse to start while Swarm II or its device
 service runs. run waits for them to close.
@@ -74,7 +77,7 @@ func parseArgs(args []string) (command, error) {
 	case "check", "keytest":
 	case "read":
 		needsProfile = true
-	case "preview", "apply", "run":
+	case "preview", "apply", "run", "stop", "reload":
 		needsConfig = true
 	case "light-preview":
 		needsConfig, needsProfile = true, true

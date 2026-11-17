@@ -504,3 +504,34 @@ func TestReadmeListsEveryEffect(t *testing.T) {
 		}
 	}
 }
+
+func TestParseStopReload(t *testing.T) {
+	for _, name := range []string{"stop", "reload"} {
+		got, err := parseArgs([]string{name, "cfg"})
+		if err != nil || got != (command{name: name, config: "cfg"}) {
+			t.Errorf("%s: got %+v, %v", name, got, err)
+		}
+		for _, args := range [][]string{{name}, {name, "a", "b"}, {name, "cfg", "--full"}, {name, "cfg", "--profile", "1"}} {
+			if c, err := parseArgs(args); err == nil {
+				t.Errorf("%v: accepted as %+v", args, c)
+			}
+		}
+	}
+}
+
+func TestStopWithNothingRunning(t *testing.T) {
+	dir := t.TempDir()
+	var out, errOut bytes.Buffer
+	if code := realMain([]string{"stop", dir}, &out, &errOut); code != 1 {
+		t.Fatalf("exit code %d", code)
+	}
+	if !strings.Contains(errOut.String(), "no kb7screen run or Commander is running for") {
+		t.Fatalf("stderr: %q", errOut.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".kb7screen-request")); err == nil {
+		t.Fatal("request file written")
+	}
+	if code := realMain([]string{"reload", filepath.Join(dir, "missing")}, &out, &errOut); code != 1 {
+		t.Fatalf("missing folder: exit code %d", code)
+	}
+}

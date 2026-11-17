@@ -25,6 +25,7 @@ import (
 	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/procs"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/request"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/run"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/runlock"
 )
@@ -78,6 +79,8 @@ func execute(c command, stdout, stderr io.Writer) error {
 		return doRun(c, stderr)
 	case "keytest":
 		return doKeytest(c, stdout)
+	case "stop", "reload":
+		return doRequest(c, stdout)
 	}
 	return fmt.Errorf("unknown command %q", c.name)
 }
@@ -397,6 +400,31 @@ func doRun(c command, stderr io.Writer) error {
 		}
 	}
 	return run.Run(ctx, cfg, deps)
+}
+
+// doRequest asks the loop running for the config folder to stop or reload.
+func doRequest(c command, stdout io.Writer) error {
+	dir, err := filepath.Abs(c.config)
+	if err != nil {
+		return err
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return fmt.Errorf("%s is not a folder", c.config)
+	}
+	w := request.Word(c.name)
+	taken, err := request.Send(dir, w, 10*time.Second, runlock.Held)
+	if err != nil {
+		return err
+	}
+	switch {
+	case !taken:
+		fmt.Fprintf(stdout, "%s requested, but nothing took it within 10 s; the request was withdrawn\n", c.name)
+	case w == request.Stop:
+		fmt.Fprintln(stdout, "stop requested; the loop has stopped")
+	default:
+		fmt.Fprintln(stdout, "reload requested; the loop has reloaded")
+	}
+	return nil
 }
 
 // doKeytest prints the keys pressed on the KB7 for the given time. Nothing is

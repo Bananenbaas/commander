@@ -44,6 +44,8 @@ kb7screen <command> [flags] [config-folder]
 | `kb7screen apply <config> [--full]` | puts every layout of the folder on the keyboard. `--full` sends every picture again |
 | `kb7screen restore <config> --profile N` | gives the positions kb7screen took over in profile N their original contents back |
 | `kb7screen run <config>` | carries out the buttons' actions and streams the lighting until you press Ctrl+C |
+| `kb7screen stop <config>` | asks the run for that folder to stop and waits up to 10 s for it to do so |
+| `kb7screen reload <config>` | asks the run for that folder to read its configuration again and waits up to 10 s |
 | `kb7screen keytest [--seconds N]` | prints the keys pressed on the KB7 for N seconds (default 20, 1 to 120), to check that the key reader sees the keyboard. Nothing is saved |
 | `kb7screen light-preview <config> --profile N [--out FILE]` | writes a 4 second animated GIF of the lighting of profile N, with simulated key presses. Default file: `<config>/previews/light-N.gif`. Touches no keyboard |
 
