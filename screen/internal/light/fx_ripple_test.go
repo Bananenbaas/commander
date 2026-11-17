@@ -3,6 +3,8 @@
 package light
 
 import (
+	"fmt"
+	"image/color"
 	"math"
 	"strings"
 	"testing"
@@ -86,6 +88,56 @@ func TestRippleIgnoresFuturePressAndBothColours(t *testing.T) {
 	}
 	if err == nil {
 		t.Error("color and colors both accepted")
+	}
+}
+
+func TestRippleWaveColours(t *testing.T) {
+	e := makeFx(t, "ripple", map[string]any{
+		"mode": "wave", "colors": []any{"#FF0000", "#00FF00", "#0000FF"},
+		"spread": 8.0, "speed": 12.0, "width": 6.0, "life": "5s",
+	})
+	l := renderIn(e, 500*time.Millisecond, ripplePress(spaceLED, 0))
+	sp, _ := Pos(spaceLED)
+	var seen []string
+	same := map[string]bool{}
+	for i, c := range l {
+		p, ok := Pos(i)
+		if !ok || c.A == 0 {
+			continue
+		}
+		d := math.Hypot(p.X-sp.X, p.Y-sp.Y)
+		want := waveColor([]color.NRGBA{{255, 0, 0, 255}, {0, 255, 0, 255}, {0, 0, 255, 255}}, d, 8, 0, 0)
+		if c.R != want.R || c.G != want.G || c.B != want.B {
+			t.Errorf("LED %d at d=%.2f: %v, want colour %v", i, d, c, want)
+		}
+		key := fmt.Sprint(c.R, c.G, c.B)
+		if !same[key] {
+			same[key] = true
+			seen = append(seen, key)
+		}
+	}
+	if len(seen) < 2 {
+		t.Errorf("ring has %d distinct colours, want several", len(seen))
+	}
+}
+
+func TestRippleWaveRefusals(t *testing.T) {
+	s := registry["ripple"]
+	for name, raw := range map[string]map[string]any{
+		"color":     {"mode": "wave", "color": "#FF0000"},
+		"colors":    {"mode": "wave"},
+		"one color": {"mode": "wave", "colors": []any{"#FF0000"}},
+	} {
+		v, err := parseValues(s, raw)
+		if err == nil {
+			_, err = s.New(v)
+		}
+		if err == nil || !strings.Contains(err.Error(), "mode") && !strings.Contains(err.Error(), "colors") {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+	if _, err := parseValues(s, map[string]any{"mode": "swirl"}); err == nil {
+		t.Error("unknown mode accepted")
 	}
 }
 
