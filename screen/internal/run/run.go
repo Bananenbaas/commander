@@ -123,6 +123,7 @@ type loop struct {
 	expected byte                  // the profile last switched to
 	held     map[spot]action.Chord // hold buttons pressed and not yet released
 	paused   bool                  // Swarm II runs
+	confirm  *pendingTap           // the touch of a confirm button that has not been released
 	recheck  bool                  // compare the button tables once the keyboard is open again
 	openMsg  string                // why the keyboard could not be opened, as last logged
 	runMsg   string                // why the programs could not be checked, as last logged
@@ -195,6 +196,9 @@ func Run(ctx context.Context, cfg *layout.Config, d Deps) error {
 			continue
 		}
 		wait := min(left, readTimeout)
+		if until, ok := l.confirmDue(); ok {
+			wait = min(wait, until)
+		}
 		if due, ok := l.frameDue(); ok {
 			until := due.Sub(l.now())
 			if until <= 0 {
@@ -453,6 +457,7 @@ func (l *loop) shut(ctx context.Context, rest bool) {
 // first.
 func (l *loop) release(ctx context.Context) bool {
 	clear(l.held)
+	l.confirm = nil
 	done := make(chan struct{})
 	l.w.add(op{kind: opRelease, what: "releasing the held keys", done: done})
 	select {
@@ -552,6 +557,9 @@ func (l *loop) read(ctx context.Context, timeout time.Duration) {
 // always released.
 func (l *loop) touch(ev proto.Touch) {
 	s := spot{l.active, ev.Position}
+	if l.confirm != nil && (!ev.Down || l.confirm.s != s) {
+		l.confirm = nil // released, or the finger went to another button
+	}
 	b, ok := l.buttons[s]
 	if !ok || (ev.Down && ev.Kind != proto.TypeApp) {
 		return
@@ -560,10 +568,13 @@ func (l *loop) touch(ev proto.Touch) {
 	switch {
 	case b.Mode == layout.Tap:
 		if ev.Down {
-			l.sent(s, b.Action)
-			if len(b.Action) > 0 { // a button with only a state sends nothing
-				l.w.add(op{kind: opTap, steps: b.Action, what: what})
+			if b.Confirm > 0 {
+				if l.confirm == nil { // a repeated touch does not start the wait again
+					l.confirm = &pendingTap{s: s, b: b, since: l.now()}
+				}
+				return
 			}
+			l.tapAction(s, b, what)
 		}
 	case ev.Down:
 		if _, held := l.held[s]; !held {
@@ -579,10 +590,45 @@ func (l *loop) touch(ev proto.Touch) {
 	}
 }
 
+// pendingTap is a touch of a button with Confirm. It stays until the touch is
+// released, so that a repeated touch report does not act a second time.
+type pendingTap struct {
+	s     spot
+	b     layout.Button
+	since time.Time // when the touch began
+	done  bool      // the action has been queued
+}
+
+// tapAction queues the action of tap button b at s and tells the lighting.
+func (l *loop) tapAction(s spot, b layout.Button, what string) {
+	l.sent(s, b.Action)
+	if len(b.Action) > 0 { // a button with only a state sends nothing
+		l.w.add(op{kind: opTap, steps: b.Action, what: what})
+	}
+}
+
+// confirmDue acts on the pending touch once it has lasted as long as its
+// button's Confirm. Otherwise it returns how long that still takes, if there
+// is a touch waiting.
+func (l *loop) confirmDue() (time.Duration, bool) {
+	c := l.confirm
+	if c == nil || c.done {
+		return 0, false
+	}
+	left := c.since.Add(c.b.Confirm).Sub(l.now())
+	if left > 0 {
+		return left, true
+	}
+	c.done = true
+	l.tapAction(c.s, c.b, fmt.Sprintf("profile %d position %d", c.s.profile, c.s.position))
+	return 0, false
+}
+
 // stop releases every held key, after the action that is running, sends the
 // rest frame and closes the keyboard. Actions that have not started are
 // dropped.
 func (l *loop) stop() {
+	l.confirm = nil
 	if !l.w.stop(stopTimeout) {
 		l.logf("an action is still running; stopping without waiting for it, keys it holds may stay pressed")
 	}

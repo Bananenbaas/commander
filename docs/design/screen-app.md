@@ -221,6 +221,9 @@ action = ["open https://example.org"]
 - **Tap** presses each chord and releases it 40 ms later, 20 ms between steps.
   **Hold** presses the chord when the button is touched and releases it when
   the touch ends; a hold button has exactly one chord.
+- `confirm = "hold <duration>"` (200 ms to 5 s, tap buttons with an action
+  only) makes a tap button act only after the finger has stayed on it that
+  long, so that an accidental touch does nothing; `hold 1s` is a typical value.
 - Page 1 only until pages 2 and 3 are measured; layouts with other pages are
   refused until then.
 
@@ -311,6 +314,10 @@ path has not been replayed yet and must be tested before it is relied on.
   application buttons, but modifier and macro widgets have it too (values
   `01` and `02` against `06` in `0x25`), and a touch does not carry the value,
   so it cannot tell them apart.
+- A button with `confirm` only notes the time of the touch. The loop acts
+  (action, state flip) once, when the touch has lasted that long, not on
+  release; a release, a touch elsewhere, a profile change, a keyboard error or
+  Swarm II starting before then cancels it.
 - A profile switch the keyboard does not confirm in time is assumed to have
   happened. Actions run one at a time in order, on a worker, so reading the
   keyboard does not wait for an action, except when held keys must be

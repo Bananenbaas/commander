@@ -73,10 +73,14 @@ type item struct {
 	ev   any
 	err  error
 	boom any
+	idle time.Duration // no input for this long, in waits of at most the timeout
 }
 
 func event(ev any) item      { return item{ev: ev} }
 func failure(err error) item { return item{err: err} }
+
+// idleFor is a stretch without any input.
+func idleFor(d time.Duration) item { return item{idle: d} }
 
 // touch is the touch report of an application button.
 func touch(pos byte, down bool) item { return widgetTouch(pos, proto.TypeApp, down) }
@@ -119,6 +123,8 @@ type harness struct {
 	msgs []string
 	down map[action.Key]bool // keys pressed and not yet released
 	busy bool                // a keyboard call is running
+
+	downAt []time.Duration // when each key was pressed
 
 	// Set before Run starts; read by the action worker.
 	launchErr error
@@ -392,6 +398,15 @@ func (k *fakeKB) NextEvent(timeout time.Duration) (any, error) {
 	k.h.maxWait = max(k.h.maxWait, timeout)
 	if len(k.script) > 0 {
 		it := k.script[0]
+		if it.idle > 0 {
+			w := min(timeout, it.idle)
+			k.script[0].idle -= w
+			if k.script[0].idle <= 0 {
+				k.script = k.script[1:]
+			}
+			time.Sleep(w)
+			return nil, device.ErrTimeout
+		}
 		k.script = k.script[1:]
 		if it.boom != nil {
 			panic(it.boom)
@@ -472,6 +487,7 @@ func (i injector) Down(k action.Key) error {
 	i.h.mu.Lock()
 	defer i.h.mu.Unlock()
 	i.h.down[k] = true
+	i.h.downAt = append(i.h.downAt, time.Since(i.h.start))
 	i.h.log = append(i.h.log, "down "+keyName(k))
 	return nil
 }

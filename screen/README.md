@@ -115,6 +115,7 @@ the title only.
 | `label` | optional firmware label, at most 11 printable ASCII characters. Empty by default |
 | `action` | the steps, see below |
 | `mode` | `tap` presses the steps once; `hold` keeps one key chord down for as long as the touch lasts |
+| `confirm` | `"hold 1s"`: the button acts only once the finger has stayed on it that long (200 ms to 5 s), so an accidental touch does nothing. Not with `mode = "hold"`, and needs an `action` |
 
 At most 9 different pictures can be on the keyboard at once; buttons with an
 identical picture share one slot. `apply` refuses a folder that needs more.

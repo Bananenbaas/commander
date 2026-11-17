@@ -355,3 +355,47 @@ func TestLightErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestConfirmHold(t *testing.T) {
+	cfg, err := Load(folder(t, map[string]string{"a.toml": "profile = 0\n" + stateButton("action = [\"B\"]\nconfirm = \"hold 1s\"\n")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Profiles[0].Buttons[0].Confirm; got != time.Second {
+		t.Errorf("Confirm = %v, want 1s", got)
+	}
+	for _, edge := range []string{"hold 200ms", "hold 5s"} {
+		if _, err := Load(folder(t, map[string]string{"a.toml": "profile = 0\n" + stateButton("action = [\"B\"]\nconfirm = \""+edge+"\"\n")})); err != nil {
+			t.Errorf("%s: %v", edge, err)
+		}
+	}
+	cfg, err = Load(folder(t, map[string]string{"a.toml": "profile = 0\n" + stateButton("action = [\"B\"]\n")}))
+	if err != nil || cfg.Profiles[0].Buttons[0].Confirm != 0 {
+		t.Errorf("default: %v %+v", err, cfg)
+	}
+}
+
+func TestConfirmErrors(t *testing.T) {
+	const form = `confirm must be "hold <duration>", e.g. "hold 1s"`
+	cases := []struct {
+		name, extra, want string
+	}{
+		{"no word", "action = [\"B\"]\nconfirm = \"1s\"\n", form},
+		{"two spaces", "action = [\"B\"]\nconfirm = \"hold  1s\"\n", form},
+		{"bad duration", "action = [\"B\"]\nconfirm = \"hold soon\"\n", form},
+		{"empty", "action = [\"B\"]\nconfirm = \"hold\"\n", form},
+		{"too short", "action = [\"B\"]\nconfirm = \"hold 100ms\"\n", "200ms"},
+		{"too long", "action = [\"B\"]\nconfirm = \"hold 6s\"\n", "5s"},
+		{"hold mode", "action = [\"B\"]\nmode = \"hold\"\nconfirm = \"hold 1s\"\n", "confirm"},
+	}
+	for _, c := range cases {
+		_, err := Load(folder(t, map[string]string{"a.toml": "profile = 0\n" + stateButton(c.extra)}))
+		if err == nil || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), "page 1 position 1") {
+			t.Errorf("%s: error %v, want it to contain %q", c.name, err, c.want)
+		}
+	}
+	_, err := Load(folder(t, map[string]string{"a.toml": lightTOML + stateButton("state = \"gear\"\nconfirm = \"hold 1s\"\n")}))
+	if err == nil || !strings.Contains(err.Error(), "confirm") {
+		t.Errorf("state-only: %v", err)
+	}
+}

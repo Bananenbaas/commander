@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -37,7 +38,8 @@ type Button struct {
 	Color          color.NRGBA
 	Mode           Mode
 	Action         []action.Step
-	State          string // name of a lighting state this button flips, or empty
+	State          string        // name of a lighting state this button flips, or empty
+	Confirm        time.Duration // how long the touch must last before a tap acts; 0 = acts at once
 }
 
 // Profile is the content of one layout file.
@@ -78,6 +80,7 @@ type rawButton struct {
 	Action   []string `toml:"action"`
 	Mode     string   `toml:"mode"`
 	State    string   `toml:"state"`
+	Confirm  string   `toml:"confirm"`
 }
 
 var defaultColor = color.NRGBA{R: 0x00, G: 0xAA, B: 0xFF, A: 0xFF}
@@ -309,7 +312,41 @@ func buildButton(dir string, rb rawButton) (Button, error) {
 	default:
 		return b, fmt.Errorf("mode must be \"tap\" or \"hold\", got %q", rb.Mode)
 	}
+	if rb.Confirm != "" {
+		if b.Mode == Hold {
+			return b, fmt.Errorf("confirm cannot be used with mode \"hold\"")
+		}
+		if len(b.Action) == 0 {
+			return b, fmt.Errorf("confirm needs an action; a button with only a state has nothing to confirm")
+		}
+		if b.Confirm, err = parseConfirm(rb.Confirm); err != nil {
+			return b, err
+		}
+	}
 	return b, nil
+}
+
+// Limits of a confirm duration.
+const (
+	minConfirm = 200 * time.Millisecond
+	maxConfirm = 5 * time.Second
+)
+
+// parseConfirm reads "hold <duration>".
+func parseConfirm(s string) (time.Duration, error) {
+	bad := fmt.Errorf("confirm must be \"hold <duration>\", e.g. \"hold 1s\"")
+	rest, ok := strings.CutPrefix(s, "hold ")
+	if !ok || rest == "" || strings.TrimSpace(rest) != rest {
+		return 0, bad
+	}
+	d, err := time.ParseDuration(rest)
+	if err != nil {
+		return 0, bad
+	}
+	if d < minConfirm || d > maxConfirm {
+		return 0, fmt.Errorf("confirm duration must be from %v to %v, got %v", minConfirm, maxConfirm, d)
+	}
+	return d, nil
 }
 
 func resolveFile(dir, what, rel string) (string, error) {
