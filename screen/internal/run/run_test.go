@@ -63,17 +63,24 @@ func testConfig() *layout.Config {
 	}}
 }
 
-// item is what one NextEvent call of a fake keyboard returns.
+// item is what one NextEvent call of a fake keyboard returns, or, with boom
+// set, the value it panics with.
 type item struct {
-	ev  any
-	err error
+	ev   any
+	err  error
+	boom any
 }
 
 func event(ev any) item      { return item{ev: ev} }
 func failure(err error) item { return item{err: err} }
 
-func touch(pos byte, down bool) item {
-	return event(proto.Touch{Position: pos, Kind: 0x05, Down: down})
+// touch is the touch report of an application button.
+func touch(pos byte, down bool) item { return widgetTouch(pos, proto.TypeApp, down) }
+
+// widgetTouch is the touch report of a widget of the given type: 0x03 for a
+// key, 0x48 for the speaker, proto.TypeApp for an application button.
+func widgetTouch(pos, kind byte, down bool) item {
+	return event(proto.Touch{Position: pos, Kind: kind, Down: down})
 }
 
 // tap is a touch and its release.
@@ -351,6 +358,9 @@ func (k *fakeKB) NextEvent(timeout time.Duration) (any, error) {
 	if len(k.script) > 0 {
 		it := k.script[0]
 		k.script = k.script[1:]
+		if it.boom != nil {
+			panic(it.boom)
+		}
 		return it.ev, it.err
 	}
 	time.Sleep(timeout)
@@ -579,6 +589,44 @@ func TestHoldLastsUntilRelease(t *testing.T) {
 	})
 }
 
+func TestOnlyApplicationButtonTouchesAct(t *testing.T) {
+	test(t, func(h *harness) {
+		// A managed position that is a key (0x03) or the speaker (0x48) on
+		// the keyboard sends its own key; acting as well would fire twice.
+		var in []item
+		for _, kind := range []byte{0x03, 0x48} {
+			for _, pos := range []byte{3, 5} { // a tap and a hold button
+				in = append(in, widgetTouch(pos, kind, true), widgetTouch(pos, kind, false))
+			}
+		}
+		h.scripts = [][]item{script(in, tap(3))} // control: an application button
+		h.onPoll[1] = h.cancel
+		h.run(testConfig())
+		h.want("poll", "open", "notify", "switch 0", "down A", "up A", "poll", "close")
+	})
+}
+
+func TestHoldIsReleasedWhateverTheReleaseKind(t *testing.T) {
+	test(t, func(h *harness) {
+		h.scripts = [][]item{{touch(5, true), widgetTouch(5, 0x03, false)}}
+		h.onPoll[1] = h.cancel
+		h.run(testConfig())
+		h.want("poll", "open", "notify", "switch 0", "down LCtrl", "down A", "up A", "up LCtrl", "poll", "close")
+	})
+}
+
+func TestHoldCanBePressedAgainAfterARelease(t *testing.T) {
+	test(t, func(h *harness) {
+		// The profile change releases the held chord without a touch
+		// release; the next touch must press it again.
+		h.scripts = [][]item{{touch(5, true), event(proto.ProfileChanged{Profile: 0}), touch(5, true)}}
+		h.onPoll[1] = h.cancel
+		h.run(testConfig())
+		h.want("poll", "open", "notify", "switch 0", "down LCtrl", "down A", "up A", "up LCtrl",
+			"down LCtrl", "down A", "poll", "up A", "up LCtrl", "close")
+	})
+}
+
 func TestProfileChangeReleasesHeldKeys(t *testing.T) {
 	test(t, func(h *harness) {
 		// The release arrives on profile 1, where position 5 is not managed.
@@ -802,6 +850,60 @@ func TestGameSwitchFailureReconnects(t *testing.T) {
 			"poll", "switch 2", "close",
 			"poll", "open", "notify", "switch 2",
 			"poll", "close")
+	})
+}
+
+// unconfirmed is what keyboard.KB.SwitchProfile returns when the keyboard
+// does not report the switch in time.
+var unconfirmed = fmt.Errorf("keyboard: waiting for the profile change: %w", device.ErrTimeout)
+
+func TestUnconfirmedSwitchIsAssumed(t *testing.T) {
+	t.Run("at start-up", func(t *testing.T) {
+		test(t, func(h *harness) {
+			h.switchErr = func(n int) error { return unconfirmed }
+			h.scripts = [][]item{tap(3)}
+			h.onPoll[1] = h.cancel
+			h.run(testConfig())
+			h.want("poll", "open", "notify", "switch 0", "down A", "up A", "poll", "close")
+			h.wantLogged(1, "did not confirm the switch to profile 0; assuming it is active")
+		})
+	})
+	t.Run("game", func(t *testing.T) {
+		test(t, func(h *harness) {
+			h.switchErr = func(n int) error {
+				if n == 1 {
+					return unconfirmed
+				}
+				return nil
+			}
+			h.onPoll[1] = func() { h.running[game] = true }
+			h.onPoll[2] = func() { h.push(tap(3)...) } // on the game's profile
+			h.onPoll[3] = h.cancel
+			h.run(testConfig())
+			h.want("poll", "open", "notify", "switch 0",
+				"poll", "switch 2",
+				"poll", "down B", "up B",
+				"poll", "close")
+			h.wantLogged(1, "did not confirm the switch to profile 2; assuming it is active")
+		})
+	})
+}
+
+func TestPanicStillReleasesAndCloses(t *testing.T) {
+	test(t, func(h *harness) {
+		h.scripts = [][]item{{touch(5, true)}}
+		h.onPoll[1] = func() { h.push(item{boom: "boom"}) }
+		func() {
+			defer func() {
+				if r := recover(); r != "boom" {
+					h.t.Errorf("recovered %v, want the keyboard's panic", r)
+				}
+			}()
+			_ = Run(h.ctx, testConfig(), h.deps())
+			h.t.Error("Run returned")
+		}()
+		h.want("poll", "open", "notify", "switch 0", "down LCtrl", "down A",
+			"poll", "up A", "up LCtrl", "close")
 	})
 }
 

@@ -6,20 +6,29 @@ import (
 )
 
 const (
-	len29      = 584
-	entries29  = 35
-	entryBase  = 7
-	entrySize  = 16
-	labelOff   = 4
-	labelSize  = 12
-	maxLabel   = labelSize - 1
-	len25      = 164
-	entries25  = 38
-	typeBase   = 10
-	typeSize   = 4
-	kindApp    = 0x0b
-	keyApp     = 0x01
-	appTypeVal = 0x05
+	len29     = 584
+	entries29 = 35
+	entryBase = 7
+	entrySize = 16
+	labelOff  = 4
+	labelSize = 12
+	maxLabel  = labelSize - 1
+	len25     = 164
+	entries25 = 38
+	typeBase  = 10
+	typeSize  = 4
+	keyApp    = 0x01
+)
+
+const (
+	// KindApp is the kind byte of a 0x29 entry that makes a position an
+	// application button.
+	KindApp = 0x0b
+	// TypeApp is the widget type of an application button in the 0x25 table
+	// and report 0x35. The touch report 0x33 carries the touched position's
+	// widget type as its kind, so an application button's touch has kind
+	// TypeApp.
+	TypeApp = 0x05
 )
 
 // Entry29 is one button position of the 0x29 table.
@@ -31,7 +40,7 @@ type Entry29 struct {
 // AppEntry returns the entry that makes a position an application button
 // showing the picture in the given slot, with the given label.
 func AppEntry(slot byte, label string) Entry29 {
-	return Entry29{Mod: 0x00, Key: keyApp, Kind: kindApp, Slot: slot, Label: label}
+	return Entry29{Mod: 0x00, Key: keyApp, Kind: KindApp, Slot: slot, Label: label}
 }
 
 // Table29 is the 584-byte button table of one profile. Bytes it does not
@@ -126,7 +135,7 @@ func (t *Table29) Bytes() []byte {
 type TypeEntry struct{ Type, Value byte }
 
 // AppType is the type of a position that holds an application button.
-var AppType = TypeEntry{appTypeVal, 0x06}
+var AppType = TypeEntry{TypeApp, 0x06}
 
 // Table25 is the 164-byte type table of one profile. Bytes it does not
 // interpret are kept exactly as read.

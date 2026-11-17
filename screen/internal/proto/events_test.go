@@ -36,3 +36,19 @@ func TestParseReport(t *testing.T) {
 		}
 	}
 }
+
+// TestAppKinds ties the exported constants to recorded frames: the touch of
+// an application button at position 3 (PROTOCOL.md, "Application buttons")
+// and the 0x29 entry apply writes.
+func TestAppKinds(t *testing.T) {
+	ev, ok := ParseReport([]byte{0x33, 0x01, 0x03, 0x05, 0x00, 0x00, 0x01, 0x01})
+	if tc, _ := ev.(Touch); !ok || tc.Kind != TypeApp {
+		t.Errorf("touch %+v, want kind %#x", ev, TypeApp)
+	}
+	if AppType.Type != TypeApp {
+		t.Errorf("AppType %+v, want type %#x", AppType, TypeApp)
+	}
+	if e := AppEntry(3, ""); e.Kind != KindApp || KindApp != 0x0b {
+		t.Errorf("AppEntry kind %#x, KindApp %#x, want 0x0b", e.Kind, KindApp)
+	}
+}

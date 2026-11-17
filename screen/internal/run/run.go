@@ -4,12 +4,19 @@
 // profiles when the configured programs start and stop, and leaves the
 // keyboard alone while Swarm II runs. One goroutine owns the keyboard; the
 // actions run one at a time, in the order of the taps, on a worker of their
-// own, so reading the keyboard never waits for an action.
+// own. Reading the keyboard does not wait for an action, except when held
+// keys must be released.
 //
 // Held keys are released, and the release waited for, before every profile
 // switch and before notifications are enabled (the keyboard package drops
-// the touch releases that arrive meanwhile), on every profile change, and
-// before the keyboard is closed.
+// the touch releases that arrive meanwhile), on every profile change, before
+// the keyboard is closed and when Run stops. The release comes after the
+// actions queued before it, so at those points reading waits until they have
+// finished.
+//
+// Only touches of application buttons start an action. A touch of a managed
+// position that the keyboard shows as another widget, such as a key, is
+// ignored: the keyboard acts on it itself.
 package run
 
 import (
@@ -49,7 +56,9 @@ type Deps struct {
 	Running func([]string) (map[string]bool, error)
 	// Exec carries out the actions. Required.
 	Exec *action.Executor
-	// Now is the clock (time.Now when nil).
+	// Now is the clock that schedules the polls (time.Now when nil). It must
+	// follow real time: Run waits with the runtime's timers and only reads
+	// Now to know when the next poll is due.
 	Now func() time.Time
 	// Poll is the time between two checks of the running programs (2 s when
 	// zero or less).
@@ -64,7 +73,6 @@ const (
 	readTimeout = 100 * time.Millisecond // longest wait for one input event
 	stopTimeout = 5 * time.Second        // longest wait for a running action when stopping
 	page        = 1                      // the only page that is measured
-	appKind     = 0x0b                   // kind byte of an application button's 0x29 entry
 )
 
 // spot is a button's place: profile and position on page 1.
@@ -109,16 +117,21 @@ type loop struct {
 // managed profiles' button tables are read and differences from the layout
 // are reported; nothing is written.
 //
-// A touch on a button of the active profile starts its action (tap) or
-// presses its chord (hold); the touch's release releases the chord. Every
-// other input is ignored. A keyboard error closes the keyboard; it is opened
-// again at the next poll.
+// A touch of an application button on a managed position of the active
+// profile starts its action (tap) or presses its chord (hold); the touch's
+// release releases the chord. Every other input is ignored. A keyboard error
+// closes the keyboard; it is opened again at the next poll. A profile switch
+// the keyboard does not confirm in time is assumed to have happened.
+//
+// If a call panics, Run still releases every held key and closes the
+// keyboard before the panic goes on.
 func Run(ctx context.Context, cfg *layout.Config, d Deps) error {
 	l, err := newLoop(cfg, d)
 	if err != nil {
 		return err
 	}
 	l.w = startWorker(d.Exec, l.logf)
+	defer l.stop() // also when a call panics: keys released, keyboard closed, worker ended
 	next := l.now()
 	for ctx.Err() == nil {
 		if !l.now().Before(next) {
@@ -133,7 +146,6 @@ func Run(ctx context.Context, cfg *layout.Config, d Deps) error {
 		}
 		l.read(ctx, min(left, readTimeout))
 	}
-	l.stop()
 	return nil
 }
 
@@ -310,16 +322,23 @@ func (l *loop) connect(ctx context.Context, want byte) {
 	}
 }
 
-// switchTo releases held keys and switches to p. On failure the keyboard is
-// closed; the next poll opens it again.
+// switchTo releases held keys and switches to p.
+//
+// When the keyboard does not confirm the switch in time, p is taken as
+// active: whether it reports a switch to the profile that is already active
+// is not measured, and reopening would only time out again. On any other
+// failure the keyboard is closed; the next poll opens it again.
 func (l *loop) switchTo(ctx context.Context, p byte) bool {
 	if !l.release(ctx) {
 		return false
 	}
 	if err := l.kb.SwitchProfile(p); err != nil {
-		l.logf("switching to profile %d: %v", p, err)
-		l.drop(ctx)
-		return false
+		if !errors.Is(err, device.ErrTimeout) {
+			l.logf("switching to profile %d: %v", p, err)
+			l.drop(ctx)
+			return false
+		}
+		l.logf("the keyboard did not confirm the switch to profile %d; assuming it is active", p)
 	}
 	l.active, l.expected = p, p
 	return true
@@ -383,7 +402,7 @@ func stale(t *proto.Table29, buttons []layout.Button) []int {
 			continue
 		}
 		e := t.Entry(b.Position)
-		if e.Kind != appKind || e.Slot == 0 || e.Label != b.Label {
+		if e.Kind != proto.KindApp || e.Slot == 0 || e.Label != b.Label {
 			bad = append(bad, b.Position)
 		}
 	}
@@ -427,10 +446,16 @@ func (l *loop) read(ctx context.Context, timeout time.Duration) {
 
 // touch queues the action of the button touched or released. A hold chord
 // is pressed once per touch and released only if it was pressed.
+//
+// A touch counts only if it comes from an application button. Any other
+// widget on a managed position (a key left there, or put back by Swarm II
+// or restore) makes the keyboard send its own key, and acting as well would
+// fire twice. The release of a pressed chord is not checked, so that it is
+// always released.
 func (l *loop) touch(ev proto.Touch) {
 	s := spot{l.active, ev.Position}
 	b, ok := l.buttons[s]
-	if !ok {
+	if !ok || (ev.Down && ev.Kind != proto.TypeApp) {
 		return
 	}
 	what := fmt.Sprintf("profile %d position %d", s.profile, s.position)
