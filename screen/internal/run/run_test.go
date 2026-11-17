@@ -16,7 +16,9 @@ import (
 	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/keyboard"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/keys"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/procs"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
 )
@@ -37,7 +39,7 @@ const (
 	other = "other.exe"
 )
 
-var keyNames = map[action.Key]string{action.A: "A", action.B: "B", action.C: "C", action.LCtrl: "LCtrl"}
+var keyNames = map[action.Key]string{action.A: "A", action.B: "B", action.C: "C", action.N: "N", action.LCtrl: "LCtrl"}
 
 func chord(keys ...action.Key) action.Chord { return action.Chord{Keys: keys} }
 
@@ -139,6 +141,25 @@ type harness struct {
 	switches  int
 	switchErr func(n int) error
 	maxWait   time.Duration
+
+	// Lighting, set up by lit before Run starts; nil without it.
+	engine *light.Engine
+	keys   chan keys.Event
+
+	// Lighting calls, used only by the goroutine that runs Run.
+	frames      []frame
+	streams     int
+	streamErr   func(n int) error
+	brightReads int
+	bright      int
+	brightErr   error
+	notifyAt    []time.Duration
+}
+
+// frame is one set of lighting frames the fake keyboard was sent.
+type frame struct {
+	at time.Duration
+	p  proto.LightPayload
 }
 
 // test runs f inside a synctest bubble with a fresh harness.
@@ -150,7 +171,7 @@ func test(t *testing.T, f func(h *harness)) {
 		h := &harness{
 			t: t, ctx: ctx, cancel: cancel, start: time.Now(), poll: 2 * time.Second,
 			down: map[action.Key]bool{}, running: map[string]bool{}, onPoll: map[int]func(){},
-			tables: matchingTables(t, testConfig()),
+			tables: matchingTables(t, testConfig()), bright: 100,
 		}
 		f(h)
 	})
@@ -163,6 +184,8 @@ func (h *harness) deps() Deps {
 		Exec:    &action.Executor{In: injector{h}, L: injector{h}},
 		Poll:    h.poll,
 		Logf:    h.logf,
+		Light:   h.engine,
+		Keys:    h.keys,
 	}
 }
 
@@ -329,6 +352,7 @@ func (k *fakeKB) EnableNotifications() error {
 	defer k.leave()
 	k.h.noneHeld("EnableNotifications")
 	k.h.record("notify")
+	k.h.notifyAt = append(k.h.notifyAt, time.Since(k.h.start))
 	n := k.h.notifies
 	k.h.notifies++
 	if k.h.notifyErr != nil {
@@ -386,6 +410,40 @@ func (k *fakeKB) ReadButtons(p byte) (*proto.Table29, error) {
 		return nil, fmt.Errorf("no table for profile %d", p)
 	}
 	return t, nil
+}
+
+// StreamLights records the frame set in the log: "frame" while LED N shows
+// the gear state, "frame (gear off)" otherwise. With the stacks of these
+// tests, that second kind is what a rest frame looks like.
+func (k *fakeKB) StreamLights(p *proto.LightPayload) error {
+	k.enter("StreamLights")
+	defer k.leave()
+	n := k.h.streams
+	k.h.streams++
+	if k.h.streamErr != nil {
+		if err := k.h.streamErr(n); err != nil {
+			k.h.record("stream failed")
+			return err
+		}
+	}
+	k.h.frames = append(k.h.frames, frame{at: time.Since(k.h.start), p: *p})
+	if gearShown(p) {
+		k.h.record("frame")
+	} else {
+		k.h.record("frame (gear off)")
+	}
+	return nil
+}
+
+func (k *fakeKB) ReadBrightness(p byte) (int, error) {
+	k.enter("ReadBrightness")
+	defer k.leave()
+	k.h.record(fmt.Sprintf("brightness %d", p))
+	k.h.brightReads++
+	if k.h.brightErr != nil {
+		return 0, k.h.brightErr
+	}
+	return k.h.bright, nil
 }
 
 func (k *fakeKB) Close() error {
@@ -1043,4 +1101,513 @@ func TestPollTiming(t *testing.T) {
 			})
 		})
 	}
+}
+
+// Lighting.
+
+// litStack is red (200, 0, 0) at 20 frames per second, with a state "gear"
+// (toggle N) that lights N green; gear starts as given ("on" or "off").
+func litStack(t *testing.T, start string) *light.Stack {
+	t.Helper()
+	s, err := light.Build(light.Config{FPS: 20, Layers: []light.LayerConfig{
+		{Effect: "static", Settings: map[string]any{"color": "#C80000"}},
+		{Effect: "state", Keys: []string{"N"}, Settings: map[string]any{
+			"name": "gear", "toggle": "N", "start": start, "color": "#00FF00"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+const (
+	frameGap = 50 * time.Millisecond   // between two frames at 20 frames per second
+	quietGap = 2500 * time.Millisecond // no frame this long after notifications are enabled
+)
+
+// litConfig is testConfig with lighting on profile 0, where gear starts on,
+// and four more buttons on profile 0 that name gear: a hold of N (6), one
+// without an action (9), a tap of N (10) and a tap of A (11).
+func litConfig(t *testing.T) *layout.Config {
+	t.Helper()
+	cfg := testConfig()
+	for i := range cfg.Profiles {
+		p := &cfg.Profiles[i]
+		if p.Number != 0 {
+			continue
+		}
+		p.Light = litStack(t, "on")
+		gear := func(b layout.Button) layout.Button { b.State = "gear"; return b }
+		p.Buttons = append(p.Buttons,
+			gear(holdButton(6, "Gear", chord(action.N))),
+			gear(tapButton(9)),
+			gear(tapButton(10, chord(action.N))),
+			gear(tapButton(11, chord(action.A))),
+		)
+	}
+	return cfg
+}
+
+// lit gives Run a lighting engine for the lit profiles of cfg and a key
+// channel.
+func (h *harness) lit(cfg *layout.Config) {
+	stacks := map[byte]*light.Stack{}
+	for _, p := range cfg.Profiles {
+		if p.Light != nil {
+			stacks[p.Number] = p.Light
+		}
+	}
+	h.engine = light.NewEngine(stacks, h.start)
+	h.keys = make(chan keys.Event, 16)
+	h.tables = matchingTables(h.t, cfg)
+}
+
+func ledOf(k action.Key) int {
+	i, ok := light.LEDOfKey(k)
+	if !ok {
+		panic(fmt.Sprintf("key %#x has no LED", uint16(k)))
+	}
+	return i
+}
+
+// rgb reads an LED out of a payload: block led/16, offsets +0, +16, +32.
+func rgb(p *proto.LightPayload, led int) [3]byte {
+	base := led/16*48 + led%16
+	return [3]byte{p[base], p[base+16], p[base+32]}
+}
+
+// gearShown reports whether N shows green, as it does while gear is on.
+func gearShown(p *proto.LightPayload) bool { return rgb(p, ledOf(action.N))[1] > 0 }
+
+// restOf is the rest frame of s at full brightness.
+func restOf(s *light.Stack) proto.LightPayload {
+	return *light.NewEngine(map[byte]*light.Stack{0: s}, time.Time{}).Rest(0)
+}
+
+// compact returns the log with every run of "frame" entries as one "frames".
+func compact(log []string) []string {
+	var out []string
+	for _, s := range log {
+		if s == "frame" {
+			if len(out) > 0 && out[len(out)-1] == "frames" {
+				continue
+			}
+			s = "frames"
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// wantCompact checks the log with the runs of frames squeezed.
+func (h *harness) wantCompact(want ...string) {
+	h.t.Helper()
+	h.mu.Lock()
+	got := compact(h.log)
+	h.mu.Unlock()
+	if !slices.Equal(got, want) {
+		h.t.Errorf("log\n got %q\nwant %q", got, want)
+	}
+}
+
+// frameAt returns the last frame sent at or before d.
+func (h *harness) frameAt(d time.Duration) *proto.LightPayload {
+	h.t.Helper()
+	var last *proto.LightPayload
+	for i := range h.frames {
+		if h.frames[i].at <= d {
+			last = &h.frames[i].p
+		}
+	}
+	if last == nil {
+		h.t.Fatalf("no frame by %v", d)
+	}
+	return last
+}
+
+func (h *harness) gearAt(d time.Duration) bool {
+	h.t.Helper()
+	return gearShown(h.frameAt(d))
+}
+
+// framesBetween counts the frames sent from from up to, not including, to.
+func (h *harness) framesBetween(from, to time.Duration) int {
+	n := 0
+	for _, f := range h.frames {
+		if f.at >= from && f.at < to {
+			n++
+		}
+	}
+	return n
+}
+
+// notified returns when notifications were enabled the i-th time, from 0.
+func (h *harness) notified(i int) time.Duration {
+	h.t.Helper()
+	if i >= len(h.notifyAt) {
+		h.t.Fatalf("notifications enabled %d times, want more than %d", len(h.notifyAt), i)
+	}
+	return h.notifyAt[i]
+}
+
+// pressN sends a press and release of N on the key channel.
+func (h *harness) pressN() {
+	now := time.Now()
+	h.keys <- keys.Event{Key: action.N, Down: true, At: now}
+	h.keys <- keys.Event{Key: action.N, Down: false, At: now}
+}
+
+// Review Focus 1: without [light], run behaves as before.
+func TestWithoutLightNothingIsStreamed(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		setup func(h *harness)
+	}{
+		{"no engine", func(h *harness) {}},
+		{"an engine but no lit profile", func(h *harness) {
+			h.engine = light.NewEngine(nil, h.start)
+			h.keys = make(chan keys.Event, 16)
+			h.keys <- keys.Event{Key: action.N, Down: true, At: h.start}
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			test(t, func(h *harness) {
+				c.setup(h)
+				h.scripts = [][]item{script(
+					event(proto.Brightness{Percent: 50}),
+					event(proto.LightsOff{Off: true}),
+					event(proto.ProfileChanged{Profile: 0}),
+					tap(3),
+				)}
+				h.onPoll[3] = h.cancel
+				h.run(testConfig())
+				h.want("poll", "open", "notify", "fresh 0", "down A", "up A", "poll", "poll", "poll", "close")
+				if h.streams != 0 || h.brightReads != 0 {
+					h.t.Errorf("%d StreamLights and %d ReadBrightness calls, want none", h.streams, h.brightReads)
+				}
+				if h.maxWait != 100*time.Millisecond {
+					h.t.Errorf("NextEvent waited up to %v, want 100ms", h.maxWait)
+				}
+			})
+		})
+	}
+}
+
+func TestFramesFollowTheFrameRate(t *testing.T) {
+	test(t, func(h *harness) {
+		cfg := litConfig(t)
+		h.lit(cfg)
+		h.onPoll[3] = h.cancel
+		h.run(cfg)
+		h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
+			"poll", "frames",
+			"poll", "frames",
+			"poll", "frame (gear off)", "close")
+		if len(h.frames) < 2 {
+			h.t.Fatalf("%d frames", len(h.frames))
+		}
+		start := h.notified(0) + quietGap
+		if first := h.frames[0].at; first < start || first > start+frameGap {
+			h.t.Errorf("first frame at %v, want from %v to %v", first, start, start+frameGap)
+		}
+		regular := h.frames[:len(h.frames)-1]
+		if n, want := len(regular), int((6*time.Second-start)/frameGap); n < want-1 || n > want+1 {
+			h.t.Errorf("%d frames from %v to 6s, want about %d", n, start, want)
+		}
+		for i := 1; i < len(regular); i++ {
+			if gap := regular[i].at - regular[i-1].at; gap < frameGap-time.Millisecond || gap > frameGap+time.Millisecond {
+				h.t.Errorf("frame %d came %v after the one before, want %v", i, gap, frameGap)
+			}
+		}
+		if got := rgb(&regular[0].p, ledOf(action.A)); got != [3]byte{200, 0, 0} {
+			h.t.Errorf("A shows %v, want red 200", got)
+		}
+		if got, want := h.frames[len(h.frames)-1].p, restOf(cfg.Profiles[1].Light); got != want {
+			h.t.Error("the last frame is not the rest frame")
+		}
+		want := []time.Duration{0, 2 * time.Second, 4 * time.Second, 6 * time.Second}
+		if !slices.Equal(h.pollTimes, want) {
+			h.t.Errorf("polls at %v, want %v", h.pollTimes, want)
+		}
+		if h.maxWait > 100*time.Millisecond {
+			h.t.Errorf("NextEvent waited up to %v, want at most 100ms", h.maxWait)
+		}
+	})
+}
+
+// Review Focus 3: the keyboard unplugged mid-stream.
+func TestStreamErrors(t *testing.T) {
+	t.Run("disconnect", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.streamErr = func(n int) error {
+				if n == 5 {
+					return fmt.Errorf("%w: writing", device.ErrDisconnected)
+				}
+				return nil
+			}
+			h.onPoll[4] = h.cancel
+			h.run(cfg)
+			// No rest frame for a keyboard that failed.
+			h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
+				"poll", "frames", "stream failed", "close",
+				"poll", "open", "notify", "fresh 0", "brightness 0",
+				"poll", "frames",
+				"poll", "frame (gear off)", "close")
+			if n := h.framesBetween(0, 4*time.Second); n != 5 {
+				h.t.Errorf("%d frames before the reconnect, want 5", n)
+			}
+			resume := h.notified(1) + quietGap
+			if n := h.framesBetween(4*time.Second, resume); n != 0 {
+				h.t.Errorf("%d frames within %v of reconnecting", n, quietGap)
+			}
+			if n := h.framesBetween(resume, 8*time.Second); n < 29 {
+				h.t.Errorf("%d frames after reconnecting, want about 30", n)
+			}
+			h.wantLogged(1, "lighting", "writing")
+		})
+	})
+	t.Run("missed acknowledgement", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.streamErr = func(n int) error {
+				if n >= 3 && n < 6 {
+					return fmt.Errorf("keyboard: lighting bank 2 not acknowledged: %w", device.ErrTimeout)
+				}
+				return nil
+			}
+			h.onPoll[2] = h.cancel
+			h.run(cfg)
+			// The ticks are skipped, not caught up on.
+			h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
+				"poll", "frames", "stream failed", "stream failed", "stream failed", "frames",
+				"poll", "frame (gear off)", "close")
+			if n := h.framesBetween(0, 4*time.Second); n != 27 {
+				h.t.Errorf("%d frames, want 27", n)
+			}
+			h.wantLogged(1, "not acknowledged")
+		})
+	})
+}
+
+// Review Focus 4: a switch to a profile without [light].
+func TestRestFrameOnUnlitProfile(t *testing.T) {
+	t.Run("on the keyboard", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.onPoll[2] = func() { h.push(event(proto.ProfileChanged{Profile: 4})) }
+			h.onPoll[3] = func() { h.push(event(proto.ProfileChanged{Profile: 0})) }
+			h.onPoll[4] = h.cancel
+			h.run(cfg)
+			h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
+				"poll", "frames",
+				"poll", "frames", "frame (gear off)", "brightness 4",
+				"poll", "brightness 0", "frames",
+				"poll", "frame (gear off)", "close")
+			if got, want := *h.frameAt(5 * time.Second), restOf(cfg.Profiles[1].Light); got != want {
+				h.t.Error("the frame sent on the switch to profile 4 is not the rest frame")
+			}
+		})
+	})
+	t.Run("for a program", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.onPoll[2] = func() { h.running[game] = true }
+			h.onPoll[3] = h.cancel
+			h.run(cfg)
+			h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0",
+				"poll", "frames",
+				"poll", "switch 2", "frame (gear off)", "brightness 2",
+				"poll", "close")
+		})
+	})
+}
+
+// Review Focus 5: Swarm II starting while streaming.
+func TestSwarmWhileStreaming(t *testing.T) {
+	test(t, func(h *harness) {
+		cfg := litConfig(t)
+		h.lit(cfg)
+		h.scripts = [][]item{{touch(5, true)}}
+		h.onPoll[2] = func() { h.running[procs.Swarm[0]] = true }
+		h.onPoll[4] = func() { h.running[procs.Swarm[0]] = false }
+		h.onPoll[6] = h.cancel
+		h.run(cfg)
+		h.wantCompact("poll", "open", "notify", "fresh 0", "brightness 0", "down LCtrl", "down A",
+			"poll", "frames",
+			"poll", "up A", "up LCtrl", "frame (gear off)", "close",
+			"poll",
+			"poll", "open", "notify", "fresh 0", "brightness 0", "read 0", "read 2", "read 3",
+			"poll", "frames",
+			"poll", "frame (gear off)", "close")
+		if n := h.framesBetween(4*time.Second+time.Nanosecond, h.notified(1)+quietGap); n != 0 {
+			h.t.Errorf("%d frames while paused or quiet", n)
+		}
+	})
+}
+
+func TestKeyEventsReachTheEngineBeforeTheNextFrame(t *testing.T) {
+	test(t, func(h *harness) {
+		cfg := litConfig(t)
+		h.lit(cfg)
+		h.onPoll[2] = h.pressN
+		h.onPoll[3] = func() { close(h.keys) } // the listener ended; Run goes on without it
+		h.onPoll[4] = h.cancel
+		h.run(cfg)
+		if !h.gearAt(4*time.Second - time.Nanosecond) {
+			h.t.Error("gear off before N was pressed")
+		}
+		at4 := false
+		for _, f := range h.frames {
+			if f.at < 4*time.Second {
+				continue
+			}
+			at4 = at4 || f.at == 4*time.Second
+			if gearShown(&f.p) {
+				h.t.Errorf("frame at %v still shows gear", f.at)
+			}
+		}
+		if !at4 {
+			h.t.Error("no frame at the poll of 4s")
+		}
+		want := []time.Duration{0, 2 * time.Second, 4 * time.Second, 6 * time.Second, 8 * time.Second}
+		if !slices.Equal(h.pollTimes, want) {
+			h.t.Errorf("polls at %v, want %v", h.pollTimes, want)
+		}
+	})
+}
+
+func TestStateButtons(t *testing.T) {
+	test(t, func(h *harness) {
+		cfg := litConfig(t)
+		h.lit(cfg)
+		h.onPoll[2] = func() { h.push(tap(9)...) }      // no action: flips gear, sends nothing
+		h.onPoll[3] = func() { h.push(tap(10)...) }     // sends N, the toggle: flips once
+		h.onPoll[4] = func() { h.push(tap(11)...) }     // sends A and flips
+		h.onPoll[5] = func() { h.push(touch(6, true)) } // holds N, the toggle: flips once
+		h.onPoll[6] = h.cancel
+		h.run(cfg)
+		for i, want := range []bool{true, false, true, false, true} {
+			at := time.Duration(2*i+3)*time.Second + 900*time.Millisecond
+			if got := h.gearAt(at); got != want {
+				h.t.Errorf("gear at %v: %v, want %v", at, got, want)
+			}
+		}
+		var pressed []string
+		h.mu.Lock()
+		for _, s := range h.log {
+			if strings.HasPrefix(s, "down ") || strings.HasPrefix(s, "up ") {
+				pressed = append(pressed, s)
+			}
+		}
+		h.mu.Unlock()
+		if want := []string{"down N", "up N", "down A", "up A", "down N", "up N"}; !slices.Equal(pressed, want) {
+			h.t.Errorf("keys %q, want %q", pressed, want)
+		}
+	})
+}
+
+func TestBrightness(t *testing.T) {
+	red := func(h *harness, d time.Duration) byte { return rgb(h.frameAt(d), ledOf(action.A))[0] }
+	t.Run("read fails", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.brightErr = errors.New("no answer")
+			h.onPoll[2] = func() {
+				h.push(event(proto.ProfileChanged{Profile: 0}), event(proto.LightsOff{Off: true}),
+					event(proto.Brightness{Percent: 50}))
+			}
+			h.onPoll[3] = h.cancel
+			h.run(cfg)
+			if got := red(h, 3900*time.Millisecond); got != 200 {
+				h.t.Errorf("red %d before the notification, want 200", got)
+			}
+			if got := red(h, 5900*time.Millisecond); got != 100 {
+				h.t.Errorf("red %d at 50%%, want 100", got)
+			}
+			if got := rgb(h.frameAt(5900*time.Millisecond), ledOf(action.N)); got != [3]byte{0, 127, 0} {
+				h.t.Errorf("N %v at 50%%, want green 127", got)
+			}
+			if h.brightReads != 2 {
+				h.t.Errorf("%d brightness reads, want 2", h.brightReads)
+			}
+			h.wantLogged(1, "no answer")
+		})
+	})
+	t.Run("read", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := litConfig(t)
+			h.lit(cfg)
+			h.bright = 40
+			h.onPoll[2] = h.cancel
+			h.run(cfg)
+			if got := red(h, 3900*time.Millisecond); got != 80 {
+				h.t.Errorf("red %d at 40%%, want 80", got)
+			}
+		})
+	})
+}
+
+// gameLit is testConfig with lighting on the game's profile 2, where gear
+// starts on.
+func gameLit(t *testing.T) *layout.Config {
+	t.Helper()
+	cfg := testConfig()
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].Number == 2 {
+			cfg.Profiles[i].Light = litStack(t, "on")
+		}
+	}
+	return cfg
+}
+
+func TestProgramStartResetsStates(t *testing.T) {
+	t.Run("start and restart", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := gameLit(t)
+			h.lit(cfg)
+			h.running[game] = true
+			h.onPoll[1] = h.pressN                           // gear off
+			h.onPoll[2] = func() { h.running[game] = false } // to the desktop
+			h.onPoll[3] = func() { h.running[game] = true }  // started again: gear on
+			h.onPoll[4] = h.pressN                           // gear off
+			h.onPoll[5] = func() {                           // switched on the keyboard: no start
+				h.push(event(proto.ProfileChanged{Profile: 0}), event(proto.ProfileChanged{Profile: 2}))
+			}
+			h.onPoll[6] = h.cancel
+			h.run(cfg)
+			for _, c := range []struct {
+				at   time.Duration
+				want bool
+			}{
+				{3900 * time.Millisecond, false},
+				{7900 * time.Millisecond, true},
+				{9900 * time.Millisecond, false},
+				{11900 * time.Millisecond, false},
+			} {
+				if got := h.gearAt(c.at); got != c.want {
+					h.t.Errorf("gear at %v: %v, want %v", c.at, got, c.want)
+				}
+			}
+		})
+	})
+	t.Run("running at the first poll", func(t *testing.T) {
+		test(t, func(h *harness) {
+			cfg := gameLit(t)
+			h.lit(cfg)
+			h.engine.SetActive(2)
+			h.engine.Flip(2, "gear") // off before Run starts
+			h.running[game] = true
+			h.onPoll[2] = h.cancel
+			h.run(cfg)
+			if !h.gearAt(3900 * time.Millisecond) {
+				h.t.Error("gear not back at its start value")
+			}
+		})
+	})
 }

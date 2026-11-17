@@ -21,6 +21,12 @@
 // not tell them apart. A touch of a managed position that the keyboard shows
 // as another widget, such as a key, is ignored: the keyboard acts on it
 // itself.
+//
+// When profiles have [light], the same goroutine also streams the active
+// profile's lighting at its frame rate and passes the KB7's key presses to
+// the lighting engine; reading waits at most until the next frame is due.
+// Without [light] nothing of this happens: no frame is sent and the
+// brightness is not read.
 package run
 
 import (
@@ -35,7 +41,9 @@ import (
 
 	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/keys"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/procs"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
 )
@@ -48,6 +56,8 @@ type Keyboard interface {
 	SwitchProfileFresh(p byte) error
 	NextEvent(timeout time.Duration) (any, error)
 	ReadButtons(p byte) (*proto.Table29, error)
+	StreamLights(p *proto.LightPayload) error
+	ReadBrightness(p byte) (int, error)
 	Close() error
 }
 
@@ -63,7 +73,8 @@ type Deps struct {
 	Exec *action.Executor
 	// Now is the clock that schedules the polls (time.Now when nil). It must
 	// follow real time: Run waits with the runtime's timers and only reads
-	// Now to know when the next poll is due.
+	// Now to know when the next poll or lighting frame is due and to time the
+	// lighting.
 	Now func() time.Time
 	// Poll is the time between two checks of the running programs (2 s when
 	// zero or less).
@@ -71,6 +82,14 @@ type Deps struct {
 	// Logf reports what happens; nil discards it. It is called from more
 	// than one goroutine.
 	Logf func(format string, args ...any)
+	// Light renders the lighting of the profiles with [light]. Nil, or no
+	// profile with [light] in the configuration, means no lighting at all:
+	// nothing is streamed and the brightness is not read. Once Run has
+	// started, only Run uses it.
+	Light *light.Engine
+	// Keys brings the key presses of the KB7 (nil: none). It is read only
+	// when there is lighting, and may be closed.
+	Keys <-chan keys.Event
 }
 
 const (
@@ -107,6 +126,17 @@ type loop struct {
 	recheck  bool                  // compare the button tables once the keyboard is open again
 	openMsg  string                // why the keyboard could not be opened, as last logged
 	runMsg   string                // why the programs could not be checked, as last logged
+
+	// Lighting; eng is nil without it.
+	eng        *light.Engine
+	keys       <-chan keys.Event // nil without key input, or once it is closed
+	flips      map[spot]string   // the state a touch of the button flips itself
+	wasRunning map[string]bool   // switch_when_running programs running at the last poll
+	nextFrame  time.Time         // when the next frame is due
+	streamed   bool              // a frame was sent since the keyboard was opened or the last rest frame
+	shown      byte              // the profile of the last frame sent
+	ackLogged  bool              // a missing acknowledgement was logged since the keyboard was opened
+	brightMsg  string            // why the brightness could not be read, as last logged
 }
 
 // Run carries out the actions of the buttons of cfg until ctx is cancelled,
@@ -128,6 +158,19 @@ type loop struct {
 // closes the keyboard; it is opened again at the next poll. A profile switch
 // the keyboard does not confirm in time is assumed to have happened.
 //
+// With lighting (d.Light, and a profile with [light]), the active profile's
+// layers are streamed at its frame rate while the keyboard is open, starting
+// 2.5 s after notifications are enabled; the key events of d.Keys reach the
+// engine before every frame. After every profile change the profile's
+// brightness is read (the last level stays when that fails), and brightness
+// notifications are followed. A profile's states take their start values
+// when its program starts. A touch of a button with a state flips it, unless
+// the button's action sends the state's toggle, which flips it already. When
+// the stream stops, because the active profile is not lit, Swarm II runs or
+// Run stops, a rest frame of the profile last shown is sent after the held
+// keys are released; not when the keyboard failed. A frame the keyboard does
+// not acknowledge is skipped; any other stream error closes the keyboard.
+//
 // If a call panics, Run still releases every held key and closes the
 // keyboard before the panic goes on.
 func Run(ctx context.Context, cfg *layout.Config, d Deps) error {
@@ -139,6 +182,7 @@ func Run(ctx context.Context, cfg *layout.Config, d Deps) error {
 	defer l.stop() // also when a call panics: keys released, keyboard closed, worker ended
 	next := l.now()
 	for ctx.Err() == nil {
+		l.drainKeys() // so a frame sent below shows every key event so far
 		if !l.now().Before(next) {
 			l.poll(ctx)
 			next = l.now().Add(l.every)
@@ -146,10 +190,19 @@ func Run(ctx context.Context, cfg *layout.Config, d Deps) error {
 		}
 		left := next.Sub(l.now())
 		if l.kb == nil {
-			sleep(ctx, left)
+			l.idle(ctx, left)
 			continue
 		}
-		l.read(ctx, min(left, readTimeout))
+		wait := min(left, readTimeout)
+		if due, ok := l.frameDue(); ok {
+			until := due.Sub(l.now())
+			if until <= 0 {
+				l.frame(ctx)
+				continue
+			}
+			wait = min(wait, until)
+		}
+		l.read(ctx, wait)
 	}
 	return nil
 }
@@ -166,6 +219,10 @@ func newLoop(cfg *layout.Config, d Deps) (*loop, error) {
 	l := &loop{
 		cfg: cfg, open: d.Open, running: d.Running, now: d.Now, every: d.Poll, logf: d.Logf,
 		buttons: map[spot]layout.Button{}, chords: map[spot]action.Chord{}, held: map[spot]action.Chord{},
+		flips: map[spot]string{}, wasRunning: map[string]bool{},
+	}
+	if d.Light != nil && anyLit(cfg.Profiles) {
+		l.eng, l.keys = d.Light, d.Keys
 	}
 	if l.running == nil {
 		l.running = procs.Running
@@ -202,6 +259,9 @@ func newLoop(cfg *layout.Config, d Deps) (*loop, error) {
 			found = true
 			s := spot{p.Number, byte(b.Position)}
 			l.buttons[s] = b
+			if name := flipsState(p.Light, b); name != "" {
+				l.flips[s] = name
+			}
 			if b.Mode == layout.Hold {
 				var c action.Chord
 				ok := len(b.Action) == 1
@@ -253,11 +313,12 @@ func (l *loop) poll(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
+	l.noteStarts(running)
 	if anyOf(running, procs.Swarm) {
 		if !l.paused {
 			l.paused, l.recheck = true, true
 			l.logf("Swarm II is running; leaving the keyboard to it until it closes")
-			l.drop(ctx)
+			l.shut(ctx, true)
 		}
 		return
 	}
@@ -325,6 +386,7 @@ func (l *loop) connect(ctx context.Context, want byte) {
 		l.drop(ctx)
 		return
 	}
+	l.nextFrame, l.streamed, l.ackLogged = l.now().Add(quiet), false, false
 	if !l.switchTo(ctx, want, true) {
 		return
 	}
@@ -359,15 +421,26 @@ func (l *loop) switchTo(ctx context.Context, p byte, fresh bool) bool {
 		l.logf("the keyboard did not confirm the switch to profile %d; assuming it is active", p)
 	}
 	l.active, l.expected = p, p
-	return true
+	return l.activate(ctx)
 }
 
-// drop releases held keys and closes the keyboard. If ctx is cancelled
-// first, the keyboard stays open for stop to close after the release.
-func (l *loop) drop(ctx context.Context) {
+// drop releases held keys and closes the keyboard, after a keyboard error:
+// no rest frame is sent.
+func (l *loop) drop(ctx context.Context) { l.shut(ctx, false) }
+
+// shut releases held keys, sends the rest frame if rest is set and closes
+// the keyboard. If ctx is cancelled first, the keyboard stays open for stop
+// to close after the release.
+func (l *loop) shut(ctx context.Context, rest bool) {
 	if !l.release(ctx) || l.kb == nil {
 		return
 	}
+	if rest {
+		if err := l.rest(); err != nil {
+			l.logf("lighting the keyboard: %v", err)
+		}
+	}
+	l.streamed = false
 	if err := l.kb.Close(); err != nil {
 		l.logf("closing the keyboard: %v", err)
 	}
@@ -457,8 +530,13 @@ func (l *loop) read(ctx context.Context, timeout time.Duration) {
 		}
 		l.active = ev.Profile
 		l.logf("profile %d is active", ev.Profile)
+		l.activate(ctx)
 	case proto.Touch:
 		l.touch(ev)
+	case proto.Brightness:
+		if l.eng != nil {
+			l.eng.SetBrightness(ev.Percent)
+		}
 	}
 }
 
@@ -481,11 +559,15 @@ func (l *loop) touch(ev proto.Touch) {
 	switch {
 	case b.Mode == layout.Tap:
 		if ev.Down {
-			l.w.add(op{kind: opTap, steps: b.Action, what: what})
+			l.sent(s, b.Action)
+			if len(b.Action) > 0 { // a button with only a state sends nothing
+				l.w.add(op{kind: opTap, steps: b.Action, what: what})
+			}
 		}
 	case ev.Down:
 		if _, held := l.held[s]; !held {
 			l.held[s] = l.chords[s]
+			l.sent(s, []action.Step{l.chords[s]})
 			l.w.add(op{kind: opHoldDown, chord: l.chords[s], what: what})
 		}
 	default:
@@ -496,13 +578,17 @@ func (l *loop) touch(ev proto.Touch) {
 	}
 }
 
-// stop releases every held key, after the action that is running, and
-// closes the keyboard. Actions that have not started are dropped.
+// stop releases every held key, after the action that is running, sends the
+// rest frame and closes the keyboard. Actions that have not started are
+// dropped.
 func (l *loop) stop() {
 	if !l.w.stop(stopTimeout) {
 		l.logf("an action is still running; stopping without waiting for it, keys it holds may stay pressed")
 	}
 	if l.kb != nil {
+		if err := l.rest(); err != nil {
+			l.logf("lighting the keyboard: %v", err)
+		}
 		if err := l.kb.Close(); err != nil {
 			l.logf("closing the keyboard: %v", err)
 		}

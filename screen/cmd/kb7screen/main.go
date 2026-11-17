@@ -19,10 +19,11 @@ import (
 	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/apply"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/keys"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/keyboard"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/keys"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/procs"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/run"
 )
@@ -329,6 +330,23 @@ func doRun(c command, stderr io.Writer) error {
 		Logf: func(format string, args ...any) {
 			fmt.Fprintf(stderr, "%s %s\n", time.Now().Format("15:04:05"), fmt.Sprintf(format, args...))
 		},
+	}
+	stacks := map[byte]*light.Stack{}
+	for _, p := range cfg.Profiles {
+		if p.Light != nil {
+			stacks[p.Number] = p.Light
+		}
+	}
+	if len(stacks) > 0 {
+		deps.Light = light.NewEngine(stacks, time.Now())
+		keyCtx, endKeys := context.WithCancel(ctx)
+		defer endKeys()
+		ch, err := keys.Listen(keyCtx)
+		if err != nil {
+			deps.Logf("ripple and key toggles are off: %v", err)
+		} else {
+			deps.Keys = ch
+		}
 	}
 	return run.Run(ctx, cfg, deps)
 }
