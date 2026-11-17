@@ -80,9 +80,15 @@ Not measured, needed before relying on it:
    the last frame, or the stored `0x11` of the active profile.
 2. **What a profile switch does to a running stream**: whether the stored
    table of the new profile flashes before our next frame.
-3. **Reading key presses of the KB7 only** through Windows Raw Input while
-   another program (Star Citizen) has the focus, and whether keys typed with
-   Fn held or bound by the keyboard itself show up.
+3. ~~Reading key presses of the KB7 through Windows Raw Input while another
+   program has the focus.~~ **Measured 2026-11-17** with `kb7screen keytest`:
+   with Notepad focused, `wasd` arrived as four key-down/key-up pairs; with
+   Star Citizen focused and in use, W A S D (including held, while moving),
+   N, B, H, J, F, LShift and LAlt+N all arrived, in order. A held key repeats
+   its key-down until it is released (LShift and A were seen four times in a
+   row), so repeats must be ignored. During Alt+Tab only the Tab key-up
+   arrived. Still open: whether presses on another keyboard are kept out by
+   the device filter, and whether Fn-layer keys show up.
 4. **The brightness level at start-up**: read from `0x11` byte 6 through the
    selector (`05 <profile> b0 00`), as Swarm II does at start. Reading this
    block from our own code has not been done; `b8`, `b9` and `ba` have.
