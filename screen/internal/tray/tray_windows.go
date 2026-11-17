@@ -144,8 +144,6 @@ type notifyIconData struct {
 	balloonIcon     uintptr
 }
 
-type balloon struct{ title, text string }
-
 // Tray is a running tray icon.
 type Tray struct {
 	hwnd uintptr // set before Run returns, then read-only
@@ -238,17 +236,18 @@ func (t *Tray) SetFailed(failed bool) {
 	t.post()
 }
 
-// Balloon shows a notification next to the icon. It may be called from any
-// goroutine.
+// Balloon shows a notification next to the icon. Without text the title is
+// shown as the text; with neither nothing is shown. Up to five balloons wait
+// for the icon; older ones are dropped. It may be called from any goroutine.
 func (t *Tray) Balloon(title, text string) {
 	t.mu.Lock()
-	t.balloons = append(t.balloons, balloon{title, text})
+	t.balloons = queueBalloon(t.balloons, title, text)
 	t.mu.Unlock()
 	t.post()
 }
 
 // Done is closed when the tray's window thread has ended: after ctx ended,
-// or at the end of the Windows session.
+// or when the Windows session really ends (not when its end is called off).
 func (t *Tray) Done() <-chan struct{} { return t.done }
 
 func (t *Tray) post() {
@@ -388,10 +387,13 @@ func shellNotify(msg uintptr, n *notifyIconData) bool {
 }
 
 // add puts the icon in the notification area. It fails while the shell is
-// not up; the retry timer and TaskbarCreated try again.
+// not up; the retry timer and TaskbarCreated try again. NIM_ADD can report a
+// failure (a time-out at log on) while the icon was added after all, and
+// fails when the shell still holds it; a NIM_MODIFY that succeeds shows the
+// icon is there.
 func (t *Tray) add() bool {
 	n := t.data()
-	if !shellNotify(nimAdd, &n) {
+	if !shellNotify(nimAdd, &n) && !shellNotify(nimModify, &n) {
 		return false
 	}
 	n.version = nidVersion4
@@ -403,14 +405,14 @@ func (t *Tray) add() bool {
 	return true
 }
 
-// remove takes the icon out of the notification area.
+// remove takes the icon out of the notification area. It always asks the
+// shell, also when no add was seen to succeed, so no icon is left behind; a
+// failure (nothing to remove) is ignored.
 func (t *Tray) remove() {
 	procKillTimer.Call(t.hwnd, retryTimer)
-	if t.added {
-		n := notifyIconData{size: uint32(unsafe.Sizeof(notifyIconData{})), wnd: t.hwnd, id: iconID}
-		shellNotify(nimDelete, &n)
-		t.added = false
-	}
+	n := notifyIconData{size: uint32(unsafe.Sizeof(notifyIconData{})), wnd: t.hwnd, id: iconID}
+	shellNotify(nimDelete, &n)
+	t.added = false
 }
 
 // update applies what SetTip, SetFailed and Balloon left. Balloons wait
@@ -515,12 +517,20 @@ func windowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		}
 		return 1
 	case wmEndSession:
+		if wParam == 0 {
+			// The end of the session was called off: the tray stays. The
+			// OnEndSession call before it may already have stopped the loop;
+			// the caller decides what then. A later attempt calls it again.
+			t.endCalled = false
+			return 0
+		}
 		t.remove()
 		procDestroyWindow.Call(hwnd)
 		return 0
 	}
 	if t.taskbarCreated != 0 && msg == t.taskbarCreated {
-		// Explorer (re)started: its notification area is new and empty.
+		// Explorer (re)started: its notification area is normally new and
+		// empty; add falls back to NIM_MODIFY when it still holds the icon.
 		t.added = false
 		if !t.add() {
 			procSetTimer.Call(t.hwnd, retryTimer, retryEvery, 0)

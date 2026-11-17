@@ -30,7 +30,9 @@ type Options struct {
 	// OnEndSession is called when Windows asks to end the session (log off,
 	// shut down). It must return within 5 s. It runs on the window thread,
 	// so it may call SetTip, SetFailed and Balloon (they only post) but must
-	// not wait for anything the window thread does.
+	// not wait for anything the window thread does. When the end of the
+	// session is then called off, the tray stays and Done stays open, so
+	// whatever OnEndSession stopped must be restarted or ended by the caller.
 	OnEndSession func()
 }
 
@@ -59,6 +61,28 @@ func cutUnits(s string, n int) string {
 		used += w
 	}
 	return s
+}
+
+// maxBalloons is how many balloons may wait to be shown.
+const maxBalloons = 5
+
+type balloon struct{ title, text string }
+
+// queueBalloon adds a balloon to q. The shell shows no balloon without text,
+// so a lone title becomes the text; an empty balloon is not added. When q is
+// full the oldest one is dropped.
+func queueBalloon(q []balloon, title, text string) []balloon {
+	if text == "" {
+		title, text = "", title
+	}
+	if text == "" {
+		return q
+	}
+	q = append(q, balloon{title, text})
+	if len(q) > maxBalloons {
+		q = append(q[:0:0], q[len(q)-maxBalloons:]...)
+	}
+	return q
 }
 
 // menuID is the command id of item i; 0 is reserved for "nothing chosen".

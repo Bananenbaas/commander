@@ -25,6 +25,9 @@ const (
 	maxLog = 1 << 20
 )
 
+// now is the clock of the log; tests replace it.
+var now = time.Now
+
 // roamingDir is %APPDATA%, or the user's configuration folder where that is
 // not set (Linux).
 func roamingDir() (string, error) {
@@ -118,7 +121,11 @@ func LogPath() string {
 // OpenLog opens the log for appending. Every line written gets the date and
 // time in front; when the next line would take the file past 1 MB, the file
 // is renamed to commander.log.1 (replacing an older one) and a new one is
-// started. The writer is safe for concurrent use.
+// started. Callers write whole lines (as log.Logger does): the size check is
+// made at the start of a line, so a line is never split over two files. When
+// the rename fails the current file keeps growing and the rotation is tried
+// again at most once a minute; when the file cannot be opened again, the next
+// Write tries once more. The writer is safe for concurrent use.
 func OpenLog() (io.WriteCloser, error) {
 	path := LogPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -131,12 +138,17 @@ func OpenLog() (io.WriteCloser, error) {
 	return l, nil
 }
 
+// rotateRetry is how long a failed rotation waits before it is tried again.
+const rotateRetry = time.Minute
+
 type logFile struct {
 	mu        sync.Mutex
 	path      string
-	f         *os.File
+	f         *os.File // nil after a failed open; the next Write opens it
 	size      int64
-	lineStart bool // the next byte written starts a line
+	lineStart bool      // the next byte written starts a line
+	retryAt   time.Time // no rotation before this, after a failed rename
+	closed    bool
 }
 
 func (l *logFile) open() error {
@@ -153,12 +165,15 @@ func (l *logFile) open() error {
 	return nil
 }
 
-// rotate moves the full log aside and starts a new one. When the rename
-// fails the old file is opened again and the log keeps growing.
+// rotate moves the full log aside and starts a new one. The file is closed
+// first, as Windows does not rename an open file. When the rename fails the
+// same file is opened again and keeps growing until the next attempt.
 func (l *logFile) rotate() error {
 	l.f.Close()
 	l.f = nil
-	os.Rename(l.path, l.path+".1")
+	if err := os.Rename(l.path, l.path+".1"); err != nil {
+		l.retryAt = now().Add(rotateRetry)
+	}
 	return l.open()
 }
 
@@ -167,8 +182,13 @@ func (l *logFile) rotate() error {
 func (l *logFile) Write(p []byte) (n int, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.f == nil {
+	if l.closed {
 		return 0, os.ErrClosed
+	}
+	if l.f == nil {
+		if err := l.open(); err != nil {
+			return 0, err
+		}
 	}
 	for len(p) > 0 {
 		seg := p
@@ -177,8 +197,10 @@ func (l *logFile) Write(p []byte) (n int, err error) {
 		}
 		var chunk []byte
 		if l.lineStart {
-			chunk = append(time.Now().AppendFormat(chunk, stampLayout), ' ')
-			if l.size > 0 && l.size+int64(len(chunk)+len(seg)) > maxLog {
+			t := now()
+			chunk = append(t.AppendFormat(chunk, stampLayout), ' ')
+			full := l.size > 0 && l.size+int64(len(chunk)+len(seg)) > maxLog
+			if full && !t.Before(l.retryAt) {
 				if err := l.rotate(); err != nil {
 					return n, err
 				}
@@ -201,8 +223,12 @@ func (l *logFile) Write(p []byte) (n int, err error) {
 func (l *logFile) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.f == nil {
+	if l.closed {
 		return os.ErrClosed
+	}
+	l.closed = true
+	if l.f == nil {
+		return nil
 	}
 	err := l.f.Close()
 	l.f = nil

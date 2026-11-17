@@ -61,6 +61,26 @@ func TestCutUnitsBalloonLimits(t *testing.T) {
 	}
 }
 
+func TestQueueBalloon(t *testing.T) {
+	q := queueBalloon(nil, "", "")
+	if len(q) != 0 {
+		t.Fatalf("empty balloon queued: %v", q)
+	}
+	q = queueBalloon(q, "Only a title", "")
+	if len(q) != 1 || q[0].text != "Only a title" || q[0].title != "" {
+		t.Fatalf("lone title not moved to the text: %+v", q)
+	}
+	for i := 0; i < 7; i++ {
+		q = queueBalloon(q, "t", string(rune('a'+i)))
+	}
+	if len(q) != maxBalloons {
+		t.Fatalf("%d queued, want %d", len(q), maxBalloons)
+	}
+	if q[0].text != "c" || q[maxBalloons-1].text != "g" {
+		t.Fatalf("oldest not dropped: first %q, last %q", q[0].text, q[maxBalloons-1].text)
+	}
+}
+
 func TestMenuIDMapping(t *testing.T) {
 	items := []Item{{Label: "Reload"}, {Separator: true}, {Label: "Quit"}}
 	for i := range items {

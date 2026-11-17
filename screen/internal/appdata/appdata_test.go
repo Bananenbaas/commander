@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -198,6 +199,100 @@ func TestLogRotates(t *testing.T) {
 	cur = readLines(t, path)
 	if len(cur) != 1 || cur[0][20:] != body[:len(body)-1] {
 		t.Fatalf("new log holds %d lines, want the one full line", len(cur))
+	}
+}
+
+// fillLog writes full 1 KiB lines until the log is exactly 1 MiB.
+func fillLog(t *testing.T, w io.Writer) {
+	t.Helper()
+	body := strings.Repeat("x", 1024-len(stampLayout)-2) + "\n"
+	fi, err := os.Stat(LogPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Size()%1024 != 0 {
+		t.Fatalf("log size %d is not whole lines of 1 KiB", fi.Size())
+	}
+	for n := fi.Size(); n < 1<<20; n += 1024 {
+		if _, err := fmt.Fprint(w, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestLogRotationRenameFails(t *testing.T) {
+	setDirs(t)
+	clock := time.Date(2026, 11, 17, 12, 0, 0, 0, time.Local)
+	old := now
+	now = func() time.Time { return clock }
+	t.Cleanup(func() { now = old })
+
+	path := LogPath()
+	// A non-empty folder named commander.log.1 cannot be replaced by a rename.
+	block := filepath.Join(filepath.Dir(path), "commander.log.1")
+	if err := os.MkdirAll(block, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(block, "x"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w, err := OpenLog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	fillLog(t, w)
+	if _, err := fmt.Fprint(w, "rename failed\n"); err != nil {
+		t.Fatalf("write after a failed rotation: %v", err)
+	}
+	clock = clock.Add(30 * time.Second)
+	if err := os.RemoveAll(block); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fmt.Fprint(w, "no retry yet\n"); err != nil {
+		t.Fatal(err)
+	}
+	lines := readLines(t, path)
+	if n := len(lines); n != 1026 || !strings.HasSuffix(lines[n-2], "rename failed") || !strings.HasSuffix(lines[n-1], "no retry yet") {
+		t.Fatalf("log holds %d lines, want all 1026 appended to the current file", n)
+	}
+	if _, err := os.Stat(path + ".1"); !os.IsNotExist(err) {
+		t.Fatalf("rotation retried within a minute: %v", err)
+	}
+	clock = clock.Add(31 * time.Second)
+	if _, err := fmt.Fprint(w, "retried\n"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readLines(t, path+".1"); len(got) != 1026 {
+		t.Fatalf(".1 holds %d lines, want 1026", len(got))
+	}
+	if got := readLines(t, path); len(got) != 1 || !strings.HasSuffix(got[0], "retried") {
+		t.Fatalf("new log = %q", got)
+	}
+}
+
+func TestLogReopensAfterFailedOpen(t *testing.T) {
+	setDirs(t)
+	w, err := OpenLog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	l := w.(*logFile)
+	// As after a rename whose reopen failed: no file open.
+	l.mu.Lock()
+	l.f.Close()
+	l.f = nil
+	l.mu.Unlock()
+	if _, err := fmt.Fprint(w, "after reopen\n"); err != nil {
+		t.Fatalf("write did not reopen the log: %v", err)
+	}
+	if got := readLines(t, LogPath()); len(got) != 1 || !strings.HasSuffix(got[0], "after reopen") {
+		t.Fatalf("log = %q", got)
+	}
+	w.Close()
+	if _, err := fmt.Fprint(w, "after close\n"); err == nil {
+		t.Fatal("write after Close did not fail")
 	}
 }
 
