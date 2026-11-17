@@ -474,3 +474,33 @@ func TestLightPreviewWithoutLight(t *testing.T) {
 		t.Errorf("exit %d, stderr %q", code, stderr.String())
 	}
 }
+
+// TestReadmeListsEveryEffect checks that the README has a subsection for each
+// registered effect, headed by its name, which names every one of its settings.
+func TestReadmeListsEveryEffect(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	readme := string(data)
+	for _, spec := range light.Specs() {
+		if strings.HasPrefix(spec.Name, "test-") {
+			continue
+		}
+		heading := "#### `" + spec.Name + "`"
+		i := strings.Index(readme, heading)
+		if i < 0 {
+			t.Errorf("README has no subsection %q", heading)
+			continue
+		}
+		section := readme[i+len(heading):]
+		if j := strings.Index(section, "\n#"); j >= 0 {
+			section = section[:j]
+		}
+		for _, st := range spec.Settings {
+			if !strings.Contains(section, "`"+st.Name+"`") {
+				t.Errorf("README section of %q does not list the setting %q", spec.Name, st.Name)
+			}
+		}
+	}
+}

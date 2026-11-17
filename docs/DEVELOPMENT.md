@@ -16,8 +16,11 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 | `kb7tools/cli.py` | `kb7cap summary \| dump \| diff` |
 | `tests/synth.py` | Builds synthetic captures (fake VID:PID 1234:5678) |
 | `screen/` | `kb7screen`, the Go program that puts own buttons on the touchscreen; usage in `screen/README.md` |
-| `screen/cmd/kb7screen/` | Its command line: `check`, `read`, `preview`, `apply`, `restore`, `run` |
+| `screen/cmd/kb7screen/` | Its command line: `check`, `read`, `preview`, `light-preview`, `apply`, `restore`, `run`, `keytest` |
 | `screen/internal/` | `proto` (frames), `device` (HID on Windows and Linux), `keyboard` (one frame at a time, no retries), `picture`, `layout`, `ledger`, `apply`, `action` (keystrokes, programs), `procs`, `run` |
+| `screen/internal/light/` | Lighting: the LED table (names, groups, positions), the effects (`fx_*.go`, each declaring its settings, listed by `light.Specs()`), the layer stack and the engine that `run` streams from |
+| `screen/internal/keys/` | The KB7's key presses, for the ripple and the states: Raw Input on Windows, `/dev/input/event*` on Linux; what `kb7screen keytest` prints |
+| `screen/internal/runlock/` | The lock file `.kb7screen-run.lock` that makes `apply` and `restore` refuse while `run` runs |
 | `docs/PROTOCOL.md` | Protocol knowledge base, with status tags |
 | `docs/design/screen-app.md` | Design of `kb7screen` and what it still needs measured |
 | `docs/CAPTURE-GUIDE.md` | How captures are made and named |
@@ -131,6 +134,13 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./cmd/kb7screen # Windows build
   until it was unplugged. Use timeouts of several seconds, and wait 200 ms
   between `0x29` and `0x25` as Swarm II does. See "Application buttons" in
   `PROTOCOL.md`.
+- **The lighting stream: nothing for 2.5 s after `0x0e`, and never let a
+  write stall.** The keyboard does not answer on interface 1 for about 2 s
+  after `0x0e`, so `run` sends no stream frame within 2.5 s of enabling the
+  notifications. A stream write that stalls drops the keyboard off the bus, so
+  `run` closes the keyboard on any stream error other than a missed
+  acknowledgement, and `apply` and `restore` must never run alongside a
+  stream (the run lock).
 - **Unplug and replug after an interrupted upload.** When `kb7screen` reports
   `keyboard.ErrUploadLeftOpen` (with a banner on the command line), the upload
   stopped after its opening frame may have been accepted. The keyboard may be

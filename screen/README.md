@@ -43,7 +43,9 @@ kb7screen <command> [flags] [config-folder]
 | `kb7screen preview <config> [--out DIR]` | writes the rendered pictures as PNG files, exactly as `apply` would send them. Default folder: `<config>/previews`. Touches nothing else |
 | `kb7screen apply <config> [--full]` | puts every layout of the folder on the keyboard. `--full` sends every picture again |
 | `kb7screen restore <config> --profile N` | gives the positions kb7screen took over in profile N their original contents back |
-| `kb7screen run <config>` | carries out the buttons' actions until you press Ctrl+C |
+| `kb7screen run <config>` | carries out the buttons' actions and streams the lighting until you press Ctrl+C |
+| `kb7screen keytest [--seconds N]` | prints the keys pressed on the KB7 for N seconds (default 20, 1 to 120), to check that the key reader sees the keyboard. Nothing is saved |
+| `kb7screen light-preview <config> --profile N [--out FILE]` | writes a 4 second animated GIF of the lighting of profile N, with simulated key presses. Default file: `<config>/previews/light-N.gif`. Touches no keyboard |
 
 `-h` or `--help` prints the usage. The exit code is 0 on success and 1 on an
 error; the message goes to standard error, prefixed with `kb7screen:`.
@@ -193,6 +195,208 @@ A second `run` for the same folder refuses to start, and `apply` and `restore`
 refuse while `run` holds the lock, because its lighting stream and the picture
 uploads share the keyboard's interface 1. The system frees the lock when `run`
 ends, however it ends.
+
+## Lighting
+
+`run` can also light the keyboard, so that Swarm II is not needed for that
+either. A layout file with a `[light]` block gets a stack of lighting layers;
+`run` streams the result to the keyboard's 112 LEDs while that profile is
+active. A profile without `[light]` gets no stream and shows what is stored on
+the keyboard. A configuration without any `[light]` makes `run` behave exactly
+as it does without lighting.
+
+### Layers
+
+Layers are listed bottom first and drawn on top of each other. An effect that
+only touches a few keys (the ripple, a state, fixed keys) leaves the layers
+below visible everywhere else. A typical stack is a base (`wave`, `breathing`
+or `static`), a `ripple` for key presses, one `state` layer per state, and
+`fixed` keys on top, so that for example WASD stay lit whatever the effect
+does.
+
+```toml
+[light]
+fps = 30                         # optional, 10 to 30, default 30
+
+[[light.layer]]                  # bottom first
+effect = "wave"
+colors = ["#0040FF", "#00C0FF", "#8000FF"]
+speed = 0.5
+direction = "right"
+
+[[light.layer]]
+effect = "ripple"
+color = "#FFFFFF"
+
+[[light.layer]]
+effect = "state"
+name = "gear"
+toggle = "N"
+start = "on"
+keys = ["N"]
+color = "#30E070"
+
+[[light.layer]]
+effect = "fixed"
+keys = ["W", "A", "S", "D"]
+color = "#FFFFFF"
+```
+
+Every layer needs `effect`. The other settings depend on the effect and are
+listed below. Any layer may also take `keys = [...]` to limit where it shows;
+without it a layer covers every LED. `state` and `fixed` need `keys`. An
+unknown effect, an unknown setting, a value of the wrong type or outside its
+range, and a missing required setting are refused when the file is loaded, with
+the layer's number and the setting's name.
+
+Key and LED names are the key names of the action steps (`W`, `LShift`, `F1`,
+`Space`, ...) plus the lights that are not keys: `PrevTrack`, `NextTrack`,
+`GameMode`, `ProfileCycle`, `MicOff`, `RGBButton`, `Wrist1` to `Wrist10`, `Fn`
+and `Menu`. Three groups name many LEDs at once: `all` (every LED), `keys` (the
+main block and the arrows) and `wrist` (the ten wrist rest segments). Names are
+not case sensitive.
+
+Setting kinds: a *colour* is `"#RRGGBB"`; a *colour list* is a non-empty list
+of those; a *number* is an integer or decimal number; a *duration* is text such
+as `"4s"` or `"600ms"`; a *chord* is a key chord as in the action steps, such as
+`"N"` or `"LAlt+N"`; a *choice* is one of a fixed list of words.
+
+### Effects
+
+#### `static`
+
+Every LED in one colour.
+
+| Setting | Kind | Default | Range | Meaning |
+|---|---|---|---|---|
+| `color` | colour | required | | The colour |
+
+#### `fixed`
+
+The listed keys in one colour. Needs `keys`. Put it last, so the keys stay in
+this colour whatever the layers below do.
+
+| Setting | Kind | Default | Range | Meaning |
+|---|---|---|---|---|
+| `color` | colour | required | | The colour |
+
+#### `breathing`
+
+All LEDs fade between a dim level and full brightness; the colour changes at
+each minimum.
+
+| Setting | Kind | Default | Range | Meaning |
+|---|---|---|---|---|
+| `colors` | colour list | `["#FFFFFF"]` | | Colours used one per breath |
+| `period` | duration | `"4s"` | 0.5 s to 60 s | Length of one breath |
+| `low` | number | 0.1 | 0 to 1 | Brightness at the minimum |
+
+#### `wave`
+
+A colour gradient that travels across the keyboard, following the real
+positions of the keys.
+
+| Setting | Kind | Default | Range | Meaning |
+|---|---|---|---|---|
+| `colors` | colour list | required | at least two | Colours, blended in a cycle |
+| `speed` | number | 0.5 | 0.05 to 5 | Cycles per second |
+| `direction` | choice | `"right"` | `right`, `left`, `up`, `down` | Direction of travel |
+| `length` | number | 14 | 2 to 40 | Key units per cycle |
+
+#### `ripple`
+
+A ring that spreads from every key you press and fades. It needs the key
+reader (see Key presses below). Only keys of the KB7 count. Give `color` or
+`colors`, not both; with neither the rings are white.
+
+| Setting | Kind | Default | Range | Meaning |
+|---|---|---|---|---|
+| `color` | colour | white | | Colour of the rings |
+| `colors` | colour list | | not together with `color` | Colours of the rings in turn, by press number |
+| `speed` | number | 12 | 2 to 60 | Keys per second the ring spreads |
+| `width` | number | 1.5 | 0.5 to 6 | Width of the ring in keys |
+| `life` | duration | `"1.2s"` | 0.2 s to 5 s | How long a ring lasts |
+
+#### `state`
+
+Lights its keys in a colour while a named on/off state is on. Needs `keys`.
+
+| Setting | Kind | Default | Range | Meaning |
+|---|---|---|---|---|
+| `name` | name | required | | Name of the state, unique within the profile |
+| `toggle` | chord | none | | Key chord that flips the state; without it only a screen button flips it |
+| `start` | choice | `"off"` | `on`, `off` | Value when the profile starts |
+| `color` | colour | required | | Colour while the state is on |
+| `blink` | number | 0 | 0 to 10 | Blinks per second while on; 0 is steady |
+
+### States
+
+A state is an on/off switch that lights keys, for example the landing gear.
+It is flipped by the key chord in `toggle`, which matches when its last key
+goes down while exactly its modifiers are held (`N` does not match LAlt+N). The
+keys before the last must be modifiers, so `toggle = "A+B"` is refused. Key-up
+and how long a key is held play no part.
+
+A button flips a state with `state = "gear"`. With an `action` it sends the
+action and flips the state, unless the action sends the state's own `toggle`
+chord, which flips it already. **Without an action** it flips only the state
+and sends nothing to the game: the way to bring the light back in line when it
+has drifted from the game.
+
+```toml
+[[button]]
+page = 1
+position = 3
+title = "Gear"
+state = "gear"                   # no action: only the light flips
+```
+
+States belong to their profile: two profiles may use the same name without
+sharing it, and toggle presses count only while that profile is active. A state
+takes its `start` value when its profile is switched to because its program
+started, and when `run` starts and finds that program already running;
+otherwise it keeps its value across switches back and forth. States can drift
+from the game, because a key pressed on another keyboard, a binding that does
+more than one thing or a death in the game change the ship without kb7screen
+seeing it. There is no game data to correct that; use a button with only a
+`state`.
+
+### Key presses
+
+The ripple and key-toggled states need to see the KB7's key presses. On
+Windows `run` reads them through Raw Input, which delivers them whatever
+program has the focus and only listens: the key still goes to the program
+unchanged. Other keyboards, and the keystrokes `run` sends itself, are not
+counted. A held key's repeats count as one press. On Linux the keyboard's
+`/dev/input/event*` node is read (see the optional udev rule above). Without
+key input the ripple and the key-toggled states do nothing. Key presses are used
+in memory for the lighting and never written to disk or to the log.
+
+`kb7screen keytest` checks the key reader: it prints each key pressed on the
+KB7 for the given time (20 seconds by default) and saves nothing.
+
+### Brightness, RGB button and when `run` stops
+
+The streamed colours follow the keyboard's brightness. `run` reads the level
+at start and after each profile switch, and follows Fn+Up and Fn+Down, which
+change it in steps of ten from 20 to 100 percent. When the RGB button switches
+the lights off, `run` keeps streaming and the keyboard keeps them dark.
+
+No frame is sent for 2.5 seconds after `run` has enabled the notifications, as
+the keyboard does not answer on interface 1 for about 2 seconds then. A slow
+or missed frame is skipped, never queued. When the stream stops, because the
+active profile has no `[light]`, Swarm II started, or `run` ends, `run` sends one
+last frame of the profile's layers at their starting point (no ripple, states
+off) after the held keys are released, so no half-finished ripple or stale
+state stays on the LEDs. It is not sent when the keyboard is already gone, and
+lighting continues when the keyboard is plugged in again.
+
+### Preview
+
+`kb7screen light-preview <config> --profile N` writes a 4 second GIF of the
+profile's lighting with simulated key presses (W at 0.5 s, Space at 1.5 s, and
+every state flipped at 2.5 s), so effects and colours can be checked without
+the keyboard. The GIF does not follow the keyboard's brightness.
 
 ## Safety
 
