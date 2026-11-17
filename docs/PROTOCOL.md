@@ -347,9 +347,9 @@ harmless, but it is unpleasant to look at.
 
 Reading report `0x11` back directly does not work: `HidD_GetFeature` fails with
 error 31 for any buffer length. Swarm II reads it through the selector register
-instead (write `05 00 b0 00`, then read). Note also that a status read of report
-`0x05` needs a 64-byte buffer; a 4-byte one fails with error 31 until a longer
-read has succeeded once.
+instead (write `05 00 b0 00` for profile 0, then read). Note also that a
+status read of report `0x05` needs a 64-byte buffer; a 4-byte one fails with
+error 31 until a longer read has succeeded once.
 
 **Two channels, two jobs.** `00-idle-1` alone suggested interface 1 had replaced
 the interface 2 feature reports as the command surface. `02-swarm-start-1` shows
@@ -366,17 +366,22 @@ At startup Swarm II reads a long list of configuration blocks. Each read is
 three steps:
 
 ```
-OUT 0x00   05 00 <selector> 00        write report 0x05, the selector register
-IN  0x80   05 01 00 00                device reports ready
-IN  0x80   <report id> <len> <data>   the selected block
+OUT 0x00   05 <profile> <selector> 00   write report 0x05, the selector register
+IN  0x80   05 01 00 00                  device reports ready
+IN  0x80   <report id> <len> <data>     the selected block
 ```
+
+Byte 1 of the selector write is the profile, `00`–`04`; an earlier version of
+this section read it as a constant `00`. Both startup captures
+(`02-swarm-start-1`, `02-swarm-start-2`) write each selector once per profile,
+as `05 00 <selector> 00`, `05 01 <selector> 00` … `05 04 <selector> 00`.
 
 Report `0x05` is a 3-byte feature report, which matches the 4 bytes on the wire
 including the report ID. The reply block's own report ID and length match the
 report map exactly — **all nineteen observed reads, without exception**, which is
 what ties the report map to real behaviour.
 
-| Selector | Report | Payload | Selector − report |
+| Selector (byte 2) | Report | Payload | Selector − report |
 |---|---|---|---|
 | `a0` | `0x20` | 91 B | +128 |
 | `a1` | `0x21` | 347 B | +128 |
@@ -402,9 +407,10 @@ what ties the report map to real behaviour.
 |---|---|
 | The selector is a **lookup table, not a formula** — the difference ranges from +123 to +164 | observed (`02-swarm-start-1`) |
 | `b4` and `b5` both return report `0x31`, `b6` and `b7` both return `0x32`: two selectors, one block shape. Likely separate slots of the same kind of block, for instance per profile or per layer | hypothesis |
-| Each selector was read five times in this capture, except `ba` once | observed (`02-swarm-start-1`) |
+| Each selector was read five times in this capture, once per profile, except `ba` once | observed (`02-swarm-start-1`) |
 | Report `0x16` (103 B, selector `ba`) holds the names of all five profiles, see "Profiles". Not a host name, as first assumed | observed (`02-swarm-start-1`) |
-| **Byte 3 of a block is the profile slot, 0–4.** Every selector read five times returns the same block five times with byte 3 counting `00`…`04`. The lighting block `0x11` differs between slots; the screen block `0x29` is identical in all five apart from that byte | observed (`02-swarm-start-1`, reports `0x11`, `0x21`, `0x29`) |
+| **Byte 1 of the selector write chooses the profile slot, 0–4, and the block names it again** (byte 3 of `0x29`, byte 2 of `0x25`). At startup every selector read five times is written with byte 1 `00`…`04`, and the five blocks returned count `00`…`04` in their profile byte. The lighting block `0x11` differs between slots; the screen block `0x29` is identical in all five apart from that byte | observed (`02-swarm-start-1`, `02-swarm-start-2`, reports `0x11`, `0x21`, `0x29`) |
+| Reading one profile on its own: `05 01 b9 00` returns the `0x29` block of profile 1 (byte 3 `01`), and `05 01 b8 00` its `0x25` block (byte 2 `01`) | observed (`34-read-profile-1`) |
 | Report `0x0e` is written as `0e 05 00 00 00` and `0e 05 01 00 00`, a register taking 0 and 1 — looks like enabling something before the reads | hypothesis |
 | From a cold start (`02-swarm-start-2`, the keyboard silent since the PC booted), `0e 05 01 00 00` is Swarm II's **first write**, before any selector read, and the screen redraws (`31` event) two seconds later. Replayed on its own, it switches on the notifications described under "Without Swarm II" | **confirmed** (`19-replay-0e-1`) |
 
@@ -1274,7 +1280,8 @@ which makes one key table per layer a reasonable **hypothesis**.
 ### Profiles
 
 **The keyboard stores five profiles.** Configuration blocks carry the profile
-slot in byte 3, and Swarm II reads every block once per slot at startup.
+slot (in byte 3; in byte 2 of `0x25`), and Swarm II reads every block once per
+slot at startup, naming the slot in byte 1 of the selector write.
 
 Report `0x16` (103 bytes, selector `ba`, read once) holds all five names, in
 twenty-byte fields from offset 2:

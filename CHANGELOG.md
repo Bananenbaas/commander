@@ -29,6 +29,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
   every control transfer in a real capture was parsed as empty and no device or
   configuration descriptor was ever recognised. `tests/synth.py` can now build
   both layouts, and the device-inventory test runs against each.
+- `PROTOCOL.md` gave the selector write as `05 00 <selector> 00`. Byte 1 is the
+  profile: Swarm II writes every selector with `00` to `04` at startup
+  (`02-swarm-start-1`, `02-swarm-start-2`), and `05 01 b9 00` / `05 01 b8 00`
+  read profile 1's tables (`34-read-profile-1`).
 
 ### Added
 - `kb7screen`, a Go program in `screen/` that puts own buttons (built-in style
