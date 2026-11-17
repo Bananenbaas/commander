@@ -4,12 +4,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
 	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Bananenbaas/kb7-commander/screen/internal/apply"
 )
 
 func TestParseArgs(t *testing.T) {
@@ -84,6 +88,33 @@ func TestHelpAndErrorsExitCodes(t *testing.T) {
 	}
 	if !strings.HasPrefix(errOut.String(), "kb7screen: ") {
 		t.Fatalf("stderr: %q", errOut.String())
+	}
+}
+
+func TestFinishReportsAStop(t *testing.T) {
+	stoppedErr := fmt.Errorf("%w (%w)", apply.ErrStopped, context.Canceled)
+	saved := func() error { return nil }
+	disk := errors.New("disk full")
+	full := func() error { return disk }
+	var out bytes.Buffer
+
+	if err := finish(&out, apply.Report{}, stoppedErr, saved, errApplyStopped); err != errApplyStopped {
+		t.Fatalf("stopped and saved: %v, want %v", err, errApplyStopped)
+	}
+	if err := finish(&out, apply.Report{}, stoppedErr, saved, errRestoreStopped); err != errRestoreStopped {
+		t.Fatalf("restore stopped and saved: %v, want %v", err, errRestoreStopped)
+	}
+	// Without a saved ledger the stop is not reported as a clean one.
+	err := finish(&out, apply.Report{}, stoppedErr, full, errApplyStopped)
+	if !errors.Is(err, apply.ErrStopped) || !errors.Is(err, disk) || strings.Contains(err.Error(), "the ledger is saved") {
+		t.Fatalf("stopped, save failed: %v", err)
+	}
+	other := errors.New("keyboard gone")
+	if err := finish(&out, apply.Report{}, other, saved, errApplyStopped); err != other {
+		t.Fatalf("other error: %v", err)
+	}
+	if err := finish(&out, apply.Report{}, nil, saved, errApplyStopped); err != nil {
+		t.Fatalf("success: %v", err)
 	}
 }
 

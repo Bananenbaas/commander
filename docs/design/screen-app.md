@@ -337,6 +337,10 @@ Alt). Linux: a uinput virtual keyboard.
 - Upload: an opener that is not echoed exactly ends the upload before any
   data; once it is echoed, the upload runs to `a5 ff` or the program reports
   that the keyboard must be unplugged.
+- Ctrl+C, or a request to terminate (on Windows also closing the console),
+  during `apply` or `restore` never cuts an upload or a profile's table writes
+  short: `apply` stops before the next picture or profile, after writing the
+  tables of the pictures already sent, and the ledger is saved.
 - No retries of writes that failed. The only writes repeated are the
   reconnect writes, `0x0e` and `0x06`, which are sent again on every connect
   and reconnect; they are idempotent.

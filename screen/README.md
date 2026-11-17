@@ -185,6 +185,13 @@ again.
   the meantime, `run` says so; run `apply` again.
 - **Never unplug the keyboard during `apply`.** A picture upload takes about
   2.7 seconds and must run to the end.
+- **Ctrl+C during `apply`** does not cut a picture short: `apply` finishes the
+  picture it is sending, writes the buttons of that profile whose pictures are
+  in place, saves the ledger and ends with `stopped after the current picture;
+  the ledger is saved`. Run `apply` again to finish the rest. `restore` stops
+  only if it has not changed anything yet. Closing the console window asks
+  for the same stop, but Windows ends the program a few seconds later, which
+  may be too soon; use Ctrl+C.
 - **"Unplug and replug."** If an upload is interrupted, the keyboard may stay
   in upload mode and stops working as a keyboard. `apply` then prints a
   prominent message. Unplug the keyboard, plug it back in, and run `apply`

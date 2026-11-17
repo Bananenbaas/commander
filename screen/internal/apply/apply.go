@@ -7,9 +7,14 @@
 // with its context. The ledger is changed in memory; it is stored through the
 // caller's save function at fixed points, and the caller saves it once more
 // when Apply or Restore returns.
+//
+// Cancelling the context stops Apply and Restore only where nothing is left
+// half done: never during a picture upload, and never between a profile's
+// table writes. They then return ErrStopped.
 package apply
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -38,6 +43,18 @@ type Keyboard interface {
 	WriteButtons(t *proto.Table29) error
 	WriteType(pos byte, te proto.TypeEntry) error
 	WriteTypes(t *proto.Table25) error
+}
+
+// ErrStopped is returned, wrapping the context's error, when Apply or Restore
+// stopped because its context was cancelled.
+var ErrStopped = errors.New("apply: stopped")
+
+// stopped returns ErrStopped once ctx is cancelled, and nil before.
+func stopped(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w (%w)", ErrStopped, err)
+	}
+	return nil
 }
 
 // Report says what Apply or Restore did.
@@ -141,15 +158,22 @@ func where(o ledger.Owner) string {
 // and a slot shared with a lower profile is never given to another picture
 // while that profile still shows it. With full, every picture is sent again.
 //
-// Apply ends on the profile the run command would choose: the first one whose
-// program is running, otherwise the desktop profile. running may be nil when
-// no program is checked.
+// When it succeeds, Apply ends on the profile the run command would choose:
+// the first one whose program is running, otherwise the desktop profile.
+// running may be nil when no program is checked.
+//
+// Once ctx is cancelled, Apply stops before the next profile of either pass,
+// or before the next picture. A profile whose pictures it stops between
+// still gets its tables written for the pictures already sent, and a slot
+// sent in this Apply that a position not yet written shows is no longer
+// trusted, so the next Apply sends it again and redraws every position that
+// shows it. Apply then returns ErrStopped.
 //
 // save, which may be nil, is called after the first pass, so the originals
 // are stored before anything is overwritten, and after each profile of the
 // second pass; an error from it stops Apply. The caller must also save after
 // Apply returns, whether or not it failed.
-func Apply(kb Keyboard, cfg *layout.Config, l *ledger.Ledger, full bool, running func(name string) bool, save func() error) (Report, error) {
+func Apply(ctx context.Context, kb Keyboard, cfg *layout.Config, l *ledger.Ledger, full bool, running func(name string) bool, save func() error) (Report, error) {
 	var rep Report
 	jobs, err := renderAll(cfg)
 	if err != nil {
@@ -157,6 +181,9 @@ func Apply(kb Keyboard, cfg *layout.Config, l *ledger.Ledger, full bool, running
 	}
 	profiles, err := managed(cfg, l)
 	if err != nil {
+		return rep, err
+	}
+	if err := stopped(ctx); err != nil {
 		return rep, err
 	}
 	if full {
@@ -168,6 +195,9 @@ func Apply(kb Keyboard, cfg *layout.Config, l *ledger.Ledger, full bool, running
 	s := newSession(kb)
 	read := map[byte]tables{}
 	for _, p := range profiles {
+		if err := stopped(ctx); err != nil {
+			return rep, err
+		}
 		t, err := prepare(s, l, p, jobs[p], &rep)
 		if err != nil {
 			return rep, err
@@ -178,18 +208,41 @@ func Apply(kb Keyboard, cfg *layout.Config, l *ledger.Ledger, full bool, running
 		return rep, err
 	}
 	uploaded := map[byte]bool{}
-	for _, p := range profiles {
+	for i, p := range profiles {
 		if len(jobs[p]) == 0 {
 			continue
 		}
-		if err := send(s, l, p, jobs[p], read[p], uploaded, &rep); err != nil {
+		done, err := send(ctx, s, l, p, jobs[p], read[p], uploaded, &rep)
+		if errors.Is(err, ErrStopped) {
+			pending := append([]job(nil), jobs[p][done:]...)
+			for _, q := range profiles[i+1:] {
+				pending = append(pending, jobs[q]...)
+			}
+			distrust(l, uploaded, pending)
+		}
+		if err != nil {
 			return rep, err
 		}
 		if err := saveLedger(save); err != nil {
 			return rep, err
 		}
 	}
+	if err := stopped(ctx); err != nil {
+		return rep, err
+	}
 	return rep, s.switchTo(finalProfile(cfg, running))
+}
+
+// distrust forgets the content of every slot sent in this Apply that one of
+// the pending jobs, whose positions were not written, still uses: those
+// positions were not redrawn, and the next Apply must send the slot again to
+// redraw them.
+func distrust(l *ledger.Ledger, uploaded map[byte]bool, pending []job) {
+	for _, j := range pending {
+		if n, ok := l.SlotOf(j.o); ok && uploaded[n] {
+			l.ForgetSlot(n)
+		}
+	}
 }
 
 func saveLedger(save func() error) error {
@@ -365,35 +418,53 @@ func prepare(s *session, l *ledger.Ledger, p byte, jobs []job, rep *Report) (tab
 // changed and the type of every position to redraw. It switches to the
 // profile only when there is something to send. uploaded collects the slots
 // sent during this Apply, so every position showing one is redrawn.
-func send(s *session, l *ledger.Ledger, p byte, jobs []job, t tables, uploaded map[byte]bool, rep *Report) error {
-	slots := make([]byte, len(jobs))
-	for i, j := range jobs {
+//
+// Once ctx is cancelled, send takes no further job, writes the tables for
+// the jobs it has taken and returns ErrStopped. It returns the number of jobs
+// taken; the positions of the others are left as they are.
+func send(ctx context.Context, s *session, l *ledger.Ledger, p byte, jobs []job, t tables, uploaded map[byte]bool, rep *Report) (int, error) {
+	var stop error
+	slots := make([]byte, 0, len(jobs))
+	for _, j := range jobs {
+		if stop = stopped(ctx); stop != nil {
+			break
+		}
 		slot, up, err := l.Assign(j.o, j.hash)
 		if err != nil {
-			return fmt.Errorf("%s: %w", where(j.o), err)
+			return len(slots), fmt.Errorf("%s: %w", where(j.o), err)
 		}
-		slots[i] = slot
-		if !up {
-			rep.Skipped = append(rep.Skipped, j.o)
-			continue
-		}
-		err = s.switchTo(p)
-		if err == nil {
-			if err = s.kb.Upload(slot, j.data); err != nil {
-				err = fmt.Errorf("%s, slot %d: %w", where(j.o), slot, err)
+		if up {
+			err = s.switchTo(p)
+			if err == nil {
+				if err = s.kb.Upload(slot, j.data); err != nil {
+					err = fmt.Errorf("%s, slot %d: %w", where(j.o), slot, err)
+				}
 			}
+			if err != nil {
+				// The slot does not hold the picture, or not all of it. The
+				// position stays managed, as the keyboard may still show the
+				// slot there, and the next apply sends the picture again.
+				l.ForgetSlot(slot)
+				return len(slots), err
+			}
+			uploaded[slot] = true
+			rep.Uploaded = append(rep.Uploaded, j.o)
+		} else {
+			rep.Skipped = append(rep.Skipped, j.o)
 		}
-		if err != nil {
-			// The slot does not hold the picture, or not all of it. The
-			// position stays managed, as the keyboard may still show the
-			// slot there, and the next apply sends the picture again.
-			l.ForgetSlot(slot)
-			return err
-		}
-		uploaded[slot] = true
-		rep.Uploaded = append(rep.Uploaded, j.o)
+		slots = append(slots, slot)
 	}
+	done := len(slots)
+	if err := write(s, p, jobs[:done], slots, t, uploaded); err != nil {
+		return done, err
+	}
+	return done, stop
+}
 
+// write is the end of send: it writes the 0x29 table once if the entry of a
+// job changed, and then the type of every job's position to redraw. Nothing
+// stops it half way but a keyboard error.
+func write(s *session, p byte, jobs []job, slots []byte, t tables, uploaded map[byte]bool) error {
 	changed := false
 	var redraw []byte
 	for i, j := range jobs {
@@ -448,10 +519,14 @@ func finalProfile(cfg *layout.Config, running func(string) bool) byte {
 // without a recorded original are emptied. It switches to profile to do so
 // and does not switch back.
 //
+// Restore works on one profile, whose tables are written together, so a
+// cancelled ctx stops it only before it touches the keyboard; it then returns
+// ErrStopped and nothing was changed.
+//
 // save, which may be nil, is called once the positions are restored; an error
 // from it is returned. The caller must also save after Restore returns,
 // whether or not it failed.
-func Restore(kb Keyboard, l *ledger.Ledger, profile byte, save func() error) (Report, error) {
+func Restore(ctx context.Context, kb Keyboard, l *ledger.Ledger, profile byte, save func() error) (Report, error) {
 	var rep Report
 	if profile > maxProfile {
 		return rep, fmt.Errorf("profile %d: profiles are 0 to %d", profile, maxProfile)
@@ -463,6 +538,9 @@ func Restore(kb Keyboard, l *ledger.Ledger, profile byte, save func() error) (Re
 	if len(owners) == 0 {
 		rep.Notes = append(rep.Notes, fmt.Sprintf("the ledger lists no positions of profile %d; nothing was changed", profile))
 		return rep, nil
+	}
+	if err := stopped(ctx); err != nil {
+		return rep, err
 	}
 	if err := kb.EnableNotifications(); err != nil {
 		return rep, err

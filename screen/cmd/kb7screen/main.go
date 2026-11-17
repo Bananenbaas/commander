@@ -200,6 +200,8 @@ func doApply(c command, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	ctx, stop := stopOnSignal()
+	defer stop()
 	kb, err := openKeyboard()
 	if err != nil {
 		return err
@@ -210,8 +212,8 @@ func doApply(c command, stdout io.Writer) error {
 		m, err := procs.Running([]string{name})
 		return err == nil && m[name]
 	}
-	rep, err := apply.Apply(kb, cfg, l, c.full, running, save)
-	return finish(stdout, rep, err, save)
+	rep, err := apply.Apply(ctx, kb, cfg, l, c.full, running, save)
+	return finish(stdout, rep, err, save, errApplyStopped)
 }
 
 func doRestore(c command, stdout io.Writer) error {
@@ -229,19 +231,37 @@ func doRestore(c command, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	ctx, stop := stopOnSignal()
+	defer stop()
 	kb, err := openKeyboard()
 	if err != nil {
 		return err
 	}
 	defer kb.Close()
 
-	rep, err := apply.Restore(kb, l, byte(c.profile), save)
-	return finish(stdout, rep, err, save)
+	rep, err := apply.Restore(ctx, kb, l, byte(c.profile), save)
+	return finish(stdout, rep, err, save, errRestoreStopped)
+}
+
+// The errors reported when apply or restore was stopped and the ledger was
+// saved.
+var (
+	errApplyStopped   = errors.New("stopped after the current picture; the ledger is saved")
+	errRestoreStopped = errors.New("stopped before anything was changed; the ledger is saved")
+)
+
+// stopOnSignal returns a context that Ctrl+C or a request to terminate
+// cancels; on Windows, closing the console window is such a request. Until
+// stop is called these signals no longer end the program, so apply and
+// restore can stop where nothing is left half done, and the ledger is saved.
+func stopOnSignal() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }
 
 // finish saves the ledger once more, whether or not the work failed, prints
 // the report and returns the error to report: the work's, the save's, or both.
-func finish(stdout io.Writer, rep apply.Report, workErr error, save func() error) error {
+// Work stopped by a signal is reported as stopped once the ledger is saved.
+func finish(stdout io.Writer, rep apply.Report, workErr error, save func() error, stopped error) error {
 	saveErr := save()
 	printReport(stdout, rep)
 	switch {
@@ -249,6 +269,8 @@ func finish(stdout io.Writer, rep apply.Report, workErr error, save func() error
 		return errors.Join(workErr, fmt.Errorf("saving the ledger: %w", saveErr))
 	case saveErr != nil:
 		return fmt.Errorf("saving the ledger: %w", saveErr)
+	case errors.Is(workErr, apply.ErrStopped):
+		return stopped
 	}
 	return workErr
 }

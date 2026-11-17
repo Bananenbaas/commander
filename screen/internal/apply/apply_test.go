@@ -4,6 +4,7 @@ package apply
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -234,7 +235,7 @@ func nothingRuns(string) bool { return false }
 
 func mustApply(t *testing.T, kb Keyboard, cfg *layout.Config, l *ledger.Ledger, full bool) Report {
 	t.Helper()
-	rep, err := Apply(kb, cfg, l, full, nothingRuns, nil)
+	rep, err := Apply(context.Background(), kb, cfg, l, full, nothingRuns, nil)
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -334,7 +335,7 @@ func TestSavePoints(t *testing.T) {
 		prof(0, "desktop.toml", "", btn(0, "Zero")),
 		prof(1, "sc.toml", "", btn(3, "One")),
 	)
-	if _, err := Apply(f, cfg, l, false, nothingRuns, f.save); err != nil {
+	if _, err := Apply(context.Background(), f, cfg, l, false, nothingRuns, f.save); err != nil {
 		t.Fatal(err)
 	}
 	// The originals are saved before anything is overwritten, and the
@@ -345,7 +346,7 @@ func TestSavePoints(t *testing.T) {
 		"switch 1, upload 2, write29 1, type 3, save, "+
 		"switch 0")
 	n := len(f.calls)
-	if _, err := Restore(f, l, 1, f.save); err != nil {
+	if _, err := Restore(context.Background(), f, l, 1, f.save); err != nil {
 		t.Fatal(err)
 	}
 	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, write29 1, write25 1, save")
@@ -357,14 +358,14 @@ func TestSaveErrorStops(t *testing.T) {
 	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "One")))
 	disk := errors.New("disk full")
 	failing := func() error { f.record("save"); return disk }
-	if _, err := Apply(f, cfg, l, false, nothingRuns, failing); !errors.Is(err, disk) {
+	if _, err := Apply(context.Background(), f, cfg, l, false, nothingRuns, failing); !errors.Is(err, disk) {
 		t.Fatalf("err = %v, want the save error", err)
 	}
 	checkCalls(t, f, 0, "notify, switch 1, read29 1, read25 1, save")
 
 	mustApply(t, f, cfg, l, false)
 	n := len(f.calls)
-	if _, err := Restore(f, l, 1, failing); !errors.Is(err, disk) {
+	if _, err := Restore(context.Background(), f, l, 1, failing); !errors.Is(err, disk) {
 		t.Fatalf("Restore err = %v, want the save error", err)
 	}
 	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, write29 1, write25 1, save")
@@ -386,7 +387,7 @@ func TestEnableNotificationsIsFirst(t *testing.T) {
 		t.Fatalf("calls of Apply %v, want notify first", f.calls)
 	}
 	g := newFake(t)
-	if _, err := Restore(g, l, 1, nil); err != nil {
+	if _, err := Restore(context.Background(), g, l, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(g.calls) == 0 || g.calls[0] != "notify" {
@@ -662,7 +663,7 @@ func TestFinalProfile(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			f := newFake(t)
-			if _, err := Apply(f, c.cfg, &ledger.Ledger{}, false, c.running, nil); err != nil {
+			if _, err := Apply(context.Background(), f, c.cfg, &ledger.Ledger{}, false, c.running, nil); err != nil {
 				t.Fatal(err)
 			}
 			if f.active != c.want {
@@ -681,7 +682,7 @@ func TestOneSwitchForOneProfile(t *testing.T) {
 		full bool
 	}{{"first apply", false}, {"unchanged apply", false}, {"full apply", true}} {
 		n := len(f.calls)
-		if _, err := Apply(f, cfg, l, c.full, nothingRuns, nil); err != nil {
+		if _, err := Apply(context.Background(), f, cfg, l, c.full, nothingRuns, nil); err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
 		if got := f.switches(n); got != 1 {
@@ -689,7 +690,7 @@ func TestOneSwitchForOneProfile(t *testing.T) {
 		}
 	}
 	n := len(f.calls)
-	if _, err := Restore(f, l, 1, nil); err != nil {
+	if _, err := Restore(context.Background(), f, l, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.switches(n); got != 1 {
@@ -726,7 +727,7 @@ func TestSwitchAgainAfterAProfileChange(t *testing.T) {
 					c.input(f)
 				}
 			}
-			if _, err := Apply(f, cfg, &ledger.Ledger{}, false, nothingRuns, nil); err != nil {
+			if _, err := Apply(context.Background(), f, cfg, &ledger.Ledger{}, false, nothingRuns, nil); err != nil {
 				t.Fatal(err)
 			}
 			checkCalls(t, f, 0, c.want)
@@ -764,7 +765,7 @@ func TestRenderFailsBeforeKeyboard(t *testing.T) {
 				prof(1, "desktop.toml", "", btn(3, "One")),
 				prof(2, "sc.toml", "", c.b),
 			)
-			_, err := Apply(f, cfg, l, false, nothingRuns, f.save)
+			_, err := Apply(context.Background(), f, cfg, l, false, nothingRuns, f.save)
 			if err == nil {
 				t.Fatal("no error")
 			}
@@ -790,7 +791,7 @@ func TestFailedRenderKeepsLedger(t *testing.T) {
 	good := prof(1, "sc.toml", "", btn(3, "One"))
 	mustApply(t, f, cfgOf(good), l, false)
 	bad := prof(2, "other.toml", "", btn(4, "A title far too long to fit on one button at any size"))
-	if _, err := Apply(f, cfgOf(good, bad), l, true, nothingRuns, nil); err == nil {
+	if _, err := Apply(context.Background(), f, cfgOf(good, bad), l, true, nothingRuns, nil); err == nil {
 		t.Fatal("no error")
 	}
 	n := len(f.calls)
@@ -806,7 +807,7 @@ func TestTooManyPicturesFailBeforeKeyboard(t *testing.T) {
 	for i := 0; i <= ledger.MaxSlot; i++ {
 		bs = append(bs, btn(i, fmt.Sprintf("B%d", i)))
 	}
-	_, err := Apply(f, cfgOf(prof(1, "sc.toml", "", bs...)), &ledger.Ledger{}, false, nothingRuns, nil)
+	_, err := Apply(context.Background(), f, cfgOf(prof(1, "sc.toml", "", bs...)), &ledger.Ledger{}, false, nothingRuns, nil)
 	if !errors.Is(err, ledger.ErrNoSlot) {
 		t.Fatalf("err = %v, want ErrNoSlot", err)
 	}
@@ -825,7 +826,7 @@ func TestUploadLeftOpenStops(t *testing.T) {
 	}
 	l := &ledger.Ledger{}
 	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(4, "Two"), btn(5, "Three")))
-	rep, err := Apply(f, cfg, l, false, nothingRuns, nil)
+	rep, err := Apply(context.Background(), f, cfg, l, false, nothingRuns, nil)
 	if !errors.Is(err, keyboard.ErrUploadLeftOpen) {
 		t.Fatalf("err = %v, want ErrUploadLeftOpen", err)
 	}
@@ -862,7 +863,7 @@ func TestFailedUploadKeepsPositionManaged(t *testing.T) {
 	l := &ledger.Ledger{}
 	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(4, "Two"))), l, false)
 	f.uploadErr = func(byte) error { return keyboard.ErrOpenerRefused }
-	_, err := Apply(f, cfgOf(prof(1, "sc.toml", "", btn(3, "Uno"), btn(4, "Two"))), l, false, nothingRuns, nil)
+	_, err := Apply(context.Background(), f, cfgOf(prof(1, "sc.toml", "", btn(3, "Uno"), btn(4, "Two"))), l, false, nothingRuns, nil)
 	if !errors.Is(err, keyboard.ErrOpenerRefused) {
 		t.Fatalf("err = %v, want ErrOpenerRefused", err)
 	}
@@ -881,7 +882,7 @@ func TestFailedUploadIntoSharedSlotIsNotTrusted(t *testing.T) {
 	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "Same"), btn(5, "Same")))
 	mustApply(t, f, cfg, l, false)
 	f.uploadErr = func(byte) error { return keyboard.ErrOpenerRefused }
-	if _, err := Apply(f, cfg, l, true, nothingRuns, nil); !errors.Is(err, keyboard.ErrOpenerRefused) {
+	if _, err := Apply(context.Background(), f, cfg, l, true, nothingRuns, nil); !errors.Is(err, keyboard.ErrOpenerRefused) {
 		t.Fatalf("err = %v, want ErrOpenerRefused", err)
 	}
 	// Slot 1's content is unknown now: the next apply sends it again.
@@ -914,7 +915,7 @@ func TestSwitchFailureBeforeUploadIsNotTrusted(t *testing.T) {
 		}
 	}
 	n := len(f.calls)
-	if _, err := Apply(f, cfg, l, true, nothingRuns, nil); !errors.Is(err, timeout) {
+	if _, err := Apply(context.Background(), f, cfg, l, true, nothingRuns, nil); !errors.Is(err, timeout) {
 		t.Fatalf("err = %v, want the switch error", err)
 	}
 	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, switch 1")
@@ -999,7 +1000,7 @@ func TestKeyboardErrorStops(t *testing.T) {
 	// Without notifications the fake refuses the switch, as the keyboard
 	// would not report it.
 	k := &noNotify{f}
-	_, err := Apply(k, cfgOf(prof(1, "sc.toml", "", btn(3, "One"))), l, false, nothingRuns, nil)
+	_, err := Apply(context.Background(), k, cfgOf(prof(1, "sc.toml", "", btn(3, "One"))), l, false, nothingRuns, nil)
 	if err == nil || !strings.Contains(err.Error(), "profile 1") {
 		t.Fatalf("err = %v", err)
 	}
@@ -1037,7 +1038,7 @@ func restoreSetup(t *testing.T, label string) (*fakeKB, *ledger.Ledger, ledger.O
 func TestRestore(t *testing.T) {
 	f, l, orig := restoreSetup(t, "Home")
 	before29, before25 := f.b29[2].Bytes(), f.b25[2].Bytes()
-	rep, err := Restore(f, l, 1, nil)
+	rep, err := Restore(context.Background(), f, l, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1075,7 +1076,7 @@ func TestRestore(t *testing.T) {
 
 func TestRestoreLabelFallback(t *testing.T) {
 	f, l, orig := restoreSetup(t, "bad\x01label")
-	rep, err := Restore(f, l, 1, nil)
+	rep, err := Restore(context.Background(), f, l, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1090,7 +1091,7 @@ func TestRestoreLabelFallback(t *testing.T) {
 
 func TestRestoreWithoutOwners(t *testing.T) {
 	f := newFake(t)
-	rep, err := Restore(f, &ledger.Ledger{}, 1, nil)
+	rep, err := Restore(context.Background(), f, &ledger.Ledger{}, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1108,7 +1109,7 @@ func TestRestoreRefusesUnknownProfile(t *testing.T) {
 	if _, _, err := l.Assign(ledger.Owner{Profile: 5, Page: 1, Position: 3}, "h"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Restore(f, l, 5, nil); err == nil {
+	if _, err := Restore(context.Background(), f, l, 5, nil); err == nil {
 		t.Fatal("profile 5 restored")
 	}
 	if len(f.calls) != 0 {
@@ -1122,10 +1123,154 @@ func TestRestoreRefusesForeignPosition(t *testing.T) {
 	if _, _, err := l.Assign(ledger.Owner{Profile: 1, Page: 2, Position: 3}, "h"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Restore(f, l, 1, nil); err == nil {
+	if _, err := Restore(context.Background(), f, l, 1, nil); err == nil {
 		t.Fatal("a page 2 position was restored")
 	}
 	if len(f.calls) != 0 {
 		t.Fatalf("keyboard calls: %v", f.calls)
 	}
+}
+
+// cancelAt returns a context that the fake cancels as soon as it records
+// the given call.
+func cancelAt(f *fakeKB, call string) context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	f.t.Cleanup(cancel)
+	f.hook = func(c string) {
+		if c == call {
+			cancel()
+		}
+	}
+	return ctx
+}
+
+func wantStopped(t *testing.T, err error) {
+	t.Helper()
+	if !errors.Is(err, ErrStopped) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want ErrStopped carrying the cancellation", err)
+	}
+}
+
+func TestStopAfterTheFirstPicture(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(4, "Two"), btn(5, "Three")))
+	rep, err := Apply(cancelAt(f, "upload 1"), f, cfg, l, false, nothingRuns, f.save)
+	wantStopped(t, err)
+	// The picture being sent is finished, no other is started, and the
+	// position that shows it is written.
+	checkCalls(t, f, 0, "notify, switch 1, read29 1, read25 1, save, upload 1, write29 1, type 3")
+	shows(t, f, 1, 3, "One")
+	for _, pos := range []int{4, 5} {
+		checkEntry(t, f, 1, pos, keyEntry(pos))
+		checkType(t, f, 1, pos, keyType(pos))
+		if _, ok := l.SlotOf(own(1, pos)); ok {
+			t.Errorf("position %d, not reached, holds a slot", pos)
+		}
+	}
+	sameOwners(t, "Uploaded", rep.Uploaded, []ledger.Owner{own(1, 3)})
+
+	// The ledger knows what is on the keyboard: the next apply sends only
+	// the pictures that were not sent.
+	f.hook = nil
+	n := len(f.calls)
+	rep = mustApply(t, f, cfg, l, false)
+	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, upload 2, upload 3, write29 1, type 4, type 5")
+	sameOwners(t, "Skipped", rep.Skipped, []ledger.Owner{own(1, 3)})
+	shows(t, f, 1, 3, "One")
+	shows(t, f, 1, 4, "Two")
+	shows(t, f, 1, 5, "Three")
+}
+
+func TestStopBetweenProfiles(t *testing.T) {
+	cfg := cfgOf(prof(0, "desktop.toml", "", btn(0, "Zero")), prof(1, "sc.toml", "", btn(3, "One")))
+	cases := []struct {
+		name, at, want string
+	}{
+		{"first pass", "read25 0", "notify, switch 0, read29 0, read25 0"},
+		{"second pass", "type 0", "notify, switch 0, read29 0, read25 0, switch 1, read29 1, read25 1, " +
+			"switch 0, upload 1, write29 0, type 0"},
+		{"before the final switch", "type 3", "notify, switch 0, read29 0, read25 0, switch 1, read29 1, read25 1, " +
+			"switch 0, upload 1, write29 0, type 0, switch 1, upload 2, write29 1, type 3"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFake(t)
+			l := &ledger.Ledger{}
+			_, err := Apply(cancelAt(f, c.at), f, cfg, l, false, nothingRuns, nil)
+			wantStopped(t, err)
+			checkCalls(t, f, 0, c.want)
+			// The next apply finishes the work.
+			f.hook = nil
+			mustApply(t, f, cfg, l, false)
+			shows(t, f, 0, 0, "Zero")
+			shows(t, f, 1, 3, "One")
+			if f.active != 0 {
+				t.Errorf("profile %d is active, want 0", f.active)
+			}
+		})
+	}
+}
+
+func TestStopBeforeTheKeyboard(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "One")))
+	mustApply(t, f, cfg, l, false)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	n := len(f.calls)
+	_, err := Apply(ctx, f, cfg, l, true, nothingRuns, f.save)
+	wantStopped(t, err)
+	if got := f.since(n); got != "" {
+		t.Fatalf("calls after the stop: %s", got)
+	}
+	// A stopped --full apply has not made the ledger forget the pictures.
+	n = len(f.calls)
+	mustApply(t, f, cfg, l, false)
+	if got := f.since(n); strings.Contains(got, "upload") {
+		t.Fatalf("pictures sent again: %s", got)
+	}
+}
+
+// A slot sent before the stop that a position not yet written shows is sent
+// again by the next apply, which redraws every position that shows it.
+func TestStopDistrustsSlotsOfPendingPositions(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  *layout.Config
+		at   string
+		want string
+	}{
+		{"same profile", cfgOf(prof(1, "sc.toml", "", btn(3, "Same"), btn(5, "Same"))), "upload 1",
+			"notify, switch 1, read29 1, read25 1, upload 1, type 3, type 5"},
+		{"later profile", cfgOf(prof(0, "desktop.toml", "", btn(0, "X")), prof(1, "sc.toml", "", btn(3, "X"))), "type 0",
+			"notify, switch 0, read29 0, read25 0, switch 1, read29 1, read25 1, " +
+				"switch 0, upload 1, type 0, switch 1, type 3, switch 0"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFake(t)
+			l := &ledger.Ledger{}
+			mustApply(t, f, c.cfg, l, false)
+			_, err := Apply(cancelAt(f, c.at), f, c.cfg, l, true, nothingRuns, nil)
+			wantStopped(t, err)
+			f.hook = nil
+			n := len(f.calls)
+			mustApply(t, f, c.cfg, l, false)
+			checkCalls(t, f, n, c.want)
+		})
+	}
+}
+
+func TestRestoreStopsBeforeTheKeyboard(t *testing.T) {
+	f, l, _ := restoreSetup(t, "Home")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := Restore(ctx, f, l, 1, nil)
+	wantStopped(t, err)
+	if len(f.calls) != 0 {
+		t.Fatalf("keyboard calls: %v", f.calls)
+	}
+	sameOwners(t, "Owners(1)", l.Owners(1), []ledger.Owner{own(1, 3), own(1, 4)})
 }
