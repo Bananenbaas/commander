@@ -57,7 +57,7 @@ func Take(dir string) (Word, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	if err := removeRetry(path); err != nil {
 		return "", false, err
 	}
 	switch w := Word(strings.TrimSpace(string(data))); w {
@@ -65,6 +65,22 @@ func Take(dir string) (Word, bool, error) {
 		return w, true, nil
 	}
 	return "", false, nil
+}
+
+// removeRetry removes path, trying again a few times when the removal fails
+// for a moment (on Windows another program may still have the file open). A
+// file that is already gone is not an error.
+func removeRetry(path string) error {
+	var err error
+	for i := 0; i < 5; i++ {
+		if i > 0 {
+			time.Sleep(20 * time.Millisecond)
+		}
+		if err = os.Remove(path); err == nil || os.IsNotExist(err) {
+			return nil
+		}
+	}
+	return err
 }
 
 // Clear removes a request in dir, if there is one.
@@ -102,11 +118,27 @@ func Send(dir string, w Word, wait time.Duration, held func(string) (bool, error
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	// Withdraw the request, but only if it is still the one written here.
-	if data, err := os.ReadFile(path); err == nil && Word(strings.TrimSpace(string(data))) == w {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return false, err
-		}
+	return withdraw(path, w)
+}
+
+// withdraw removes the request at path when it is still the word w written
+// here. A request that has vanished meanwhile was taken, which counts as
+// taken; one holding another word is left alone.
+func withdraw(path string, w Word) (taken bool, err error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if Word(strings.TrimSpace(string(data))) != w {
+		return false, nil
+	}
+	if err := os.Remove(path); os.IsNotExist(err) {
+		return true, nil
+	} else if err != nil {
+		return false, err
 	}
 	return false, nil
 }

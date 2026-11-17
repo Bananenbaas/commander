@@ -140,3 +140,32 @@ func TestSendTimeoutWithdraws(t *testing.T) {
 		t.Fatalf("request left behind: %v", n)
 	}
 }
+
+func TestWithdraw(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, FileName)
+	// Gone already: the loop took it.
+	if taken, err := withdraw(path, Stop); !taken || err != nil {
+		t.Fatalf("missing file: %v, %v", taken, err)
+	}
+	// Still ours: removed, not taken.
+	if err := Write(dir, Stop); err != nil {
+		t.Fatal(err)
+	}
+	if taken, err := withdraw(path, Stop); taken || err != nil {
+		t.Fatalf("own file: %v, %v", taken, err)
+	}
+	if n := names(t, dir); len(n) != 0 {
+		t.Fatalf("left %v", n)
+	}
+	// Someone else's request stays.
+	if err := Write(dir, Reload); err != nil {
+		t.Fatal(err)
+	}
+	if taken, err := withdraw(path, Stop); taken || err != nil {
+		t.Fatalf("other file: %v, %v", taken, err)
+	}
+	if n := names(t, dir); len(n) != 1 {
+		t.Fatalf("other request removed: %v", n)
+	}
+}
