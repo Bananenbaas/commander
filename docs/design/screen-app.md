@@ -71,11 +71,11 @@ From `PROTOCOL.md`, "Application buttons" and the sections it links to:
 |---|---|
 | Picture | upload opener `a5 (0x40 + slot)`, 142 x 148 RGB565 little-endian followed by 142 x 148 one-byte alpha, framed in 4096-byte blocks as documented; every frame acknowledged |
 | Bind | report `0x29` of the profile: the position's entry `00 01 0b <slot> <label or 12 x 00>`, checksum recomputed |
-| Type | 200 ms later, report `0x35`: `35 0c 01 <position> 01 00 05 00 06 00 <sum16>`; the keyboard redraws that position |
-| Type table | report `0x25` of the profile, the whole page's types; Swarm II writes it 200 ms after `0x29` |
+| Type table | 200 ms later, report `0x25` of the profile, the whole page's types with the position's type `05` / `06`; the keyboard takes it over and answers with a full redraw `03 00 31 20` |
+| Type of one position | report `0x35` sets one position's type, but it names no profile and the keyboard queues it, so a later switch moves it to another profile; not used |
 | Notifications | report `0x0e` `0e 05 01 00 00`, once after every plug-in; it is lost on unplugging |
 | Tap | report `0x33` `33 01 <position> 05 00 00 01 <down>` plus notification `03 00 f1 01 <id16> <down> 00`, touch and release |
-| Profile | report `0x06` `06 04 <profile> 05` switches the active profile; notification `03 00 01 <profile>` reports any switch |
+| Profile | report `0x06` `06 04 <profile> 05` switches the active profile; notification `03 00 01 <profile>` reports any switch, but a switch to the profile that is already active is not confirmed |
 | Read | `05 <profile> <selector> 00`, then read report `0x05` (ready), then the block: `b9` for `0x29`, `b8` for `0x25`, `ba` for the profile names |
 
 Further constraints:
@@ -93,7 +93,9 @@ Further constraints:
   the `0x29` table has room for 35 entries and `0x25` for 38, and byte 2 of
   `0x35` / byte 1 of `0x33` have only ever been `01`.
 - **Writing to a profile that is not active is not measured.** Swarm II
-  switches to a profile with `0x06` before writing its tables.
+  switches to a profile with `0x06` before writing its tables. Type writes are
+  queued: nothing that may switch profile is sent before the full redraw that
+  follows a `0x25` write.
 - **The active profile cannot be read**; it is only reported when it changes.
 - **Taps carry no profile**, only position and kind.
 - **The top row** (positions 0–2) can be application buttons. Its original
@@ -263,8 +265,13 @@ First pass, for each profile:
 Second pass, for each profile with buttons:
 
 5. Assign slots; upload the pictures whose slot does not hold the same hash.
-6. Write `0x29` once with all changed entries; wait 200 ms; write `0x35` for
-   each changed position (that also makes the keyboard redraw it).
+6. Write `0x29` once with all changed entries; wait 200 ms; write the whole
+   `0x25` as read, with the managed positions set to `05` / `06` (restored
+   positions keep their originals, the rest is untouched). This is done also
+   when only a picture was sent again, to make the keyboard redraw it.
+7. Wait up to 5 s for the keyboard's full redraw `03 00 31 20`. Without it,
+   apply stops with an error and does not switch profile: the keyboard may
+   still hold the table and would apply it to the profile switched to.
 
 Finish on the profile that `run` would choose: the game's profile if its
 program is running, otherwise the desktop profile (the lowest managed profile
@@ -275,22 +282,27 @@ Within one apply or restore, a switch to the profile the keyboard last
 confirmed is not sent again, unless the input that has arrived since reports
 another profile (someone may have switched on the keyboard itself) or cannot
 be read.
-The first switch is always sent, as the active profile cannot be read.
+The first switch is always sent, as the active profile cannot be read, and it
+goes through another profile first (`(p + 1) mod 5`, then `p`): the keyboard
+does not confirm a switch to the profile that is already active. The same
+is done whenever the active profile is not known.
 
 ### Restore
 
 Writes the recorded original `0x29` entries, then — 200 ms later — the
 profile's `0x25` with the recorded original types and values, the way Swarm II
-writes it. Positions without a recorded original are emptied (type `00`). This
+writes it, and waits for the full redraw as apply does. Positions without a recorded original are emptied (type `00`). This
 path has not been replayed yet and must be tested before it is relied on.
 
 ### Run
 
 - Open the keyboard, write `0x0e`, wait for the `31` redraw.
-- Switch to the profile apply would finish on, so the active profile is known;
-  from then on track it from `03 00 01 <profile>`.
+- Switch to the profile apply would finish on, through another profile first
+  so that the switch is confirmed, and the active profile is known; from then
+  on track it from `03 00 01 <profile>`.
 - Every two seconds, check the programs named in `switch_when_running`: switch
   to that profile when one starts, back to the desktop profile when it ends.
+  No switch is sent when that profile is already active.
 - On a `0x33` touch: look up the button by active profile and position. Start
   its action (tap) or press its chord (hold). On release: release the hold
   chord. Taps on positions no layout manages are ignored, and so are touches
@@ -355,7 +367,7 @@ Alt). Linux: a uinput virtual keyboard.
 
 - Unit tests for every frame builder and the upload framing, against test
   vectors taken from the frames recorded in `PROTOCOL.md` (raw captures are
-  never committed): `0x35` and `0x29` checksums, the `0x06`/`0x0e`/`0x05`
+  never committed): `0x35`, `0x29` and `0x25` checksums, the `0x06`/`0x0e`/`0x05`
   frames, and the framing of a full 63,048-byte picture (1065 frames, block and
   frame sizes as documented).
 - Unit tests for picture encoding, layout parsing, action parsing and slot
@@ -369,7 +381,8 @@ Alt). Linux: a uinput virtual keyboard.
 In this order:
 
 1. The highest image slot.
-2. Writing `0x29` and `0x35` right after switching profile with `0x06`.
+2. Writing `0x29` and `0x25` right after switching profile with `0x06`. (A
+   `0x35` written before a switch lands on the profile switched to.)
 3. Restoring a position with `0x25`, top row included.
 4. How pages 2 and 3 are addressed — one capture of Swarm II putting a button
    on each.

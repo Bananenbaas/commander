@@ -771,7 +771,7 @@ pos 12-37   further entries, meaning unknown
 | `03` | key number (`0b` PRINT, `0c` SCR LK, `0d` BREAK, …) | a key | `0x35`, `0x25` |
 | `05` | `01` | a modifier on its own | `0x35` |
 | `05` | `02` | a macro | `0x35` |
-| `05` | `06` | an application | `0x25`; written as `0x35` from our own code |
+| `05` | `06` | an application | `0x25`; from our own code written as `0x35` and as `0x25` |
 | `39` | `00` | CPU temperature | `0x35` |
 | `3b`, `3e`, `48` | `00` | the top row's lock, snipping and speaker buttons; `48` is also byte 3 of the speaker's touch report | `0x25` |
 
@@ -1027,17 +1027,42 @@ SET_REPORT 0x0e                        notifications on
 
 | Finding | Status |
 |---|---|
-| `0x29` plus `0x35` turn any key position into an application button; `0x25` is not needed | **confirmed** (`32-convert-ins-slot3-1`, screen) |
+| `0x29` plus `0x35` turned a key position of the active profile into an application button; `0x25` was not needed there. With nothing sent afterwards this works, but `0x35` is queued and names no profile, so it is not a safe recipe: see "Type writes are queued" below | observed (`32-convert-ins-slot3-1`, screen) |
 | INS showed the new picture and its label at once; the `app3` button showed the same picture after the next full redraw: **positions can share a slot** | confirmed (screen) |
 | Taps on both are reported: `33 01 06 05 …` with `f1 … 62 12` for INS, `33 01 05 05 …` with `f1 … 61 12` for `app3` | **confirmed** |
 
-The full recipe for a button of our own, every step measured:
+The recipe for buttons of our own, every step measured:
 
-1. Upload the picture: `a5 4<slot>`, 142 x 148 RGB565 plus the alpha mask.
-2. `0x29`: the position's entry `00 01 0b <slot> <label, or twelve 00>`.
-3. Wait 200 ms, then `0x35`: `35 0c 01 <position> 01 00 05 00 06 00 <sum>`.
-4. Write `0x0e` once after plugging in; taps then arrive as `0x33` with the
-   position, and the host decides what they do.
+1. Write `0x0e` once after plugging in and wait for its `03 00 31 20` redraw;
+   taps then arrive as `0x33` with the position, and the host decides what
+   they do.
+2. Switch to the profile with `0x06` and wait for `03 00 01 <profile>`. If
+   the active profile is not known, switch to another profile first (see
+   below).
+3. Upload the picture: `a5 4<slot>`, 142 x 148 RGB565 plus the alpha mask.
+4. `0x29`: the profile's table with the position's entry
+   `00 01 0b <slot> <label, or twelve 00>`.
+5. Wait 200 ms, then the profile's whole `0x25` table, read before and with
+   the position's type set to `05` / `06`.
+6. Wait for the keyboard's full redraw `03 00 31 20 …` before sending
+   anything that could change the active profile.
+
+#### Type writes are queued; a switch to the active profile is not confirmed
+
+Measured with our own code (`37-kb7screen-apply-sc-1`,
+`38-copy-factory-to-desktop-1`, `38-copy-factory-to-desktop-2`):
+
+| Finding | Status |
+|---|---|
+| **Report `0x35` carries no profile and is queued by the keyboard.** Seven `0x35` frames sent within 2 ms were taken over one by one, from 80 ms to 2.7 s after sending, each answered by `03 00 31 01 <position>`. A `0x06` switch to another profile sent 10 ms after them made the queued type changes land on **that other profile**: the wrong profile was changed | observed (`37-kb7screen-apply-sc-1`) |
+| **A switch (`0x06`) to the profile that is already active is not confirmed**: no `03 00 01 <profile>` came within 5 s. Switching to another profile first and then to the target gives two confirmations | observed (`38-copy-factory-to-desktop-1`, `-2`) |
+| **A whole `0x25` table written from our own code is taken over** when sent at least 200 ms after the `0x29` write: profile 0's tables (`0x29`, then 200 ms, then `0x25`) were replaced, and the keyboard answered with one full redraw `03 00 31 20 …` about 0.2–2 s later | observed (`38-copy-factory-to-desktop-1`, `-2`) |
+
+So a profile's types are written as its whole `0x25` table, and nothing that
+may switch profile is sent before the `03 00 31 20` redraw that follows it.
+`0x35` is not used to set up buttons. Whether `0x25` is queued the same way, or
+written to the profile in its own byte 2, is not measured; waiting for the
+redraw covers both.
 
 #### Slots 4–9, the top row, and a second profile
 
@@ -1066,7 +1091,7 @@ SET_REPORT 0x06   06 04 00 05             -> 03 00 01 00, 03 00 31 20 …   prof
 | Slots 1–9 exist (`a5 41`–`a5 49`); slots 1–4 have been written from our own code. The highest slot is unknown | observed |
 | **Slots are numbered across profiles**: the first application on profile 1 got slot 9. Each profile has its own `0x29` and `0x25` tables, with the profile in byte 3 of the `0x29` header and byte 2 of the `0x25` header | observed |
 | **The top row can hold application buttons**: the lock button (position 0) became one, showing its picture without a tile | observed (screen) |
-| **The host can switch the active profile**: `SET_REPORT 0x06`, `06 04 <profile> 05`. The keyboard announces the switch as when the profile name is tapped | observed |
+| **The host can switch the active profile**: `SET_REPORT 0x06`, `06 04 <profile> 05`. The keyboard announces the switch as when the profile name is tapped, but not a switch to the profile that is already active (see "Type writes are queued" above) | observed |
 | An application button with slot `00` is drawn with the firmware's default "Open App" icon inside a tile | observed (screen) |
 | A picture whose alpha is zero everywhere shows only the label: Swarm II uploaded such a picture for `app4`, presumably failing to read that program's icon | observed (`a5 44` upload, screen) |
 | Swarm II cuts labels to ten characters (`app7`'s longer name) | observed |

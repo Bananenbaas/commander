@@ -33,6 +33,22 @@ and the project uses [Semantic Versioning](https://semver.org/).
   profile: Swarm II writes every selector with `00` to `04` at startup
   (`02-swarm-start-1`, `02-swarm-start-2`), and `05 01 b9 00` / `05 01 b8 00`
   read profile 1's tables (`34-read-profile-1`).
+- `kb7screen apply` could change the wrong profile. It set each position's
+  type with report `0x35`, which names no profile and which the keyboard
+  queues: a profile switch sent right after it made the queued changes land
+  on the profile switched to (`37-kb7screen-apply-sc-1`). `apply` and
+  `restore` now write each profile's whole `0x25` table and wait for the
+  keyboard's full redraw before anything else is sent.
+- A profile switch to the profile that is already active is not confirmed by
+  the keyboard, so `apply`, `restore` and `run` timed out when the keyboard
+  was already on the profile (`38-copy-factory-to-desktop-1`). Where the
+  active profile is not known they now switch to another profile first; `run`
+  sends no switch when a program starts or stops and its profile is already
+  active.
+- `PROTOCOL.md` gave `0x29` plus `0x35` as the recipe for an application
+  button. It now records that `0x35` is queued and names no profile, that a
+  switch to the active profile is not confirmed, and that a whole `0x25` table
+  from our own code is taken over with a full redraw.
 
 ### Added
 - `kb7screen`, a Go program in `screen/` that puts own buttons (built-in style

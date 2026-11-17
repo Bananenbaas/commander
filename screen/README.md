@@ -157,8 +157,12 @@ Key names are not case sensitive:
 `apply` renders every picture before it touches the keyboard, so a bad file or
 a title that does not fit stops it before anything is sent. It then reads each
 profile's tables, records what the managed positions held, uploads the pictures
-that are not yet in their slots and writes the button tables. When it
-succeeds, it ends on the profile that `run` would choose: the one whose program
+that are not yet in their slots and writes the button tables. Each profile's
+tables are written whole, and `apply` waits until the keyboard has redrawn its
+screen before it switches to another profile: the keyboard takes the tables
+over some time after they are sent, and a switch before that could change the
+wrong profile. If the redraw does not come within 5 s, `apply` stops with an
+error; running it again writes the tables again. When it succeeds, it ends on the profile that `run` would choose: the one whose program
 is running, otherwise the desktop profile.
 
 The desktop profile is the lowest profile whose layout has no
@@ -169,8 +173,12 @@ left to the keyboard.
 
 `run` waits for the keyboard, enables its notifications, switches to the
 expected profile and then carries out the touches of buttons it manages.
-Every two seconds it checks the programs named in `switch_when_running` and
-switches profile when one starts or ends. Only touches of application buttons
+The keyboard does not confirm a switch to the profile that is already active,
+so where the active profile is not known (the first switch of `apply` and
+`restore`, and when `run` connects) the switch goes through another profile
+first. Every two seconds `run` checks the programs named in
+`switch_when_running` and switches profile when one starts or ends, unless
+that profile is already active. Only touches of application buttons
 act; a position that the keyboard shows as something else is left to the
 keyboard. If the keyboard is unplugged, `run` waits for it and sets it up
 again.
