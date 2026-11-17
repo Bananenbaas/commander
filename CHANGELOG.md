@@ -55,8 +55,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
   block with a stack of effects (`static`, `fixed`, `breathing`, `wave`,
   `ripple`, `state`), each declaring its own settings, which `run` streams to
   the LEDs. `run` reads the brightness at start and after a profile switch,
-  scales the colours by it, follows the brightness notifications and the RGB
-  button, and ends with a rest frame. Buttons can flip a lighting state with
+  scales the colours by the brightness notifications, keeps streaming while
+  the RGB button has the LEDs off, and ends with a rest frame. Buttons can flip a lighting state with
   `state = "name"`, with or without an action. Hardware acceptance is pending:
   the brightness handling, the RGB button and the start-up brightness read have
   not been tried on the keyboard yet.

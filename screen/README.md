@@ -195,7 +195,8 @@ acts on the new buttons.
 A second `run` for the same folder refuses to start, and `apply` and `restore`
 refuse while `run` holds the lock, because its lighting stream and the picture
 uploads share the keyboard's interface 1. The system frees the lock when `run`
-ends, however it ends.
+ends, however it ends. The lock covers one configuration folder: `apply` with a
+different folder while `run` streams is not refused.
 
 ## Lighting
 
@@ -390,7 +391,9 @@ the RGB button have not been tried on the keyboard yet.
 
 No frame is sent for 2.5 seconds after `run` has enabled the notifications, as
 the keyboard does not answer on interface 1 for about 2 seconds then. A slow
-or missed frame is skipped, never queued. When the stream stops, because the
+or missed frame is skipped, never queued. After a missed acknowledgement the
+stream pauses for 2.5 seconds, and a stalled write closes and reopens the
+keyboard. When the stream stops, because the
 active profile has no `[light]`, Swarm II started, or `run` ends, `run` sends one
 last frame of the profile's layers at their starting point (no ripple, states
 off) after the held keys are released, so no half-finished ripple or stale
@@ -460,6 +463,9 @@ SUBSYSTEM=="input", ATTRS{idVendor}=="10f5", ATTRS{idProduct}=="5038", TAG+="uac
 Warning: this rule lets every program running as the logged-in user read the
 KB7's key presses, so a program that logs keys could read this keyboard. Only
 add it if you want the reactive lighting effects.
+
+On Linux the key reader stops after the keyboard is unplugged, until `run`
+restarts. Linux key reading has not been run on hardware.
 
 ## Tests
 

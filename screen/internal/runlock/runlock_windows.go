@@ -6,6 +6,7 @@ package runlock
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 
 	"golang.org/x/sys/windows"
@@ -23,10 +24,18 @@ func Acquire(dir string) (release func() error, err error) {
 		0, nil, windows.OPEN_ALWAYS,
 		windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_DELETE_ON_CLOSE, 0)
 	if err != nil {
-		if errors.Is(err, windows.ERROR_SHARING_VIOLATION) || errors.Is(err, windows.ERROR_ACCESS_DENIED) {
-			return nil, ErrHeld
-		}
-		return nil, err
+		return nil, mapCreateError(filepath.Join(dir, FileName), err)
 	}
 	return func() error { return windows.CloseHandle(h) }, nil
+}
+
+// mapCreateError turns the error of creating the lock file into ErrHeld when
+// another process has it open. Any other failure, such as an access denied
+// error for an unwritable folder or a lock file still pending deletion, is
+// returned with its cause.
+func mapCreateError(path string, err error) error {
+	if errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
+		return ErrHeld
+	}
+	return fmt.Errorf("cannot create the lock file %s: %w (is the folder writable?)", path, err)
 }

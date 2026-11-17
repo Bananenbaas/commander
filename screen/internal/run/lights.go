@@ -74,6 +74,13 @@ func sameChord(a, b action.Chord) bool {
 	return true
 }
 
+// keysStopped notes that the key channel closed. It is called once, as the
+// channel is no longer read afterwards.
+func (l *loop) keysStopped() {
+	l.keys = nil
+	l.logf("key input stopped; ripple and key toggles are off until run restarts")
+}
+
 // drainKeys passes the key events waiting on the channel to the engine,
 // without waiting for more.
 func (l *loop) drainKeys() {
@@ -81,7 +88,7 @@ func (l *loop) drainKeys() {
 		select {
 		case ev, ok := <-l.keys:
 			if !ok {
-				l.keys = nil
+				l.keysStopped()
 				return
 			}
 			l.eng.Key(ev.Key, ev.Down, ev.At)
@@ -111,7 +118,7 @@ func (l *loop) idle(ctx context.Context, d time.Duration) {
 			return
 		case ev, ok := <-l.keys: // never ready once l.keys is nil
 			if !ok {
-				l.keys = nil
+				l.keysStopped()
 				continue
 			}
 			l.eng.Key(ev.Key, ev.Down, ev.At)
