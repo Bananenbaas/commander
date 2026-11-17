@@ -238,6 +238,19 @@ Reload them with `sudo udevadm control --reload && sudo udevadm trigger`, and
 make sure the `uinput` module is loaded. The Linux side builds and passes its
 tests but has not been measured on a keyboard yet; treat it as untested.
 
+Lighting that reacts to key presses reads the KB7's own key events from
+`/dev/input/event*` (read only, nothing is grabbed, and only 64-bit Linux is
+supported). That needs one more, optional rule in its own file:
+
+```
+# /etc/udev/rules.d/71-kb7screen-keys.rules
+SUBSYSTEM=="input", ATTRS{idVendor}=="10f5", ATTRS{idProduct}=="5038", TAG+="uaccess"
+```
+
+Warning: this rule lets every program running as the logged-in user read the
+KB7's key presses, so a program that logs keys could read this keyboard. Only
+add it if you want the reactive lighting effects.
+
 ## Tests
 
 ```sh
