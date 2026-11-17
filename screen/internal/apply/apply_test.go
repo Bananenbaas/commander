@@ -31,6 +31,7 @@ type fakeKB struct {
 	notified  bool
 	calls     []string
 	uploadErr func(slot byte) error
+	switchErr func(p byte) error
 }
 
 var (
@@ -88,6 +89,12 @@ func (f *fakeKB) record(format string, args ...any) {
 
 func (f *fakeKB) since(n int) string { return strings.Join(f.calls[n:], ", ") }
 
+// save records the caller's ledger save among the keyboard calls.
+func (f *fakeKB) save() error {
+	f.record("save")
+	return nil
+}
+
 func (f *fakeKB) EnableNotifications() error {
 	f.record("notify")
 	f.notified = true
@@ -98,6 +105,11 @@ func (f *fakeKB) SwitchProfile(p byte) error {
 	f.record("switch %d", p)
 	if !f.notified {
 		return errors.New("fake: no profile notification without 0x0e")
+	}
+	if f.switchErr != nil {
+		if err := f.switchErr(p); err != nil {
+			return err
+		}
 	}
 	f.active = int(p)
 	return nil
@@ -179,7 +191,7 @@ func nothingRuns(string) bool { return false }
 
 func mustApply(t *testing.T, kb Keyboard, cfg *layout.Config, l *ledger.Ledger, full bool) Report {
 	t.Helper()
-	rep, err := Apply(kb, cfg, l, full, nothingRuns)
+	rep, err := Apply(kb, cfg, l, full, nothingRuns, nil)
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -206,6 +218,13 @@ func sameOwners(t *testing.T, what string, got, want []ledger.Owner) {
 	}
 }
 
+func checkCalls(t *testing.T, f *fakeKB, from int, want string) {
+	t.Helper()
+	if got := f.since(from); got != want {
+		t.Fatalf("calls:\n got %s\nwant %s", got, want)
+	}
+}
+
 func checkEntry(t *testing.T, f *fakeKB, p byte, pos int, want proto.Entry29) {
 	t.Helper()
 	if got := f.b29[p].Entry(pos); got != want {
@@ -220,6 +239,20 @@ func checkType(t *testing.T, f *fakeKB, p byte, pos int, want proto.TypeEntry) {
 	}
 }
 
+// shows checks that a position is an application button whose slot holds the
+// rendered picture with the given title, and returns the slot.
+func shows(t *testing.T, f *fakeKB, p byte, pos int, title string) byte {
+	t.Helper()
+	e := f.b29[p].Entry(pos)
+	if e != proto.AppEntry(e.Slot, "") || e.Slot == 0 {
+		t.Fatalf("profile %d position %d entry = %+v, not an application button", p, pos, e)
+	}
+	if !bytes.Equal(f.slots[e.Slot], rendered(t, title)) {
+		t.Fatalf("profile %d position %d shows slot %d, which does not hold %q", p, pos, e.Slot, title)
+	}
+	return e.Slot
+}
+
 func TestApplyOrder(t *testing.T) {
 	f := newFake(t)
 	l := &ledger.Ledger{}
@@ -229,13 +262,11 @@ func TestApplyOrder(t *testing.T) {
 	)
 	rep := mustApply(t, f, cfg, l, false)
 
-	want := "notify, " +
-		"switch 0, read29 0, read25 0, upload 1, write29 0, type 0, " +
-		"switch 1, read29 1, read25 1, upload 2, upload 3, write29 1, type 3, type 4, " +
-		"switch 0"
-	if got := f.since(0); got != want {
-		t.Fatalf("calls:\n got %s\nwant %s", got, want)
-	}
+	checkCalls(t, f, 0, "notify, "+
+		"switch 0, read29 0, read25 0, switch 1, read29 1, read25 1, "+
+		"switch 0, upload 1, write29 0, type 0, "+
+		"switch 1, upload 2, upload 3, write29 1, type 3, type 4, "+
+		"switch 0")
 	checkEntry(t, f, 0, 0, proto.AppEntry(1, ""))
 	checkEntry(t, f, 1, 3, proto.AppEntry(2, ""))
 	checkEntry(t, f, 1, 4, proto.AppEntry(3, ""))
@@ -251,6 +282,49 @@ func TestApplyOrder(t *testing.T) {
 	sameOwners(t, "Uploaded", rep.Uploaded, []ledger.Owner{own(0, 0), own(1, 3), own(1, 4)})
 	sameOwners(t, "Skipped", rep.Skipped, nil)
 	sameOwners(t, "Restored", rep.Restored, nil)
+}
+
+func TestSavePoints(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	cfg := cfgOf(
+		prof(0, "desktop.toml", "", btn(0, "Zero")),
+		prof(1, "sc.toml", "", btn(3, "One")),
+	)
+	if _, err := Apply(f, cfg, l, false, nothingRuns, f.save); err != nil {
+		t.Fatal(err)
+	}
+	// The originals are saved before anything is overwritten, and the
+	// slots after every profile.
+	checkCalls(t, f, 0, "notify, "+
+		"switch 0, read29 0, read25 0, switch 1, read29 1, read25 1, save, "+
+		"switch 0, upload 1, write29 0, type 0, save, "+
+		"switch 1, upload 2, write29 1, type 3, save, "+
+		"switch 0")
+	n := len(f.calls)
+	if _, err := Restore(f, l, 1, f.save); err != nil {
+		t.Fatal(err)
+	}
+	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, write29 1, write25 1, save")
+}
+
+func TestSaveErrorStops(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "One")))
+	disk := errors.New("disk full")
+	failing := func() error { f.record("save"); return disk }
+	if _, err := Apply(f, cfg, l, false, nothingRuns, failing); !errors.Is(err, disk) {
+		t.Fatalf("err = %v, want the save error", err)
+	}
+	checkCalls(t, f, 0, "notify, switch 1, read29 1, read25 1, save")
+
+	mustApply(t, f, cfg, l, false)
+	n := len(f.calls)
+	if _, err := Restore(f, l, 1, failing); !errors.Is(err, disk) {
+		t.Fatalf("Restore err = %v, want the save error", err)
+	}
+	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, write29 1, write25 1, save")
 }
 
 func TestLabelIsWritten(t *testing.T) {
@@ -269,7 +343,7 @@ func TestEnableNotificationsIsFirst(t *testing.T) {
 		t.Fatalf("calls of Apply %v, want notify first", f.calls)
 	}
 	g := newFake(t)
-	if _, err := Restore(g, l, 1); err != nil {
+	if _, err := Restore(g, l, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(g.calls) == 0 || g.calls[0] != "notify" {
@@ -284,9 +358,7 @@ func TestUnchangedSecondApply(t *testing.T) {
 	mustApply(t, f, cfg, l, false)
 	n := len(f.calls)
 	rep := mustApply(t, f, cfg, l, false)
-	if got, want := f.since(n), "notify, switch 1, read29 1, read25 1, switch 1"; got != want {
-		t.Fatalf("calls:\n got %s\nwant %s", got, want)
-	}
+	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, switch 1")
 	sameOwners(t, "Uploaded", rep.Uploaded, nil)
 	sameOwners(t, "Skipped", rep.Skipped, []ledger.Owner{own(1, 3), own(1, 4)})
 	if len(rep.Notes) != 0 {
@@ -301,10 +373,7 @@ func TestFullUploadsEverything(t *testing.T) {
 	mustApply(t, f, cfg, l, false)
 	n := len(f.calls)
 	rep := mustApply(t, f, cfg, l, true)
-	want := "notify, switch 1, read29 1, read25 1, upload 1, upload 2, type 3, type 4, switch 1"
-	if got := f.since(n); got != want {
-		t.Fatalf("calls:\n got %s\nwant %s", got, want)
-	}
+	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, switch 1, upload 1, upload 2, type 3, type 4, switch 1")
 	sameOwners(t, "Uploaded", rep.Uploaded, []ledger.Owner{own(1, 3), own(1, 4)})
 	// The ledger knows the pictures again afterwards.
 	n = len(f.calls)
@@ -319,15 +388,27 @@ func TestIdenticalPicturesShareSlot(t *testing.T) {
 	l := &ledger.Ledger{}
 	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "Same"), btn(5, "Same"), btn(4, "Other")))
 	rep := mustApply(t, f, cfg, l, false)
-	want := "notify, switch 1, read29 1, read25 1, upload 1, upload 2, write29 1, type 3, type 4, type 5, switch 1"
-	if got := f.since(0); got != want {
-		t.Fatalf("calls:\n got %s\nwant %s", got, want)
-	}
+	checkCalls(t, f, 0, "notify, switch 1, read29 1, read25 1, "+
+		"switch 1, upload 1, upload 2, write29 1, type 3, type 4, type 5, switch 1")
 	checkEntry(t, f, 1, 3, proto.AppEntry(1, ""))
 	checkEntry(t, f, 1, 4, proto.AppEntry(2, ""))
 	checkEntry(t, f, 1, 5, proto.AppEntry(1, ""))
 	sameOwners(t, "Uploaded", rep.Uploaded, []ledger.Owner{own(1, 3), own(1, 4)})
 	sameOwners(t, "Skipped", rep.Skipped, []ledger.Owner{own(1, 5)})
+}
+
+func TestSlotSharedAcrossProfilesIsRedrawn(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	cfg := cfgOf(prof(0, "desktop.toml", "", btn(0, "X")), prof(1, "sc.toml", "", btn(3, "X")))
+	mustApply(t, f, cfg, l, false)
+	checkEntry(t, f, 1, 3, proto.AppEntry(1, ""))
+	n := len(f.calls)
+	mustApply(t, f, cfg, l, true)
+	// Slot 1 is sent once, in profile 0; profile 1 shows it too and is
+	// redrawn.
+	checkCalls(t, f, n, "notify, switch 0, read29 0, read25 0, switch 1, read29 1, read25 1, "+
+		"switch 0, upload 1, type 0, switch 1, type 3, switch 0")
 }
 
 // swarmEntry is what Swarm II leaves at a position it does not know.
@@ -343,10 +424,7 @@ func TestPositionChangedBySwarm(t *testing.T) {
 	}
 	n := len(f.calls)
 	rep := mustApply(t, f, cfg, l, false)
-	want := "notify, switch 1, read29 1, read25 1, upload 1, write29 1, type 3, switch 1"
-	if got := f.since(n); got != want {
-		t.Fatalf("calls:\n got %s\nwant %s", got, want)
-	}
+	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, switch 1, upload 1, write29 1, type 3, switch 1")
 	checkEntry(t, f, 1, 3, proto.AppEntry(1, ""))
 	sameOwners(t, "Uploaded", rep.Uploaded, []ledger.Owner{own(1, 3)})
 	sameOwners(t, "Skipped", rep.Skipped, []ledger.Owner{own(1, 4)})
@@ -367,11 +445,26 @@ func TestPositionChangedBySwarmSharedSlot(t *testing.T) {
 	mustApply(t, f, cfg, l, false)
 	// The slot may have been reused, so it is sent again once, and both
 	// positions that show it are redrawn.
-	want := "notify, switch 1, read29 1, read25 1, upload 1, write29 1, type 3, type 5, switch 1"
-	if got := f.since(n); got != want {
-		t.Fatalf("calls:\n got %s\nwant %s", got, want)
-	}
+	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, switch 1, upload 1, write29 1, type 3, type 5, switch 1")
 	checkEntry(t, f, 1, 5, proto.AppEntry(1, ""))
+}
+
+func TestSharedSlotIsNotTakenFromAnotherProfile(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	mustApply(t, f, cfgOf(prof(0, "desktop.toml", "", btn(0, "X")), prof(1, "sc.toml", "", btn(3, "X"))), l, false)
+	if err := f.b29[1].SetEntry(3, swarmEntry); err != nil {
+		t.Fatal(err)
+	}
+	n := len(f.calls)
+	mustApply(t, f, cfgOf(prof(0, "desktop.toml", "", btn(0, "X")), prof(1, "sc.toml", "", btn(3, "Y"))), l, false)
+	if x, y := shows(t, f, 0, 0, "X"), shows(t, f, 1, 3, "Y"); x == y {
+		t.Fatalf("both positions show slot %d", x)
+	}
+	// Profile 0 keeps slot 1 and, as its content is no longer trusted, sends
+	// it again; profile 1's new picture gets a slot of its own.
+	checkCalls(t, f, n, "notify, switch 0, read29 0, read25 0, switch 1, read29 1, read25 1, "+
+		"switch 0, upload 1, type 0, switch 1, upload 2, write29 1, type 3, switch 0")
 }
 
 func TestFirstTakeoverRecordsOriginal(t *testing.T) {
@@ -399,10 +492,7 @@ func TestRemovedButtonGetsOriginalBack(t *testing.T) {
 	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(4, "Two"))), l, false)
 	n := len(f.calls)
 	rep := mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"))), l, false)
-	want := "notify, switch 1, read29 1, read25 1, write29 1, write25 1, switch 1"
-	if got := f.since(n); got != want {
-		t.Fatalf("calls:\n got %s\nwant %s", got, want)
-	}
+	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, write29 1, write25 1, switch 1")
 	checkEntry(t, f, 1, 4, keyEntry(4))
 	checkType(t, f, 1, 4, keyType(4))
 	checkEntry(t, f, 1, 3, proto.AppEntry(1, ""))
@@ -411,9 +501,54 @@ func TestRemovedButtonGetsOriginalBack(t *testing.T) {
 	if _, ok := l.SlotOf(own(1, 4)); ok {
 		t.Fatal("restored position still holds a slot")
 	}
-	// Its slot is free for the next new picture.
-	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(6, "Six"))), l, false)
-	checkEntry(t, f, 1, 6, proto.AppEntry(2, ""))
+	if _, ok := l.Original(own(1, 4)); ok {
+		t.Fatal("restored position still has a recorded original")
+	}
+	// The position is changed elsewhere and taken over again: the new
+	// takeover records what it holds now, and the freed slot is reused.
+	changed := proto.Entry29{Key: 0x30, Kind: 0x01, Label: "new"}
+	if err := f.b29[1].SetEntry(4, changed); err != nil {
+		t.Fatal(err)
+	}
+	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(4, "Four"))), l, false)
+	checkEntry(t, f, 1, 4, proto.AppEntry(2, ""))
+	if got, _ := l.Original(own(1, 4)); got.Entry != changed {
+		t.Fatalf("Original after a new takeover = %+v, want %+v", got.Entry, changed)
+	}
+}
+
+func TestRemovalAndAdditionInOneProfile(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	var full []layout.Button
+	for i := 0; i < ledger.MaxSlot; i++ {
+		full = append(full, btn(i, fmt.Sprintf("B%d", i)))
+	}
+	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", full...)), l, false)
+	// Every slot is taken; the removed button's slot must be free before the
+	// new one is assigned.
+	next := append(append([]layout.Button(nil), full[:ledger.MaxSlot-1]...), btn(ledger.MaxSlot, "New"))
+	rep := mustApply(t, f, cfgOf(prof(1, "sc.toml", "", next...)), l, false)
+	sameOwners(t, "Restored", rep.Restored, []ledger.Owner{own(1, ledger.MaxSlot-1)})
+	checkEntry(t, f, 1, ledger.MaxSlot-1, keyEntry(ledger.MaxSlot-1))
+	shows(t, f, 1, ledger.MaxSlot, "New")
+}
+
+func TestRemovalInHigherProfileFreesSlot(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	var p2 []layout.Button
+	for i := 0; i < ledger.MaxSlot-1; i++ {
+		p2 = append(p2, btn(i, fmt.Sprintf("B%d", i)))
+	}
+	mustApply(t, f, cfgOf(prof(1, "a.toml", "", btn(0, "A")), prof(2, "b.toml", "", p2...)), l, false)
+	// Profile 1 gains a picture and profile 2 drops one: all of profile 2's
+	// removals happen before profile 1 needs the slot.
+	cfg := cfgOf(prof(1, "a.toml", "", btn(0, "A"), btn(1, "C")), prof(2, "b.toml", "", p2[:len(p2)-1]...))
+	rep := mustApply(t, f, cfg, l, false)
+	sameOwners(t, "Restored", rep.Restored, []ledger.Owner{own(2, len(p2)-1)})
+	shows(t, f, 1, 1, "C")
+	checkEntry(t, f, 2, len(p2)-1, keyEntry(len(p2)-1))
 }
 
 func TestRemovedProfileGetsOriginalsBack(t *testing.T) {
@@ -425,11 +560,8 @@ func TestRemovedProfileGetsOriginalsBack(t *testing.T) {
 	), l, false)
 	n := len(f.calls)
 	rep := mustApply(t, f, cfgOf(prof(0, "desktop.toml", "", btn(0, "Zero"))), l, false)
-	want := "notify, switch 0, read29 0, read25 0, " +
-		"switch 2, read29 2, read25 2, write29 2, write25 2, switch 0"
-	if got := f.since(n); got != want {
-		t.Fatalf("calls:\n got %s\nwant %s", got, want)
-	}
+	checkCalls(t, f, n, "notify, switch 0, read29 0, read25 0, "+
+		"switch 2, read29 2, read25 2, write29 2, write25 2, switch 0")
 	checkEntry(t, f, 2, 3, keyEntry(3))
 	checkType(t, f, 2, 3, keyType(3))
 	sameOwners(t, "Restored", rep.Restored, []ledger.Owner{own(2, 3)})
@@ -458,33 +590,35 @@ func TestPositionsNotInLayoutUntouched(t *testing.T) {
 }
 
 func TestFinalProfile(t *testing.T) {
+	desktopAndGame := func() *layout.Config {
+		return cfgOf(
+			prof(0, "desktop.toml", "", btn(0, "Zero")),
+			prof(2, "sc.toml", "StarCitizen.exe", btn(3, "One")),
+		)
+	}
 	cases := []struct {
 		name    string
 		cfg     *layout.Config
 		running func(string) bool
 		want    string
 	}{
-		{"game running", cfgOf(
-			prof(0, "desktop.toml", "", btn(0, "Zero")),
-			prof(2, "sc.toml", "StarCitizen.exe", btn(3, "One")),
-		), func(n string) bool { return n == "StarCitizen.exe" }, "switch 2"},
-		{"game not running", cfgOf(
-			prof(0, "desktop.toml", "", btn(0, "Zero")),
-			prof(2, "sc.toml", "StarCitizen.exe", btn(3, "One")),
-		), nothingRuns, "switch 0"},
-		{"no running check", cfgOf(
-			prof(0, "desktop.toml", "", btn(0, "Zero")),
-			prof(2, "sc.toml", "StarCitizen.exe", btn(3, "One")),
-		), nil, "switch 0"},
+		{"game running", desktopAndGame(), func(n string) bool { return n == "StarCitizen.exe" }, "switch 2"},
+		{"game not running", desktopAndGame(), nothingRuns, "switch 0"},
+		{"no running check", desktopAndGame(), nil, "switch 0"},
 		{"desktop is not the lowest", cfgOf(
 			prof(0, "sc.toml", "StarCitizen.exe", btn(3, "One")),
 			prof(1, "desktop.toml", "", btn(0, "Zero")),
 		), nothingRuns, "switch 1"},
+		{"first running profile wins", cfgOf(
+			prof(3, "b.toml", "B.exe", btn(0, "Zero")),
+			prof(1, "a.toml", "A.exe", btn(3, "One")),
+			prof(0, "desktop.toml", "", btn(4, "Four")),
+		), func(string) bool { return true }, "switch 1"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			f := newFake(t)
-			if _, err := Apply(f, c.cfg, &ledger.Ledger{}, false, c.running); err != nil {
+			if _, err := Apply(f, c.cfg, &ledger.Ledger{}, false, c.running, nil); err != nil {
 				t.Fatal(err)
 			}
 			if len(f.calls) == 0 || f.calls[len(f.calls)-1] != c.want {
@@ -523,7 +657,7 @@ func TestRenderFailsBeforeKeyboard(t *testing.T) {
 				prof(1, "desktop.toml", "", btn(3, "One")),
 				prof(2, "sc.toml", "", c.b),
 			)
-			_, err := Apply(f, cfg, l, false, nothingRuns)
+			_, err := Apply(f, cfg, l, false, nothingRuns, f.save)
 			if err == nil {
 				t.Fatal("no error")
 			}
@@ -549,7 +683,7 @@ func TestFailedRenderKeepsLedger(t *testing.T) {
 	good := prof(1, "sc.toml", "", btn(3, "One"))
 	mustApply(t, f, cfgOf(good), l, false)
 	bad := prof(2, "other.toml", "", btn(4, "A title far too long to fit on one button at any size"))
-	if _, err := Apply(f, cfgOf(good, bad), l, true, nothingRuns); err == nil {
+	if _, err := Apply(f, cfgOf(good, bad), l, true, nothingRuns, nil); err == nil {
 		t.Fatal("no error")
 	}
 	n := len(f.calls)
@@ -565,7 +699,7 @@ func TestTooManyPicturesFailBeforeKeyboard(t *testing.T) {
 	for i := 0; i <= ledger.MaxSlot; i++ {
 		bs = append(bs, btn(i, fmt.Sprintf("B%d", i)))
 	}
-	_, err := Apply(f, cfgOf(prof(1, "sc.toml", "", bs...)), &ledger.Ledger{}, false, nothingRuns)
+	_, err := Apply(f, cfgOf(prof(1, "sc.toml", "", bs...)), &ledger.Ledger{}, false, nothingRuns, nil)
 	if !errors.Is(err, ledger.ErrNoSlot) {
 		t.Fatalf("err = %v, want ErrNoSlot", err)
 	}
@@ -584,18 +718,17 @@ func TestUploadLeftOpenStops(t *testing.T) {
 	}
 	l := &ledger.Ledger{}
 	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(4, "Two"), btn(5, "Three")))
-	rep, err := Apply(f, cfg, l, false, nothingRuns)
+	rep, err := Apply(f, cfg, l, false, nothingRuns, nil)
 	if !errors.Is(err, keyboard.ErrUploadLeftOpen) {
 		t.Fatalf("err = %v, want ErrUploadLeftOpen", err)
 	}
 	if !strings.Contains(err.Error(), "unplug") || !strings.Contains(err.Error(), "position 4") {
 		t.Errorf("error %q lost the advice or the position", err)
 	}
-	if got, want := f.since(0), "notify, switch 1, read29 1, read25 1, upload 1, upload 2"; got != want {
-		t.Fatalf("calls:\n got %s\nwant %s", got, want)
-	}
-	if _, ok := l.SlotOf(own(1, 4)); ok {
-		t.Error("the owner of the failed upload still holds a slot")
+	checkCalls(t, f, 0, "notify, switch 1, read29 1, read25 1, switch 1, upload 1, upload 2")
+	// The position stays managed, and its slot is not trusted.
+	if s, ok := l.SlotOf(own(1, 4)); !ok || s != 2 {
+		t.Errorf("SlotOf(position 4) = %d, %v; want 2, true", s, ok)
 	}
 	if s, ok := l.SlotOf(own(1, 3)); !ok || s != 1 {
 		t.Errorf("SlotOf(position 3) = %d, %v; want 1, true", s, ok)
@@ -604,6 +737,35 @@ func TestUploadLeftOpenStops(t *testing.T) {
 		t.Error("a button after the failure got a slot")
 	}
 	sameOwners(t, "Uploaded", rep.Uploaded, []ledger.Owner{own(1, 3)})
+
+	// The next apply sends the picture of the failed upload.
+	f.uploadErr = nil
+	n := len(f.calls)
+	mustApply(t, f, cfg, l, false)
+	if got := f.since(n); !strings.Contains(got, "upload 2") {
+		t.Fatalf("failed picture not sent again: %s", got)
+	}
+	shows(t, f, 1, 3, "One")
+	shows(t, f, 1, 4, "Two")
+	shows(t, f, 1, 5, "Three")
+}
+
+func TestFailedUploadKeepsPositionManaged(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(4, "Two"))), l, false)
+	f.uploadErr = func(byte) error { return keyboard.ErrOpenerRefused }
+	_, err := Apply(f, cfgOf(prof(1, "sc.toml", "", btn(3, "Uno"), btn(4, "Two"))), l, false, nothingRuns, nil)
+	if !errors.Is(err, keyboard.ErrOpenerRefused) {
+		t.Fatalf("err = %v, want ErrOpenerRefused", err)
+	}
+	// The keyboard still shows slot 1 at position 3; once the button is
+	// removed, the position gets its original back.
+	f.uploadErr = nil
+	rep := mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(4, "Two"))), l, false)
+	sameOwners(t, "Restored", rep.Restored, []ledger.Owner{own(1, 3)})
+	checkEntry(t, f, 1, 3, keyEntry(3))
+	checkType(t, f, 1, 3, keyType(3))
 }
 
 func TestFailedUploadIntoSharedSlotIsNotTrusted(t *testing.T) {
@@ -612,17 +774,45 @@ func TestFailedUploadIntoSharedSlotIsNotTrusted(t *testing.T) {
 	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "Same"), btn(5, "Same")))
 	mustApply(t, f, cfg, l, false)
 	f.uploadErr = func(byte) error { return keyboard.ErrOpenerRefused }
-	if _, err := Apply(f, cfg, l, true, nothingRuns); !errors.Is(err, keyboard.ErrOpenerRefused) {
+	if _, err := Apply(f, cfg, l, true, nothingRuns, nil); !errors.Is(err, keyboard.ErrOpenerRefused) {
 		t.Fatalf("err = %v, want ErrOpenerRefused", err)
 	}
-	// Position 5 still uses slot 1, whose content is unknown now: the next
-	// apply sends it again.
+	// Slot 1's content is unknown now: the next apply sends it again.
 	f.uploadErr = nil
 	n := len(f.calls)
 	mustApply(t, f, cfg, l, false)
 	if got := f.since(n); !strings.Contains(got, "upload") {
 		t.Fatalf("slot of a failed upload trusted: %s", got)
 	}
+}
+
+func TestSwitchFailureBeforeUploadIsNotTrusted(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "One")))
+	mustApply(t, f, cfg, l, false)
+	timeout := errors.New("no profile change")
+	switches := 0
+	f.switchErr = func(byte) error {
+		if switches++; switches == 2 {
+			return timeout
+		}
+		return nil
+	}
+	n := len(f.calls)
+	if _, err := Apply(f, cfg, l, true, nothingRuns, nil); !errors.Is(err, timeout) {
+		t.Fatalf("err = %v, want the switch error", err)
+	}
+	checkCalls(t, f, n, "notify, switch 1, read29 1, read25 1, switch 1")
+	// Slot 1 was to be sent again but was not, while position 3 shows it:
+	// the next apply sends it.
+	f.switchErr = nil
+	n = len(f.calls)
+	mustApply(t, f, cfg, l, false)
+	if got := f.since(n); !strings.Contains(got, "upload 1") {
+		t.Fatalf("unfilled slot trusted: %s", got)
+	}
+	shows(t, f, 1, 3, "One")
 }
 
 func TestPictureAndSymbolFiles(t *testing.T) {
@@ -695,13 +885,11 @@ func TestKeyboardErrorStops(t *testing.T) {
 	// Without notifications the fake refuses the switch, as the keyboard
 	// would not report it.
 	k := &noNotify{f}
-	_, err := Apply(k, cfgOf(prof(1, "sc.toml", "", btn(3, "One"))), l, false, nothingRuns)
+	_, err := Apply(k, cfgOf(prof(1, "sc.toml", "", btn(3, "One"))), l, false, nothingRuns, nil)
 	if err == nil || !strings.Contains(err.Error(), "profile 1") {
 		t.Fatalf("err = %v", err)
 	}
-	if got, want := f.since(0), "switch 1"; got != want {
-		t.Fatalf("calls after the failure: %s", got)
-	}
+	checkCalls(t, f, 0, "switch 1")
 }
 
 // noNotify drops EnableNotifications, so the following switch fails.
@@ -728,20 +916,18 @@ func restoreSetup(t *testing.T, label string) (*fakeKB, *ledger.Ledger, ledger.O
 		}
 	}
 	l.RecordOriginal(own(1, 3), orig)
+	l.RecordOriginal(own(2, 0), orig)
 	return f, l, orig
 }
 
 func TestRestore(t *testing.T) {
 	f, l, orig := restoreSetup(t, "Home")
-	before2 := f.b29[2].Bytes()
-	rep, err := Restore(f, l, 1)
+	before29, before25 := f.b29[2].Bytes(), f.b25[2].Bytes()
+	rep, err := Restore(f, l, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "notify, switch 1, read29 1, read25 1, write29 1, write25 1"
-	if got := f.since(0); got != want {
-		t.Fatalf("calls:\n got %s\nwant %s", got, want)
-	}
+	checkCalls(t, f, 0, "notify, switch 1, read29 1, read25 1, write29 1, write25 1")
 	checkEntry(t, f, 1, 3, orig.Entry)
 	checkType(t, f, 1, 3, orig.Type)
 	checkEntry(t, f, 1, 4, proto.Entry29{})
@@ -756,12 +942,18 @@ func TestRestore(t *testing.T) {
 			checkType(t, f, 1, i, keyType(i))
 		}
 	}
-	if !bytes.Equal(f.b29[2].Bytes(), before2) {
+	if !bytes.Equal(f.b29[2].Bytes(), before29) || !bytes.Equal(f.b25[2].Bytes(), before25) {
 		t.Error("profile 2 changed")
 	}
 	sameOwners(t, "Restored", rep.Restored, []ledger.Owner{own(1, 3), own(1, 4)})
 	sameOwners(t, "Owners(1)", l.Owners(1), nil)
 	sameOwners(t, "Owners(2)", l.Owners(2), []ledger.Owner{own(2, 0)})
+	if _, ok := l.Original(own(1, 3)); ok {
+		t.Error("restored position still has a recorded original")
+	}
+	if _, ok := l.Original(own(2, 0)); !ok {
+		t.Error("original of another profile dropped")
+	}
 	if len(rep.Notes) != 0 {
 		t.Errorf("notes: %q", rep.Notes)
 	}
@@ -769,7 +961,7 @@ func TestRestore(t *testing.T) {
 
 func TestRestoreLabelFallback(t *testing.T) {
 	f, l, orig := restoreSetup(t, "bad\x01label")
-	rep, err := Restore(f, l, 1)
+	rep, err := Restore(f, l, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -784,7 +976,7 @@ func TestRestoreLabelFallback(t *testing.T) {
 
 func TestRestoreWithoutOwners(t *testing.T) {
 	f := newFake(t)
-	rep, err := Restore(f, &ledger.Ledger{}, 1)
+	rep, err := Restore(f, &ledger.Ledger{}, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -796,18 +988,30 @@ func TestRestoreWithoutOwners(t *testing.T) {
 	}
 }
 
+func TestRestoreRefusesUnknownProfile(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	if _, _, err := l.Assign(ledger.Owner{Profile: 5, Page: 1, Position: 3}, "h"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Restore(f, l, 5, nil); err == nil {
+		t.Fatal("profile 5 restored")
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("keyboard calls: %v", f.calls)
+	}
+}
+
 func TestRestoreRefusesForeignPosition(t *testing.T) {
 	f := newFake(t)
 	l := &ledger.Ledger{}
 	if _, _, err := l.Assign(ledger.Owner{Profile: 1, Page: 2, Position: 3}, "h"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Restore(f, l, 1); err == nil {
+	if _, err := Restore(f, l, 1, nil); err == nil {
 		t.Fatal("a page 2 position was restored")
 	}
-	for _, c := range f.calls {
-		if strings.HasPrefix(c, "write") {
-			t.Fatalf("written: %v", f.calls)
-		}
+	if len(f.calls) != 0 {
+		t.Fatalf("keyboard calls: %v", f.calls)
 	}
 }

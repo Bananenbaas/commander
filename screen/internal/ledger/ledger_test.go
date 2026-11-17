@@ -113,6 +113,38 @@ func TestOriginals(t *testing.T) {
 	}
 }
 
+func TestForgetOriginal(t *testing.T) {
+	l := &Ledger{}
+	l.ForgetOriginal(a) // nothing recorded: nothing happens
+	first := Original{Entry: proto.Entry29{Key: 1}}
+	later := Original{Entry: proto.Entry29{Key: 2}}
+	l.RecordOriginal(a, first)
+	l.RecordOriginal(b, first)
+	l.ForgetOriginal(a)
+	if _, ok := l.Original(a); ok {
+		t.Fatal("original still recorded")
+	}
+	if got, ok := l.Original(b); !ok || got != first {
+		t.Fatalf("other original = %+v, %v", got, ok)
+	}
+	l.RecordOriginal(a, later)
+	if got, _ := l.Original(a); got != later {
+		t.Fatalf("Original after a new takeover = %+v, want %+v", got, later)
+	}
+	path := filepath.Join(t.TempDir(), "state.json")
+	l.ForgetOriginal(a)
+	if err := l.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Original(a); ok {
+		t.Fatal("forgotten original saved")
+	}
+}
+
 func TestForget(t *testing.T) {
 	l := &Ledger{}
 	mustAssign(t, l, a, "h1", 1, true)

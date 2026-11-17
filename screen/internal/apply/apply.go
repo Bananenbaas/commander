@@ -2,8 +2,9 @@
 // positions kb7screen has taken over back their original contents.
 //
 // Nothing is retried: the first keyboard error stops the work and is returned
-// with its context. The ledger is changed in memory only; saving it is up to
-// the caller.
+// with its context. The ledger is changed in memory; it is stored through the
+// caller's save function at fixed points, and the caller saves it once more
+// when Apply or Restore returns.
 package apply
 
 import (
@@ -55,6 +56,13 @@ type job struct {
 	hash string
 }
 
+// tables are a profile's tables as read in the first pass, with the
+// restored positions already written into them.
+type tables struct {
+	t29 *proto.Table29
+	t25 *proto.Table25
+}
+
 func where(o ledger.Owner) string {
 	return fmt.Sprintf("profile %d page %d position %d", o.Profile, o.Page, o.Position)
 }
@@ -62,11 +70,26 @@ func where(o ledger.Owner) string {
 // Apply puts every layout of cfg on the keyboard.
 //
 // Every picture is rendered before the keyboard is touched, so a bad file or
-// a title that does not fit stops Apply before anything is sent. With full,
-// every picture is sent again. Apply ends on the profile the run command
-// would choose: the first one whose program is running, otherwise the
-// desktop profile. running may be nil when no program is checked.
-func Apply(kb Keyboard, cfg *layout.Config, l *ledger.Ledger, full bool, running func(name string) bool) (Report, error) {
+// a title that does not fit stops Apply before anything is sent. Then Apply
+// works in two passes over the profiles of cfg and those the ledger still
+// holds positions in, in ascending order. The first pass reads each profile's
+// tables, gives positions that are no longer in the layout their originals
+// back, records the originals of positions taken over for the first time and
+// stops trusting the slot of a position that no longer shows it. The second
+// pass assigns slots, sends the pictures and writes the tables, profile by
+// profile. Removed positions have freed their slots before any is assigned,
+// and a slot shared with a lower profile is never given to another picture
+// while that profile still shows it. With full, every picture is sent again.
+//
+// Apply ends on the profile the run command would choose: the first one whose
+// program is running, otherwise the desktop profile. running may be nil when
+// no program is checked.
+//
+// save, which may be nil, is called after the first pass, so the originals
+// are stored before anything is overwritten, and after each profile of the
+// second pass; an error from it stops Apply. The caller must also save after
+// Apply returns, whether or not it failed.
+func Apply(kb Keyboard, cfg *layout.Config, l *ledger.Ledger, full bool, running func(name string) bool, save func() error) (Report, error) {
 	var rep Report
 	jobs, err := renderAll(cfg)
 	if err != nil {
@@ -82,9 +105,26 @@ func Apply(kb Keyboard, cfg *layout.Config, l *ledger.Ledger, full bool, running
 	if err := kb.EnableNotifications(); err != nil {
 		return rep, err
 	}
+	read := map[byte]tables{}
+	for _, p := range profiles {
+		t, err := prepare(kb, l, p, jobs[p], &rep)
+		if err != nil {
+			return rep, err
+		}
+		read[p] = t
+	}
+	if err := saveLedger(save); err != nil {
+		return rep, err
+	}
 	uploaded := map[byte]bool{}
 	for _, p := range profiles {
-		if err := applyProfile(kb, l, p, jobs[p], uploaded, &rep); err != nil {
+		if len(jobs[p]) == 0 {
+			continue
+		}
+		if err := send(kb, l, p, jobs[p], read[p], uploaded, &rep); err != nil {
+			return rep, err
+		}
+		if err := saveLedger(save); err != nil {
 			return rep, err
 		}
 	}
@@ -93,6 +133,16 @@ func Apply(kb Keyboard, cfg *layout.Config, l *ledger.Ledger, full bool, running
 		return rep, fmt.Errorf("profile %d: %w", final, err)
 	}
 	return rep, nil
+}
+
+func saveLedger(save func() error) error {
+	if save == nil {
+		return nil
+	}
+	if err := save(); err != nil {
+		return fmt.Errorf("saving the ledger: %w", err)
+	}
+	return nil
 }
 
 // renderAll renders every button, sorted per profile by page and position,
@@ -206,23 +256,23 @@ func showsSlot(e proto.Entry29, n byte) bool {
 	return e.Mod == want.Mod && e.Key == want.Key && e.Kind == want.Kind && e.Slot == want.Slot
 }
 
-// applyProfile brings one profile in line with its jobs. uploaded collects
-// the slots sent during this Apply, so every position showing one is redrawn.
-func applyProfile(kb Keyboard, l *ledger.Ledger, p byte, jobs []job, uploaded map[byte]bool, rep *Report) error {
+// prepare is the first pass over one profile: it reads the tables, restores
+// and releases the positions no longer in the layout, records originals and
+// stops trusting slots that a position no longer shows. Nothing else is
+// written.
+func prepare(kb Keyboard, l *ledger.Ledger, p byte, jobs []job, rep *Report) (tables, error) {
 	if err := kb.SwitchProfile(p); err != nil {
-		return fmt.Errorf("profile %d: %w", p, err)
+		return tables{}, fmt.Errorf("profile %d: %w", p, err)
 	}
 	t29, err := kb.ReadButtons(p)
 	if err != nil {
-		return fmt.Errorf("profile %d: %w", p, err)
+		return tables{}, fmt.Errorf("profile %d: %w", p, err)
 	}
 	t25, err := kb.ReadTypes(p)
 	if err != nil {
-		return fmt.Errorf("profile %d: %w", p, err)
+		return tables{}, fmt.Errorf("profile %d: %w", p, err)
 	}
 
-	// Positions managed before but no longer in the layout go first, which
-	// also frees their slots for the new pictures.
 	inLayout := map[ledger.Owner]bool{}
 	for _, j := range jobs {
 		inLayout[j.o] = true
@@ -234,19 +284,39 @@ func applyProfile(kb Keyboard, l *ledger.Ledger, p byte, jobs []job, uploaded ma
 		}
 	}
 	if err := restore(kb, l, t29, t25, gone, rep); err != nil {
-		return fmt.Errorf("profile %d: %w", p, err)
+		return tables{}, fmt.Errorf("profile %d: %w", p, err)
 	}
 
-	// A position that no longer shows the slot the ledger gives it was
-	// changed by someone else, who may have reused the slot as well: its
-	// picture is not trusted.
+	// A position that does not show the slot the ledger gives it was changed
+	// by someone else, who may have reused the slot as well, or an earlier
+	// apply stopped before writing it: the slot's picture is not trusted.
 	for _, j := range jobs {
 		cur := t29.Entry(j.o.Position)
 		l.RecordOriginal(j.o, ledger.Original{Entry: cur, Type: t25.Type(j.o.Position)})
 		if n, ok := l.SlotOf(j.o); ok && !showsSlot(cur, n) {
 			l.ForgetSlot(n)
-			rep.Notes = append(rep.Notes, fmt.Sprintf("%s no longer showed slot %d; its picture is sent again", where(j.o), n))
+			rep.Notes = append(rep.Notes, fmt.Sprintf("%s does not show slot %d; its picture is sent again", where(j.o), n))
 		}
+	}
+	return tables{t29, t25}, nil
+}
+
+// send is the second pass over one profile: it assigns the slots, sends the
+// pictures that are not in them, writes the 0x29 table once if an entry
+// changed and the type of every position to redraw. It switches to the
+// profile only when there is something to send. uploaded collects the slots
+// sent during this Apply, so every position showing one is redrawn.
+func send(kb Keyboard, l *ledger.Ledger, p byte, jobs []job, t tables, uploaded map[byte]bool, rep *Report) error {
+	switched := false
+	activate := func() error {
+		if switched {
+			return nil
+		}
+		if err := kb.SwitchProfile(p); err != nil {
+			return fmt.Errorf("profile %d: %w", p, err)
+		}
+		switched = true
+		return nil
 	}
 
 	slots := make([]byte, len(jobs))
@@ -260,11 +330,18 @@ func applyProfile(kb Keyboard, l *ledger.Ledger, p byte, jobs []job, uploaded ma
 			rep.Skipped = append(rep.Skipped, j.o)
 			continue
 		}
-		if err := kb.Upload(slot, j.data); err != nil {
-			// What the slot holds is unknown now.
+		err = activate()
+		if err == nil {
+			if err = kb.Upload(slot, j.data); err != nil {
+				err = fmt.Errorf("%s, slot %d: %w", where(j.o), slot, err)
+			}
+		}
+		if err != nil {
+			// The slot does not hold the picture, or not all of it. The
+			// position stays managed, as the keyboard may still show the
+			// slot there, and the next apply sends the picture again.
 			l.ForgetSlot(slot)
-			l.Release(j.o)
-			return fmt.Errorf("%s, slot %d: %w", where(j.o), slot, err)
+			return err
 		}
 		uploaded[slot] = true
 		rep.Uploaded = append(rep.Uploaded, j.o)
@@ -275,19 +352,25 @@ func applyProfile(kb Keyboard, l *ledger.Ledger, p byte, jobs []job, uploaded ma
 	for i, j := range jobs {
 		pos := j.o.Position
 		want := proto.AppEntry(slots[i], j.b.Label)
-		entryChanged := t29.Entry(pos) != want
+		entryChanged := t.t29.Entry(pos) != want
 		if entryChanged {
-			if err := t29.SetEntry(pos, want); err != nil {
+			if err := t.t29.SetEntry(pos, want); err != nil {
 				return fmt.Errorf("%s: %w", where(j.o), err)
 			}
 			changed = true
 		}
-		if entryChanged || t25.Type(pos) != proto.AppType || uploaded[slots[i]] {
+		if entryChanged || t.t25.Type(pos) != proto.AppType || uploaded[slots[i]] {
 			redraw = append(redraw, byte(pos))
 		}
 	}
+	if len(redraw) == 0 {
+		return nil
+	}
+	if err := activate(); err != nil {
+		return err
+	}
 	if changed {
-		if err := kb.WriteButtons(t29); err != nil {
+		if err := kb.WriteButtons(t.t29); err != nil {
 			return fmt.Errorf("profile %d: %w", p, err)
 		}
 	}
@@ -314,9 +397,14 @@ func finalProfile(cfg *layout.Config, running func(string) bool) byte {
 }
 
 // Restore gives the positions the ledger lists for profile their recorded
-// original contents and releases them. Positions without a recorded original
-// are emptied. It switches to profile to do so and does not switch back.
-func Restore(kb Keyboard, l *ledger.Ledger, profile byte) (Report, error) {
+// original contents, releases them and drops their originals. Positions
+// without a recorded original are emptied. It switches to profile to do so
+// and does not switch back.
+//
+// save, which may be nil, is called once the positions are restored; an error
+// from it is returned. The caller must also save after Restore returns,
+// whether or not it failed.
+func Restore(kb Keyboard, l *ledger.Ledger, profile byte, save func() error) (Report, error) {
 	var rep Report
 	if profile > maxProfile {
 		return rep, fmt.Errorf("profile %d: profiles are 0 to %d", profile, maxProfile)
@@ -346,12 +434,17 @@ func Restore(kb Keyboard, l *ledger.Ledger, profile byte) (Report, error) {
 	if err := restore(kb, l, t29, t25, owners, &rep); err != nil {
 		return rep, fmt.Errorf("profile %d: %w", profile, err)
 	}
+	if err := saveLedger(save); err != nil {
+		return rep, err
+	}
 	return rep, nil
 }
 
 // restore writes the originals of owners, checked by checkOwners, into the
-// profile's 0x29 and then its whole 0x25, and releases them once both are
-// written. An original label the table cannot hold is left empty, with a note.
+// profile's 0x29 and then its whole 0x25. Once both are written, it releases
+// the positions and drops their originals, so a later takeover records what
+// they hold then. An original label the table cannot hold is left empty,
+// with a note.
 func restore(kb Keyboard, l *ledger.Ledger, t29 *proto.Table29, t25 *proto.Table25, owners []ledger.Owner, rep *Report) error {
 	if len(owners) == 0 {
 		return nil
@@ -378,6 +471,7 @@ func restore(kb Keyboard, l *ledger.Ledger, t29 *proto.Table29, t25 *proto.Table
 	}
 	for _, o := range owners {
 		l.Release(o)
+		l.ForgetOriginal(o)
 		rep.Restored = append(rep.Restored, o)
 	}
 	return nil

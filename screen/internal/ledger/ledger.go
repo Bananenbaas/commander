@@ -129,6 +129,10 @@ func (l *Ledger) RecordOriginal(o Owner, orig Original) {
 	l.originals[o] = orig
 }
 
+// ForgetOriginal drops the recorded original of o, so the next takeover of
+// the position records what it holds then.
+func (l *Ledger) ForgetOriginal(o Owner) { delete(l.originals, o) }
+
 // Original returns the recorded original of o.
 func (l *Ledger) Original(o Owner) (Original, bool) {
 	orig, ok := l.originals[o]
