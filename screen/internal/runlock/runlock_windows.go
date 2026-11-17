@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"golang.org/x/sys/windows"
 )
@@ -60,5 +61,10 @@ func acquireUser() (release func() error, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot create the user lock: %w", err)
 	}
-	return func() error { return windows.CloseHandle(h) }, nil
+	var once sync.Once
+	var closeErr error
+	return func() error {
+		once.Do(func() { closeErr = windows.CloseHandle(h) })
+		return closeErr
+	}, nil
 }

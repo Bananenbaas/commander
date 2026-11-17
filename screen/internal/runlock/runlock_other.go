@@ -9,6 +9,7 @@ func Acquire(dir string) (release func() error, err error) {
 	return func() error { return nil }, nil
 }
 
+// acquireUser does nothing here, like Acquire.
 func acquireUser() (release func() error, err error) {
 	return func() error { return nil }, nil
 }

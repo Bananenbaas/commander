@@ -60,6 +60,9 @@ func TestDifferentDirsDoNotInterfere(t *testing.T) {
 
 func TestUserLockSecondAcquireIsHeld(t *testing.T) {
 	release, err := AcquireUser()
+	if errors.Is(err, ErrUserHeld) {
+		t.Skip("a Commander or kb7screen run is running on this machine")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
