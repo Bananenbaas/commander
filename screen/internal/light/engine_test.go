@@ -336,6 +336,78 @@ func TestEngineHeldKeyRepeatsAreOnePress(t *testing.T) {
 	}
 }
 
+// holdStack has a state "quantum" (toggle B, hold 400ms) that lights B green.
+func holdStack(t *testing.T) *Engine {
+	t.Helper()
+	l := stateLayer("quantum", "B", "off", "B", "#00FF00")
+	l.Settings["hold"] = "400ms"
+	e := NewEngine(map[byte]*Stack{1: build(t, Config{Layers: []LayerConfig{staticLayer("#000000"), l}})}, engineStart)
+	e.SetActive(1)
+	return e
+}
+
+func TestEngineHoldShortPressDoesNothing(t *testing.T) {
+	e := holdStack(t)
+	e.Key(action.B, true, at(time.Second))
+	if lit(t, e, action.B, at(time.Second)) {
+		t.Error("flipped on key-down")
+	}
+	e.Key(action.B, false, at(time.Second+200*time.Millisecond))
+	if lit(t, e, action.B, at(2*time.Second)) {
+		t.Error("a 200 ms press flipped a 400 ms hold toggle")
+	}
+	if len(e.presses) != 1 {
+		t.Errorf("presses = %d, want 1 (the ripple still starts on down)", len(e.presses))
+	}
+}
+
+func TestEngineHoldLongPressFlipsOnce(t *testing.T) {
+	e := holdStack(t)
+	e.Key(action.B, true, at(time.Second))
+	for d := 30 * time.Millisecond; d < 500*time.Millisecond; d += 30 * time.Millisecond {
+		e.Key(action.B, true, at(time.Second+d)) // auto-repeat
+	}
+	if lit(t, e, action.B, at(2*time.Second)) {
+		t.Error("flipped before key-up")
+	}
+	e.Key(action.B, false, at(time.Second+500*time.Millisecond))
+	if !lit(t, e, action.B, at(2*time.Second)) {
+		t.Error("a 500 ms press did not flip")
+	}
+	e.Key(action.B, false, at(time.Second+600*time.Millisecond))
+	if !lit(t, e, action.B, at(2*time.Second)) {
+		t.Error("a second key-up flipped again")
+	}
+}
+
+func TestEngineHoldLostKeyUpDoesNotFlip(t *testing.T) {
+	e := holdStack(t)
+	e.Key(action.B, true, at(time.Second)) // key-up lost
+	e.Key(action.B, true, at(10*time.Second))
+	e.Key(action.B, false, at(10*time.Second+100*time.Millisecond))
+	if lit(t, e, action.B, at(11*time.Second)) {
+		t.Error("the lost press, or a 100 ms press, flipped")
+	}
+}
+
+func TestEngineHoldSentFlipsAtOnce(t *testing.T) {
+	e := holdStack(t)
+	e.Sent(action.Chord{Keys: []action.Key{action.B}})
+	if !lit(t, e, action.B, at(time.Second)) {
+		t.Error("Sent did not flip a hold toggle")
+	}
+}
+
+func TestEngineHoldNeedsExactModifiers(t *testing.T) {
+	e := holdStack(t)
+	e.Key(action.LAlt, true, at(time.Second))
+	e.Key(action.B, true, at(time.Second))
+	e.Key(action.B, false, at(2*time.Second))
+	if lit(t, e, action.B, at(3*time.Second)) {
+		t.Error("LAlt+B flipped the B hold toggle")
+	}
+}
+
 func TestEngineKeyWithoutLEDTriggersToggle(t *testing.T) {
 	if _, ok := LEDOfKey(action.F13); ok {
 		t.Fatal("F13 has an LED; pick another key without one")

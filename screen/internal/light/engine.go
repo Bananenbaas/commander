@@ -32,6 +32,15 @@ type toggle struct {
 	name    string
 	trigger action.Key          // last key of the chord
 	mods    map[action.Key]bool // the keys before it
+	hold    time.Duration       // 0 flips on key-down, else on a key-up after this long
+}
+
+// pendingHold is a press of a hold toggle's trigger that may still flip it.
+type pendingHold struct {
+	profile byte
+	name    string
+	trigger action.Key
+	downAt  time.Time
 }
 
 // Engine keeps what the lighting of the KB7 depends on besides the
@@ -46,6 +55,7 @@ type Engine struct {
 	states     map[byte]map[string]bool // per lit profile, every declared state
 	toggles    map[byte][]toggle        // per lit profile, the states with a toggle
 	down       map[action.Key]time.Time // keys held, with the time of their last down event
+	pending    []pendingHold            // hold toggles whose key is down
 	presses    []Press                  // oldest first
 	count      int                      // presses with an LED since the start
 	brightness int
@@ -75,7 +85,7 @@ func NewEngine(stacks map[byte]*Stack, start time.Time) *Engine {
 				continue
 			}
 			n := len(d.Toggle.Keys) - 1
-			e.toggles[p] = append(e.toggles[p], toggle{d.Name, d.Toggle.Keys[n], keySet(d.Toggle.Keys[:n])})
+			e.toggles[p] = append(e.toggles[p], toggle{d.Name, d.Toggle.Keys[n], keySet(d.Toggle.Keys[:n]), d.Hold})
 		}
 	}
 	return e
@@ -95,6 +105,7 @@ func (e *Engine) SetActive(p byte) { e.active = p }
 func (e *Engine) Key(k action.Key, down bool, at time.Time) {
 	if !down {
 		delete(e.down, k)
+		e.release(k, at)
 		return
 	}
 	last, held := e.down[k]
@@ -113,7 +124,48 @@ func (e *Engine) Key(k action.Key, down bool, at time.Time) {
 			mods[d] = true
 		}
 	}
-	e.flipToggles(k, mods)
+	e.flipToggles(k, mods, false)
+	e.holdToggles(k, mods, at)
+}
+
+// holdToggles records a fresh down of k for each hold toggle of the active
+// profile it triggers. A pending press of the same toggle, whose key-up was
+// lost, is replaced.
+func (e *Engine) holdToggles(k action.Key, mods map[action.Key]bool, at time.Time) {
+	for _, tg := range e.toggles[e.active] {
+		if tg.hold <= 0 || tg.trigger != k || !sameSet(tg.mods, mods) {
+			continue
+		}
+		e.dropPending(e.active, tg.name)
+		e.pending = append(e.pending, pendingHold{e.active, tg.name, k, at})
+	}
+}
+
+func (e *Engine) dropPending(p byte, name string) {
+	for i, h := range e.pending {
+		if h.profile == p && h.name == name {
+			e.pending = append(e.pending[:i], e.pending[i+1:]...)
+			return
+		}
+	}
+}
+
+// release flips the hold toggles whose trigger k went up after being held
+// long enough, and forgets the presses of k.
+func (e *Engine) release(k action.Key, at time.Time) {
+	kept := e.pending[:0]
+	for _, h := range e.pending {
+		if h.trigger != k {
+			kept = append(kept, h)
+			continue
+		}
+		for _, tg := range e.toggles[h.profile] {
+			if tg.name == h.name && at.Sub(h.downAt) >= tg.hold {
+				e.states[h.profile][h.name] = !e.states[h.profile][h.name]
+			}
+		}
+	}
+	e.pending = kept
 }
 
 // Sent takes a chord that a screen button sent to the game: it flips the
@@ -123,15 +175,16 @@ func (e *Engine) Sent(c action.Chord) {
 		return
 	}
 	n := len(c.Keys) - 1
-	e.flipToggles(c.Keys[n], keySet(c.Keys[:n]))
+	e.flipToggles(c.Keys[n], keySet(c.Keys[:n]), true)
 }
 
 // flipToggles flips each state of the active profile whose toggle has last
-// key k and exactly the keys in mods before it.
-func (e *Engine) flipToggles(k action.Key, mods map[action.Key]bool) {
+// key k and exactly the keys in mods before it. Hold toggles flip only when
+// tap is true (a screen button sends a tap).
+func (e *Engine) flipToggles(k action.Key, mods map[action.Key]bool, tap bool) {
 	st := e.states[e.active]
 	for _, tg := range e.toggles[e.active] {
-		if tg.trigger == k && sameSet(tg.mods, mods) {
+		if (tap || tg.hold <= 0) && tg.trigger == k && sameSet(tg.mods, mods) {
 			st[tg.name] = !st[tg.name]
 		}
 	}

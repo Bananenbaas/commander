@@ -328,6 +328,7 @@ Lights its keys in a colour while a named on/off state is on. Needs `keys`.
 |---|---|---|---|---|
 | `name` | name | required | | Name of the state, unique within the profile |
 | `toggle` | chord | none | | Key chord that flips the state; without it only a screen button flips it |
+| `hold` | duration | none | 100ms to 3s | How long the toggle key must be held; the state flips when it is released. Without it the state flips as the key goes down |
 | `start` | choice | `"off"` | `on`, `off` | Value when the profile starts |
 | `color` | colour | required | | Colour while the state is on |
 | `blink` | number | 0 | 0 to 10 | Blinks per second while on; 0 is steady |

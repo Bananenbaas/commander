@@ -42,6 +42,7 @@ type StateDef struct {
 	Name   string
 	Toggle *action.Chord // nil when only a screen button flips it
 	Start  bool          // value when the profile's program starts
+	Hold   time.Duration // when > 0 the toggle key must be held this long; the flip comes on its key-up
 }
 
 // Spec describes an effect: its settings and how to make it.

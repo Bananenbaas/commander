@@ -143,6 +143,23 @@ func TestStateToggleAndStart(t *testing.T) {
 	}
 }
 
+func TestStateHold(t *testing.T) {
+	e := makeFx(t, "state", map[string]any{"name": "x", "color": "#00FF00", "toggle": "B", "hold": "400ms"})
+	if d := e.(interface{ State() StateDef }).State(); d.Hold != 400*time.Millisecond {
+		t.Errorf("Hold = %v, want 400ms", d.Hold)
+	}
+	e = makeFx(t, "state", map[string]any{"name": "x", "color": "#00FF00", "toggle": "B"})
+	if d := e.(interface{ State() StateDef }).State(); d.Hold != 0 {
+		t.Errorf("Hold = %v without the setting, want 0", d.Hold)
+	}
+	s := registry["state"]
+	for _, bad := range []string{"50ms", "4s", "soon"} {
+		if _, err := parseValues(s, map[string]any{"name": "x", "color": "#00FF00", "toggle": "B", "hold": bad}); err == nil {
+			t.Errorf("hold %q accepted", bad)
+		}
+	}
+}
+
 func TestDuplicateStateNames(t *testing.T) {
 	lc := LayerConfig{Effect: "state", Keys: []string{"space"}, Settings: map[string]any{"name": "x", "color": "#00FF00"}}
 	if _, err := Build(Config{Layers: []LayerConfig{lc, lc}}); err == nil {

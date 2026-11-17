@@ -20,6 +20,7 @@ func init() {
 		Settings: []Setting{
 			{Name: "name", Kind: KindName, Required: true, Help: "Name of the state."},
 			{Name: "toggle", Kind: KindChord, Help: "Chord that flips the state; without it only a screen button does."},
+			{Name: "hold", Kind: KindDuration, Min: 0.1, Max: 3, Help: "How long the toggle key must be held; the state flips when it is released. Without it the state flips as the key goes down."},
 			{Name: "start", Kind: KindChoice, Default: "off", Choices: []string{"on", "off"}, Help: "Value when the profile starts."},
 			{Name: "color", Kind: KindColor, Required: true, Help: "Colour while on."},
 			{Name: "blink", Kind: KindNumber, Default: 0.0, Min: 0, Max: 10, Help: "Blinks per second while on; 0 for steady."},
@@ -35,6 +36,9 @@ func init() {
 					return nil, fmt.Errorf("toggle: %w", err)
 				}
 				s.def.Toggle = &c
+				if h, ok := v["hold"].(time.Duration); ok {
+					s.def.Hold = h
+				}
 			}
 			return s, nil
 		},
