@@ -1103,6 +1103,40 @@ it back, turned the two positions it did not know (INS and HOME) into
 application buttons with slot `00` and an empty label. Whoever writes last
 wins.
 
+#### Slots up to 15, and pages 2 and 3
+
+`40-swarm-slots-pages-1`: with our own pictures in slots 1–8 (profile 1), Swarm
+II was given seven application buttons on page 1 of profile 2 (`DEFAULT 03`),
+then a website button on page 2 and a third-party application on page 3. Swarm
+II refused an eighth application button with "You can have up to 15 Launch
+Application widgets on the display".
+
+- **Swarm II uploaded to slots 9 to 15** (`a5 49` … `a5 4f`) and left 1–8
+  alone, so this time it counted the slots already named in the button tables
+  rather than only its own.
+- **Byte 2 of report `0x35` is the page.** `35 0c 02 04 01 00 05 00 05 00`
+  put the website button (type `05`, value `05`) on page 2, position 4;
+  `35 0c 03 04 01 00 42 00 00 00` put the third-party application (type `42`)
+  on page 3, position 4.
+- **Report `0x29` holds pages one after the other, twelve entries each.** The
+  website button's entry `07 0b 00 "hohoho.nl"` (binding kind `07`) is entry
+  16, i.e. page 2 position 4; page 2's numeric keypad keys fill entries 12–23.
+  With 35 entries the table ends at page 3 position 10.
+- **Report `0x25` gives every page a marker in front of its twelve types.**
+  Page 1's marker is header byte 6 (`01`), page 2's is entry 12 (`02 00 00 00`)
+  and page 3's entry 25 (`03 00 00 00`), so page *g* position *p* is entry
+  `13 x (g - 1) + p`; 38 entries cover three pages exactly.
+
+| Finding | Status |
+|---|---|
+| Image slots 9–15 exist and take uploads | observed (`40-swarm-slots-pages-1`) |
+| 15 is the highest slot | hypothesis — Swarm II's own limit of 15 application widgets |
+| Byte 2 of `0x35` is the page, 1–3 | observed (`40-swarm-slots-pages-1`) |
+| `0x29` entry of page *g* position *p* is `12 x (g - 1) + p` | observed for page 2; page 3 from the table size |
+| `0x25` entry of page *g* position *p* is `13 x (g - 1) + p`, with page markers at 12 and 25 | observed (`40-swarm-slots-pages-1`) |
+| Page 3 position 11 has no `0x29` entry | hypothesis, from the table size |
+| Byte 1 of a `0x33` touch on page 2 or 3 | unknown — no tap on those pages was captured |
+
 ### The volume dial: a complete round trip
 
 The keyboard has a volume dial above Escape. `10-dial-volume-up-1` captures 56
