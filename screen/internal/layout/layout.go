@@ -72,6 +72,9 @@ type rawButton struct {
 
 var defaultColor = color.NRGBA{R: 0x00, G: 0xAA, B: 0xFF, A: 0xFF}
 
+// maxProfile is the highest of the keyboard's five profiles.
+const maxProfile = 4
+
 // Load reads every *.toml file directly in dir, sorted by name.
 func Load(dir string) (*Config, error) {
 	abs, err := filepath.Abs(dir)
@@ -125,8 +128,8 @@ func loadFile(dir, path string) (*Profile, error) {
 	if raw.Profile == nil {
 		return nil, fmt.Errorf("%s: profile is required", name)
 	}
-	if *raw.Profile < 0 || *raw.Profile > 4 {
-		return nil, fmt.Errorf("%s: profile must be 0 to 4, got %d", name, *raw.Profile)
+	if *raw.Profile < 0 || *raw.Profile > maxProfile {
+		return nil, fmt.Errorf("%s: profile must be 0 to %d, got %d", name, maxProfile, *raw.Profile)
 	}
 	p := &Profile{Number: byte(*raw.Profile), File: path, SwitchWhenRunning: raw.SwitchWhenRunning}
 	seen := map[[2]int]bool{}
@@ -234,24 +237,29 @@ func parseColor(s string) (color.NRGBA, error) {
 	return color.NRGBA{R: byte(v >> 24), G: byte(v >> 16), B: byte(v >> 8), A: byte(v)}, nil
 }
 
-// DesktopProfile returns the lowest profile number without switch_when_running,
-// or the lowest profile number if every profile has one.
+// DesktopProfile returns the profile the keyboard is to show while none of
+// the programs named in switch_when_running runs: the lowest profile whose
+// layout has no switch_when_running. When every layout has one, it is the
+// lowest profile, 0 to 4, that no layout gives a program; that profile has no
+// layout, and its touches are not acted on. Only when all five profiles have
+// a program is it profile 0.
 func (c *Config) DesktopProfile() byte {
-	best, bestAny := -1, -1
+	best := -1
+	program := map[byte]bool{}
 	for _, p := range c.Profiles {
-		n := int(p.Number)
-		if bestAny < 0 || n < bestAny {
-			bestAny = n
-		}
-		if p.SwitchWhenRunning == "" && (best < 0 || n < best) {
-			best = n
+		if p.SwitchWhenRunning != "" {
+			program[p.Number] = true
+		} else if best < 0 || int(p.Number) < best {
+			best = int(p.Number)
 		}
 	}
 	if best >= 0 {
 		return byte(best)
 	}
-	if bestAny >= 0 {
-		return byte(bestAny)
+	for n := byte(0); n <= maxProfile; n++ {
+		if !program[n] {
+			return n
+		}
 	}
 	return 0
 }

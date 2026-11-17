@@ -90,15 +90,45 @@ func TestLoad(t *testing.T) {
 }
 
 func TestDesktopProfileFallback(t *testing.T) {
-	c := &Config{Profiles: []Profile{
-		{Number: 2, SwitchWhenRunning: "a"}, {Number: 1, SwitchWhenRunning: "b"},
-	}}
-	if c.DesktopProfile() != 1 {
-		t.Fatal("lowest profile expected")
+	for _, c := range []struct {
+		name     string
+		profiles []Profile
+		want     byte
+	}{
+		{"a desktop layout", []Profile{{Number: 3, SwitchWhenRunning: "a"}, {Number: 2}, {Number: 4}}, 2},
+		{"a desktop layout above a free profile", []Profile{{Number: 4, SwitchWhenRunning: "a"}, {Number: 1}}, 1},
+		{"a game layout only", []Profile{{Number: 1, SwitchWhenRunning: "game.exe"}}, 0},
+		{"game layouts only", []Profile{{Number: 1, SwitchWhenRunning: "b"}, {Number: 0, SwitchWhenRunning: "a"}, {Number: 3, SwitchWhenRunning: "c"}}, 2},
+		{"every profile has a program", []Profile{
+			{Number: 0, SwitchWhenRunning: "a"}, {Number: 1, SwitchWhenRunning: "b"}, {Number: 2, SwitchWhenRunning: "c"},
+			{Number: 3, SwitchWhenRunning: "d"}, {Number: 4, SwitchWhenRunning: "e"},
+		}, 0},
+		{"no layouts", nil, 0},
+	} {
+		cfg := &Config{Profiles: c.profiles}
+		if got := cfg.DesktopProfile(); got != c.want {
+			t.Errorf("%s: DesktopProfile() = %d, want %d", c.name, got, c.want)
+		}
 	}
-	c.Profiles = append(c.Profiles, Profile{Number: 4})
-	if c.DesktopProfile() != 4 {
-		t.Fatal("profile without switch expected")
+}
+
+func TestDesktopProfileOfAGameOnlyFolder(t *testing.T) {
+	dir := folder(t, map[string]string{"game.toml": `
+profile = 1
+switch_when_running = "game.exe"
+
+[[button]]
+page = 1
+position = 0
+title = "Power"
+action = ["P"]
+`})
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.DesktopProfile(); got != 0 {
+		t.Fatalf("DesktopProfile() = %d, want 0: the game's profile is never left", got)
 	}
 }
 

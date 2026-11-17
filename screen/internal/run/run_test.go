@@ -541,6 +541,24 @@ func TestDesktopIsTheFallback(t *testing.T) {
 	})
 }
 
+// With only a game's layout, the desktop is the lowest profile without a
+// layout, and the keyboard goes back there when the game ends.
+func TestGameOnlyFolderSwitchesBack(t *testing.T) {
+	test(t, func(h *harness) {
+		cfg := &layout.Config{Profiles: []layout.Profile{
+			{Number: 1, SwitchWhenRunning: game, Buttons: []layout.Button{tapButton(3, chord(action.B))}},
+		}}
+		h.onPoll[1] = func() { h.running[game] = true }
+		h.onPoll[2] = func() { h.running[game] = false }
+		h.onPoll[3] = h.cancel
+		h.run(cfg)
+		h.want("poll", "open", "notify", "switch 0",
+			"poll", "switch 1",
+			"poll", "switch 0",
+			"poll", "close")
+	})
+}
+
 func TestTapRunsTheAction(t *testing.T) {
 	test(t, func(h *harness) {
 		h.scripts = [][]item{tap(3)}

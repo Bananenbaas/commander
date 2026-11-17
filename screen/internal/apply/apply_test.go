@@ -607,6 +607,7 @@ func TestFinalProfile(t *testing.T) {
 		{"game running", desktopAndGame(), func(n string) bool { return n == "StarCitizen.exe" }, "switch 2"},
 		{"game not running", desktopAndGame(), nothingRuns, "switch 0"},
 		{"no running check", desktopAndGame(), nil, "switch 0"},
+		{"game only, not running", cfgOf(prof(1, "sc.toml", "StarCitizen.exe", btn(3, "One"))), nothingRuns, "switch 0"},
 		{"desktop is not the lowest", cfgOf(
 			prof(0, "sc.toml", "StarCitizen.exe", btn(3, "One")),
 			prof(1, "desktop.toml", "", btn(0, "Zero")),

@@ -268,7 +268,8 @@ Second pass, for each profile with buttons:
 
 Finish on the profile that `run` would choose: the game's profile if its
 program is running, otherwise the desktop profile (the lowest managed profile
-without `switch_when_running`).
+without `switch_when_running`; when every layout has one, the lowest profile
+that no layout gives a program, which then has no layout).
 
 ### Restore
 

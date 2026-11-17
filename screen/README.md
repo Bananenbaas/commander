@@ -157,9 +157,15 @@ Key names are not case sensitive:
 `apply` renders every picture before it touches the keyboard, so a bad file or
 a title that does not fit stops it before anything is sent. It then reads each
 profile's tables, records what the managed positions held, uploads the pictures
-that are not yet in their slots and writes the button tables. It ends on the
-profile that `run` would choose: the one whose program is running, otherwise
-the desktop profile, which is the lowest profile without `switch_when_running`.
+that are not yet in their slots and writes the button tables. When it
+succeeds, it ends on the profile that `run` would choose: the one whose program
+is running, otherwise the desktop profile.
+
+The desktop profile is the lowest profile whose layout has no
+`switch_when_running`. When every layout has one, as in a folder with only the
+`game.toml` above, it is the lowest profile that no layout names (profile 0 in
+that example); that profile has no buttons of kb7screen, and touches there are
+left to the keyboard.
 
 `run` waits for the keyboard, enables its notifications, switches to the
 expected profile and then carries out the touches of buttons it manages.
