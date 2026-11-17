@@ -144,8 +144,9 @@ Commander runs them itself.
 ### The icon
 
 Drawn in code like the button symbols, so it can be regenerated: a dark
-rounded square with a Commander mark in the project's blue (`#00AAFF`),
-readable at 16 × 16. Rendered at 16, 20, 24, 32, 48 and 256 pixels into a
+rounded square with a retro space helmet in the project's blue (`#00AAFF`) —
+dome, visor, a white stripe and an antenna — readable at 16 × 16. An own
+design in a general retro style, not a copy of any existing character. Rendered at 16, 20, 24, 32, 48 and 256 pixels into a
 `.ico`, embedded in `commander.exe` as its resource and used for the tray.
 
 ## Testing
