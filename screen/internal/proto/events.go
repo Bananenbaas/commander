@@ -49,6 +49,10 @@ func ParseReport(b []byte) (any, bool) {
 				r.Position = b[4]
 			}
 			return r, true
+		case 0x0c:
+			return Brightness{Percent: int(b[3])}, true
+		case 0x11:
+			return LightsOff{Off: b[3] == 1}, true
 		case 0xf1:
 			if len(b) < 7 || b[3] != 0x01 {
 				return nil, false
@@ -58,3 +62,10 @@ func ParseReport(b []byte) (any, bool) {
 	}
 	return nil, false
 }
+
+// Brightness is the notification sent when the keyboard's brightness changes.
+type Brightness struct{ Percent int }
+
+// LightsOff is the notification sent by the RGB button; Off is true when the
+// lights were switched off.
+type LightsOff struct{ Off bool }

@@ -54,3 +54,21 @@ func TestAppKinds(t *testing.T) {
 		t.Errorf("AppEntry kind %#x, KindApp %#x, want 0x0b", e.Kind, KindApp)
 	}
 }
+
+func TestParseBrightness(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []byte
+		want any
+	}{
+		{"brightness", []byte{3, 0, 0x0c, 0x46, 0, 0, 0, 0}, Brightness{70}},
+		{"lights off", []byte{3, 0, 0x11, 1, 0, 0, 0, 0}, LightsOff{true}},
+		{"lights on", []byte{3, 0, 0x11, 0, 0, 0, 0, 0}, LightsOff{false}},
+	}
+	for _, c := range cases {
+		got, ok := ParseReport(c.in)
+		if !ok || got != c.want {
+			t.Errorf("%s: got %v %v, want %v", c.name, got, ok, c.want)
+		}
+	}
+}

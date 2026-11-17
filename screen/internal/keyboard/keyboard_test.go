@@ -628,3 +628,62 @@ func TestWriteTypesDropsOldInput(t *testing.T) {
 		t.Fatalf("the older redraw request was taken for the answer: %v", err)
 	}
 }
+
+func lightAck(bank byte) [64]byte {
+	var fr [64]byte
+	fr[0], fr[1] = 0x32, bank
+	return fr
+}
+
+func TestStreamLightsWritesSixFramesWithAcks(t *testing.T) {
+	f := &device.Fake{}
+	for b := byte(1); b <= 6; b++ {
+		f.QueueStream(lightAck(b))
+	}
+	k, _ := newTest(f)
+	var p proto.LightPayload
+	proto.SetLED(&p, 3, 9, 8, 7)
+	if err := k.StreamLights(&p); err != nil {
+		t.Fatal(err)
+	}
+	fr := f.Frames()
+	want := proto.LightFrames(&p)
+	if len(fr) != 6 {
+		t.Fatalf("%d frames written", len(fr))
+	}
+	for i := range fr {
+		if fr[i] != want[i] {
+			t.Errorf("frame %d differs", i)
+		}
+	}
+}
+
+func TestStreamLightsStopsOnMissingAck(t *testing.T) {
+	f := &device.Fake{}
+	f.QueueStream(lightAck(1), lightAck(2))
+	k, _ := newTest(f)
+	var p proto.LightPayload
+	err := k.StreamLights(&p)
+	if !errors.Is(err, device.ErrTimeout) {
+		t.Fatalf("err = %v", err)
+	}
+	if n := len(f.Frames()); n != 3 {
+		t.Errorf("%d frames written, want 3", n)
+	}
+}
+
+func TestReadBrightness(t *testing.T) {
+	f := &device.Fake{}
+	r := make([]byte, proto.Len11)
+	copy(r, []byte{0x11, 0x5c, 1, 0, 1, 6, 0x63})
+	seal(r)
+	f.QueueFeature([]byte{0x05, 0x01, 0, 0}, r)
+	k, _ := newTest(f)
+	got, err := k.ReadBrightness(2)
+	if err != nil || got != 99 {
+		t.Fatalf("got %d, %v", got, err)
+	}
+	if sf := f.Features(); len(sf) != 1 || !bytes.Equal(sf[0], []byte{0x05, 0x02, 0xb0, 0x00}) {
+		t.Errorf("select frames % x", sf)
+	}
+}

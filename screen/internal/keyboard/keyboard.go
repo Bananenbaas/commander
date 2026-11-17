@@ -382,3 +382,54 @@ func (k *KB) WriteTypes(t *proto.Table25) error {
 	}
 	return nil
 }
+
+const (
+	lightAckTimeout = 50 * time.Millisecond
+	selLights       = 0xb0
+	lightsID        = 0x11
+)
+
+// StreamLights writes the six a1 frames of p, each followed by its
+// acknowledgement. Anything else read while waiting is dropped. A missing
+// acknowledgement returns an error wrapping device.ErrTimeout and no further
+// frame of this set is sent.
+func (k *KB) StreamLights(p *proto.LightPayload) error {
+	for i, f := range proto.LightFrames(p) {
+		bank := byte(i + 1)
+		if err := k.d.WriteStream(f); err != nil {
+			return fmt.Errorf("keyboard: lighting bank %d: %w", bank, err)
+		}
+		deadline := k.now().Add(lightAckTimeout)
+		for acked := false; !acked; {
+			remaining := deadline.Sub(k.now())
+			if remaining <= 0 {
+				return fmt.Errorf("keyboard: lighting bank %d not acknowledged: %w", bank, device.ErrTimeout)
+			}
+			fr, err := k.d.ReadStream(remaining)
+			if err != nil {
+				return fmt.Errorf("keyboard: lighting bank %d acknowledgement: %w", bank, err)
+			}
+			acked = proto.IsLightAck(fr, bank)
+		}
+	}
+	return nil
+}
+
+// ReadBrightness reads the brightness percentage of profile p from report 0x11.
+func (k *KB) ReadBrightness(p byte) (int, error) {
+	if err := k.selectTable(p, selLights); err != nil {
+		return 0, err
+	}
+	b, err := k.d.GetFeature(lightsID, proto.Len11)
+	if err != nil {
+		return 0, fmt.Errorf("keyboard: reading lighting report: %w", err)
+	}
+	v, err := proto.Brightness11(b)
+	if err != nil {
+		return 0, fmt.Errorf("keyboard: %w", err)
+	}
+	if v > 100 {
+		return 0, fmt.Errorf("keyboard: brightness %d is out of range 0 to 100", v)
+	}
+	return v, nil
+}
