@@ -27,6 +27,7 @@ func TestTipFor(t *testing.T) {
 		{supervisor.State{Phase: supervisor.Running, Run: none}, "Commander — KB7: starting"},
 		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 3}}, "Commander — KB7: profile 3"},
 		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 0}}, "Commander — KB7: profile 0"},
+		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 1, Name: "SC"}}, "Commander — KB7: SC"},
 		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "keyboard"}}, "Commander — KB7: waiting for the keyboard"},
 		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "Swarm II"}}, "Commander — KB7: waiting for Swarm II to close"},
 		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "lunch"}}, "Commander — KB7: waiting for lunch"},

@@ -65,6 +65,9 @@ type Keyboard interface {
 type Status struct {
 	// Profile is the keyboard's active profile, -1 when unknown.
 	Profile int
+	// Name is the active profile's name as the keyboard stores it, "" when
+	// unknown.
+	Name string
 	// Waiting says what the loop waits for: "" (nothing, the keyboard is in
 	// use), "keyboard" (not connected) or "Swarm II" (left to Swarm II).
 	Waiting string
@@ -155,6 +158,7 @@ type loop struct {
 	shown      byte                         // the profile of the last frame sent
 	ackLogged  bool                         // a missing acknowledgement was logged since the keyboard was opened
 	brightMsg  string                       // why report 0x11 could not be read, as last logged
+	profNames  [5]string                    // the profile names read when the keyboard was opened; "" when unknown
 	stored     map[byte]*proto.LightPayload // each profile's 0x11 colours read since the keyboard was opened, unscaled
 }
 
@@ -318,7 +322,42 @@ func (l *loop) report(s Status) {
 }
 
 // ready reports the active profile, with the keyboard in use.
-func (l *loop) ready() { l.report(Status{Profile: int(l.active)}) }
+func (l *loop) ready() { l.report(Status{Profile: int(l.active), Name: l.nameOf(l.active)}) }
+
+// nameOf is the stored name of profile p, "" when not known.
+func (l *loop) nameOf(p byte) string {
+	if int(p) < len(l.profNames) {
+		return l.profNames[p]
+	}
+	return ""
+}
+
+// prof is profile p for the log: "profile 1 (SC)", or "profile 1" without a
+// name.
+func (l *loop) prof(p byte) string {
+	if n := l.nameOf(p); n != "" {
+		return fmt.Sprintf("profile %d (%s)", p, n)
+	}
+	return fmt.Sprintf("profile %d", p)
+}
+
+// readNames reads the profile names when the keyboard can tell them; a
+// failure only leaves them unknown.
+func (l *loop) readNames() {
+	l.profNames = [5]string{}
+	nk, ok := l.kb.(interface{ ProfileNames() ([5]string, error) })
+	if !ok {
+		return
+	}
+	names, err := nk.ProfileNames()
+	if err != nil {
+		l.logf("reading the profile names: %v", err)
+		return
+	}
+	for i, n := range names {
+		l.profNames[i] = strings.TrimSpace(n)
+	}
+}
 
 // sleep waits for d or until ctx is cancelled.
 func sleep(ctx context.Context, d time.Duration) {
@@ -376,12 +415,12 @@ func (l *loop) poll(ctx context.Context) {
 	}
 	if want == l.active {
 		// The keyboard does not confirm a switch to the active profile.
-		l.logf("profile %d is already active", want)
+		l.logf("%s is already active", l.prof(want))
 		l.expected = want
 		l.ready()
 		return
 	}
-	l.logf("switching to profile %d", want)
+	l.logf("switching to %s", l.prof(want))
 	if l.switchTo(ctx, want, false) {
 		l.ready()
 	}
@@ -432,10 +471,11 @@ func (l *loop) connect(ctx context.Context, want byte) {
 		return
 	}
 	l.nextFrame, l.streamed, l.ackLogged = l.now().Add(quiet), false, false
+	l.readNames()
 	if !l.switchTo(ctx, want, true) {
 		return
 	}
-	l.logf("keyboard ready on profile %d", want)
+	l.logf("keyboard ready on %s", l.prof(want))
 	l.ready()
 	if l.recheck {
 		l.check(ctx)
@@ -581,7 +621,7 @@ func (l *loop) read(ctx context.Context, timeout time.Duration) {
 			return
 		}
 		l.active = ev.Profile
-		l.logf("profile %d is active", ev.Profile)
+		l.logf("%s is active", l.prof(ev.Profile))
 		if l.activate(ctx) {
 			l.ready()
 		}

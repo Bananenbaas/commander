@@ -138,6 +138,8 @@ func tipFor(st supervisor.State) string {
 			what = "waiting for Swarm II to close"
 		case st.Run.Waiting != "":
 			what = "waiting for " + st.Run.Waiting
+		case st.Run.Name != "":
+			what = st.Run.Name
 		case st.Run.Profile >= 0:
 			what = fmt.Sprintf("profile %d", st.Run.Profile)
 		default:

@@ -11,6 +11,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
   thumbnail the keyboard's background picker shows), framed as Swarm II does.
 - `kb7screen clear-launchers <config> --profile N` empties the launcher
   buttons Swarm II left on a profile, so their picture slots are free.
+- Commander's tooltip and the log of `run` name the active profile as the
+  keyboard stores it ("SC", "DESKTOP") instead of only its number.
+- `docs/CAPTURES-WANTED.md`: the Swarm II captures the next session should
+  record (renaming a profile, the volume mixer page, saving lighting, ...).
 
 ### Changed
 - Up to 15 pictures instead of 9: slots 10 to 15 are used too.

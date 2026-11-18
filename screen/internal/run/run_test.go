@@ -162,6 +162,24 @@ type harness struct {
 	brightErr   error
 	stored      map[byte]proto.LightPayload // the 0x11 table of each profile
 	notifyAt    []time.Duration
+
+	// Profile names the keyboard tells; without them the fake has no
+	// ProfileNames method.
+	profileNames *[5]string
+	namesErr     error
+	statuses     []Status
+}
+
+// namedKB is a fake keyboard that can tell its profile names.
+type namedKB struct{ *fakeKB }
+
+func (k namedKB) ProfileNames() ([5]string, error) {
+	k.enter("ProfileNames")
+	defer k.leave()
+	if k.h.namesErr != nil {
+		return [5]string{}, k.h.namesErr
+	}
+	return *k.h.profileNames, nil
 }
 
 // frame is one set of lighting frames the fake keyboard was sent.
@@ -194,6 +212,11 @@ func (h *harness) deps() Deps {
 		Logf:    h.logf,
 		Light:   h.engine,
 		Keys:    h.keys,
+		Status: func(st Status) {
+			h.mu.Lock()
+			h.statuses = append(h.statuses, st)
+			h.mu.Unlock()
+		},
 	}
 }
 
@@ -285,6 +308,9 @@ func (h *harness) open() (Keyboard, error) {
 	h.opened++
 	h.kb = k
 	h.record("open")
+	if h.profileNames != nil {
+		return namedKB{k}, nil
+	}
 	return k, nil
 }
 
@@ -1972,5 +1998,32 @@ func TestStatusNilIsFine(t *testing.T) {
 		h.running[procs.Swarm[0]] = true
 		h.onPoll[2] = h.cancel
 		h.run(testConfig()) // h.deps() has no Status
+	})
+}
+
+func TestProfileNames(t *testing.T) {
+	t.Run("names in the log and the status", func(t *testing.T) {
+		test(t, func(h *harness) {
+			h.profileNames = &[5]string{"DESKTOP  ", "SC", "DEFAULT 03", "DEFAULT 04", "DEFAULT 05"}
+			h.onPoll[1] = h.cancel
+			h.run(testConfig())
+			h.wantLogged(1, "keyboard ready on profile 0 (DESKTOP)")
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			if !slices.Contains(h.statuses, Status{Profile: 0, Name: "DESKTOP"}) {
+				t.Errorf("statuses %+v lack profile 0 named DESKTOP", h.statuses)
+			}
+		})
+	})
+	t.Run("a failed read leaves numbers", func(t *testing.T) {
+		test(t, func(h *harness) {
+			h.profileNames = &[5]string{}
+			h.namesErr = errors.New("no answer")
+			h.onPoll[1] = h.cancel
+			h.run(testConfig())
+			h.wantLogged(1, "reading the profile names: no answer")
+			h.wantLogged(1, "keyboard ready on profile 0")
+			h.wantLogged(0, "profile 0 (")
+		})
 	})
 }
