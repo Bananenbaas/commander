@@ -236,7 +236,8 @@ needs more.
 Swarm II's own application buttons use the same slots. `apply` reads the
 button tables of all five profiles and leaves every slot that such a button
 shows alone, on any page, with a note; if too few slots are left, it refuses
-before sending anything and names those buttons.
+before uploading any picture and names those buttons (positions it gives back
+to their originals may already have been written).
 `kb7screen clear-launchers <config> --profile N` empties them on one profile;
 the positions the folder manages are left as they are.
 

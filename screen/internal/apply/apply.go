@@ -264,7 +264,8 @@ func Apply(ctx context.Context, kb Keyboard, cfg *layout.Config, l *ledger.Ledge
 // and that the layouts do not take over belongs to a launcher kb7screen does
 // not manage, on any page: the ledger is told to leave such a slot alone, with
 // a note. When the layouts' pictures do not fit in the slots that are left,
-// avoidForeign refuses, naming the launchers, before anything is sent.
+// avoidForeign refuses, naming the launchers, before any picture is uploaded
+// (the first pass may already have restored removed positions).
 func avoidForeign(kb Keyboard, l *ledger.Ledger, jobs map[byte][]job, read map[byte]tables, rep *Report) error {
 	taken := map[ledger.Owner]bool{}
 	hashes := map[string]bool{}

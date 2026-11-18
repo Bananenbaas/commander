@@ -24,7 +24,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
   after applying with this version.
 - `apply` reads the button tables of all five profiles and leaves the picture
   slots of launchers it does not manage alone, on every page. When too few
-  slots are left it refuses before sending anything and names those launchers.
+  slots are left it refuses before uploading any picture and names those launchers.
 - A slot freed by a removed button keeps its picture in the ledger, so a
   button moved to another position is not uploaded again. New pictures go to
   slots of unknown content first.
