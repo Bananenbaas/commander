@@ -168,6 +168,9 @@ type harness struct {
 	profileNames *[5]string
 	namesErr     error
 	statuses     []Status
+
+	// The profile Run is to resume, set before Run starts; nil: none.
+	resume *Resume
 }
 
 // namedKB is a fake keyboard that can tell its profile names.
@@ -212,6 +215,7 @@ func (h *harness) deps() Deps {
 		Logf:    h.logf,
 		Light:   h.engine,
 		Keys:    h.keys,
+		Resume:  h.resume,
 		Status: func(st Status) {
 			h.mu.Lock()
 			h.statuses = append(h.statuses, st)

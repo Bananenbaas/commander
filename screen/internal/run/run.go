@@ -107,6 +107,28 @@ type Deps struct {
 	// the last one reported, first with {Profile: -1, Waiting: "keyboard"}
 	// before the keyboard is opened for the first time. Nil: no reports.
 	Status func(Status)
+	// Resume is the profile to keep from an earlier Run in this process;
+	// nil: none. It is used at the first attempt to open the keyboard only,
+	// and dropped when Swarm II runs before that.
+	Resume *Resume
+}
+
+// Resume is a profile an earlier Run left the keyboard on.
+//
+// The first connect of Run goes to Profile instead of the expected profile,
+// unless a program of switch_when_running runs whose profile differs: then
+// that profile wins, as always. The expected profile itself stays what the
+// running programs say, so the next poll does not switch away; later
+// program starts and stops switch as always.
+//
+// With Active, the keyboard is known to be on Profile: the keyboard stayed
+// open, or was closed only by the earlier Run's stop, in between. Then no
+// switch is sent when Profile is chosen, and a switch to another profile
+// needs no detour (see switchTo). Without Active, the switch goes through
+// another profile first, as when nothing is known.
+type Resume struct {
+	Profile byte
+	Active  bool
 }
 
 const (
@@ -148,6 +170,7 @@ type loop struct {
 	recheck  bool                  // compare the button tables once the keyboard is open again
 	openMsg  string                // why the keyboard could not be opened, as last logged
 	runMsg   string                // why the programs could not be checked, as last logged
+	resume   *Resume               // used by the first connect, then nil
 
 	// Lighting; eng is nil without it.
 	eng        *light.Engine
@@ -171,8 +194,9 @@ type loop struct {
 // named in switch_when_running. While Swarm II runs the keyboard stays
 // closed. Otherwise the keyboard is opened when it is not, touch
 // notifications are enabled and the expected profile is switched to: the
-// lowest profile whose program runs, else the desktop profile. A change of
-// the expected profile switches the keyboard. When Swarm II has closed, the
+// lowest profile whose program runs, else the desktop profile (d.Resume can
+// keep another one at the first connect, see Resume). A change of the
+// expected profile switches the keyboard. When Swarm II has closed, the
 // managed profiles' button tables are read and differences from the layout
 // are reported; nothing is written.
 //
@@ -251,7 +275,7 @@ func newLoop(cfg *layout.Config, d Deps) (*loop, error) {
 	l := &loop{
 		cfg: cfg, open: d.Open, status: d.Status, running: d.Running, now: d.Now, every: d.Poll, logf: d.Logf,
 		buttons: map[spot]layout.Button{}, chords: map[spot]action.Chord{}, held: map[spot]action.Chord{},
-		flips: map[spot]string{}, wasRunning: map[string]bool{},
+		flips: map[spot]string{}, wasRunning: map[string]bool{}, resume: d.Resume,
 	}
 	if d.Light != nil && anyLit(cfg.Profiles) {
 		l.eng, l.keys = d.Light, d.Keys
@@ -408,7 +432,7 @@ func (l *loop) poll(ctx context.Context) {
 	l.noteStarts(running)
 	if anyOf(running, procs.Swarm) {
 		if !l.paused {
-			l.paused, l.recheck = true, true
+			l.paused, l.recheck, l.resume = true, true, nil
 			l.logf("Swarm II is running; leaving the keyboard to it until it closes")
 			l.shut(ctx, true)
 			l.report(Status{Profile: -1, Waiting: "Swarm II"})
@@ -419,11 +443,11 @@ func (l *loop) poll(ctx context.Context) {
 		l.paused = false
 		l.logf("Swarm II has closed; taking the keyboard back")
 	}
-	want := l.expect(running)
 	if l.kb == nil {
-		l.connect(ctx, want)
+		l.connect(ctx, running)
 		return
 	}
+	want := l.expect(running)
 	if want == l.expected {
 		return
 	}
@@ -435,7 +459,7 @@ func (l *loop) poll(ctx context.Context) {
 		return
 	}
 	l.logf("switching to %s", l.prof(want))
-	if l.switchTo(ctx, want, false) {
+	if l.switchTo(ctx, want, switchPlain) {
 		l.ready()
 	}
 }
@@ -452,17 +476,39 @@ func anyOf(running map[string]bool, names []string) bool {
 // expect returns the profile the keyboard should be on: the lowest one whose
 // program runs, else the desktop profile.
 func (l *loop) expect(running map[string]bool) byte {
-	for _, p := range l.switchers {
-		if running[p.SwitchWhenRunning] {
-			return p.Number
-		}
-	}
-	return l.cfg.DesktopProfile()
+	p, _ := l.program(running)
+	return p
 }
 
-// connect opens the keyboard, enables notifications and switches to want.
+// program returns the lowest profile whose program runs and true, or the
+// desktop profile and false when none runs.
+func (l *loop) program(running map[string]bool) (byte, bool) {
+	for _, p := range l.switchers {
+		if running[p.SwitchWhenRunning] {
+			return p.Number, true
+		}
+	}
+	return l.cfg.DesktopProfile(), false
+}
+
+// connect opens the keyboard, enables notifications and switches to the
+// expected profile, or at the first connect to the resumed one (see Resume).
 // On failure the keyboard is closed again; the next poll retries.
-func (l *loop) connect(ctx context.Context, want byte) {
+func (l *loop) connect(ctx context.Context, running map[string]bool) {
+	want, byProgram := l.program(running)
+	target, how := want, switchFresh
+	if r := l.resume; r != nil {
+		l.resume = nil
+		if !byProgram || want == r.Profile {
+			target = r.Profile
+		}
+		if r.Active {
+			how = switchPlain
+			if target == r.Profile {
+				how = switchNone
+			}
+		}
+	}
 	kb, err := l.open()
 	if err != nil {
 		msg := fmt.Sprintf("opening the keyboard: %v", err)
@@ -486,33 +532,45 @@ func (l *loop) connect(ctx context.Context, want byte) {
 	}
 	l.nextFrame, l.streamed, l.ackLogged = l.now().Add(quiet), false, false
 	l.readNames()
-	if !l.switchTo(ctx, want, true) {
+	if !l.switchTo(ctx, target, how) {
 		return
 	}
-	l.logf("keyboard ready on %s", l.prof(want))
+	l.expected = want // a resumed profile stays until the programs change
+	l.logf("keyboard ready on %s", l.prof(target))
 	l.ready()
 	if l.recheck {
 		l.check(ctx)
 	}
 }
 
-// switchTo releases held keys and switches to p. With fresh, used while the
-// active profile is not known, the switch goes through another profile
-// first: the keyboard does not confirm a switch to the profile that is
-// already active.
+// How switchTo switches.
+const (
+	switchPlain = iota // p is not the active profile
+	switchFresh        // the active profile is not known
+	switchNone         // p is known to be active: nothing is sent
+)
+
+// switchTo releases held keys and switches to p. With switchFresh, used
+// while the active profile is not known, the switch goes through another
+// profile first: the keyboard does not confirm a switch to the profile that
+// is already active. With switchNone nothing is sent and p is taken as
+// active.
 //
 // When the keyboard does not confirm the switch in time, p is taken as
 // active, as reopening would most likely only time out again. On any other
 // failure the keyboard is closed; the next poll opens it again.
-func (l *loop) switchTo(ctx context.Context, p byte, fresh bool) bool {
+func (l *loop) switchTo(ctx context.Context, p byte, how int) bool {
 	if !l.release(ctx) {
 		return false
 	}
-	switchProfile := l.kb.SwitchProfile
-	if fresh {
-		switchProfile = l.kb.SwitchProfileFresh
+	var err error
+	switch how {
+	case switchPlain:
+		err = l.kb.SwitchProfile(p)
+	case switchFresh:
+		err = l.kb.SwitchProfileFresh(p)
 	}
-	if err := switchProfile(p); err != nil {
+	if err != nil {
 		if !errors.Is(err, device.ErrTimeout) {
 			l.logf("switching to profile %d: %v", p, err)
 			l.drop(ctx)
