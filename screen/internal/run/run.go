@@ -73,13 +73,18 @@ type Status struct {
 	// use), "keyboard" (not connected), "Swarm II" (left to Swarm II) or
 	// WaitReplug (the keyboard does not answer).
 	Waiting string
+	// Unconfirmed is set when the keyboard did not confirm the switch to
+	// Profile: it is assumed active, not known to be.
+	Unconfirmed bool
 }
 
 // WaitReplug is Status.Waiting while the keyboard does not answer: the last
 // replugAfter attempts to connect or switch failed, for another reason than
 // the keyboard being gone. Typing may still work; unplugging the keyboard and
-// plugging it back in has been the only cure. Run keeps trying meanwhile,
-// and the status ends with the next connect or switch that works.
+// plugging it back in has been the only cure. Run keeps trying meanwhile.
+// The status ends as soon as the keyboard answers: notifications enabled, a
+// switch confirmed or any input read. Swarm II taking the keyboard, or the
+// keyboard being gone, starts the count anew.
 const WaitReplug = "replug"
 
 // replugAfter is the number of failures in a row that make WaitReplug.
@@ -183,6 +188,7 @@ type loop struct {
 	runMsg   string                // why the programs could not be checked, as last logged
 	resume   *Resume               // used by the first connect, then nil
 	failures int                   // connects and switches that failed in a row
+	assumed  bool                  // the keyboard did not confirm the switch to the active profile
 
 	// Lighting; eng is nil without it.
 	eng        *light.Engine
@@ -365,7 +371,7 @@ func (l *loop) ready() {
 		l.report(Status{Profile: -1, Waiting: WaitReplug})
 		return
 	}
-	l.report(Status{Profile: int(l.active), Name: l.nameOf(l.active)})
+	l.report(Status{Profile: int(l.active), Name: l.nameOf(l.active), Unconfirmed: l.assumed})
 }
 
 // waiting reports that the keyboard is not in use: not connected, or not
@@ -376,6 +382,17 @@ func (l *loop) waiting() {
 		return
 	}
 	l.report(Status{Profile: -1, Waiting: "keyboard"})
+}
+
+// answered ends the failures when input was read from the open keyboard:
+// it answers. When it was taken as not answering, the status says it is in
+// use again.
+func (l *loop) answered() {
+	was := l.failures >= replugAfter
+	l.failures = 0
+	if was {
+		l.ready()
+	}
 }
 
 // failed counts a connect or switch that failed; at the replugAfter-th in a
@@ -470,7 +487,7 @@ func (l *loop) poll(ctx context.Context) {
 	l.noteStarts(running)
 	if anyOf(running, procs.Swarm) {
 		if !l.paused {
-			l.paused, l.recheck, l.resume = true, true, nil
+			l.paused, l.recheck, l.resume, l.failures = true, true, nil, 0
 			l.logf("Swarm II is running; leaving the keyboard to it until it closes")
 			l.shut(ctx, true)
 			l.report(Status{Profile: -1, Waiting: "Swarm II"})
@@ -536,7 +553,6 @@ func (l *loop) connect(ctx context.Context, running map[string]bool) {
 	want, byProgram := l.program(running)
 	target, how := want, switchFresh
 	if r := l.resume; r != nil {
-		l.resume = nil
 		if !byProgram || want == r.Profile {
 			target = r.Profile
 		}
@@ -552,8 +568,12 @@ func (l *loop) connect(ctx context.Context, running map[string]bool) {
 		msg := fmt.Sprintf("opening the keyboard: %v", err)
 		if errors.Is(err, device.ErrNotFound) {
 			msg = "waiting for the keyboard"
-			l.failures = 0 // unplugged: whatever comes back is a new start
+			// Unplugged: whatever comes back is a new start, on any
+			// profile.
+			l.failures, l.resume = 0, nil
 		} else {
+			// Any other reason, such as access denied, counts toward
+			// the replug advice too.
 			l.failed()
 		}
 		l.logOnce(&l.openMsg, msg)
@@ -572,6 +592,9 @@ func (l *loop) connect(ctx context.Context, running map[string]bool) {
 		l.drop(ctx)
 		return
 	}
+	// The keyboard answers; the status follows once the switch is done.
+	l.failures = 0
+	l.resume = nil // the connect switches now: the resume is used up
 	l.nextFrame, l.streamed, l.ackLogged = l.now().Add(quiet), false, false
 	l.readNames()
 	if !l.switchTo(ctx, target, how) {
@@ -621,7 +644,7 @@ func (l *loop) switchTo(ctx context.Context, p byte, how int) bool {
 		}
 		l.logf("the keyboard did not confirm the switch to profile %d; assuming it is active", p)
 	}
-	l.active, l.expected = p, p
+	l.active, l.expected, l.assumed = p, p, err != nil
 	if !l.activate(ctx) {
 		return false
 	}
@@ -736,12 +759,13 @@ func (l *loop) read(ctx context.Context, timeout time.Duration) {
 		l.drop(ctx)
 		return
 	}
+	l.answered()
 	switch ev := ev.(type) {
 	case proto.ProfileChanged:
 		if !l.release(ctx) {
 			return
 		}
-		l.active = ev.Profile
+		l.active, l.assumed = ev.Profile, false
 		l.logf("%s is active", l.prof(ev.Profile))
 		if l.activate(ctx) {
 			l.ready()

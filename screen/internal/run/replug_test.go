@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/procs"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
 )
 
 // semaphore is how Windows reports a control write the keyboard does not
@@ -46,9 +48,30 @@ func TestReplugAfterThreeFailures(t *testing.T) {
 	})
 }
 
-// A switch the keyboard does not confirm counts as well, also when the
-// keyboard stays open; a confirmed switch ends it.
-func TestReplugCountsUnconfirmedSwitches(t *testing.T) {
+// Switches the keyboard does not confirm count; once the keyboard answers
+// again, here with a touch, the replug status ends.
+func TestReplugAfterUnconfirmedSwitchesEndsWhenTheKeyboardAnswers(t *testing.T) {
+	test(t, func(h *harness) {
+		h.switchErr = func(int) error { return unconfirmed }
+		h.onPoll[1] = func() { h.running[game] = true }
+		h.onPoll[2] = func() { h.running[game] = false }
+		h.onPoll[3] = func() { h.push(touch(9, false)) }
+		h.onPoll[4] = h.cancel
+		got := statusRun(h)
+		h.want("poll", "open", "notify", "fresh 0",
+			"poll", "switch 2",
+			"poll", "switch 0",
+			"poll", "poll", "close")
+		wantStatuses(h, got, Status{Profile: -1, Waiting: "keyboard"},
+			Status{Profile: 0, Unconfirmed: true}, Status{Profile: 2, Unconfirmed: true},
+			Status{Profile: -1, Waiting: WaitReplug}, Status{Profile: 0, Unconfirmed: true})
+		h.wantLogged(1, replugMsg)
+	})
+}
+
+// Notifications that are enabled at last show the keyboard answers: two
+// timeouts before and an unconfirmed switch after do not ask for a replug.
+func TestEnabledNotificationsEndTheFailures(t *testing.T) {
 	test(t, func(h *harness) {
 		h.notifyErr = func(n int) error {
 			if n < 2 {
@@ -62,16 +85,44 @@ func TestReplugCountsUnconfirmedSwitches(t *testing.T) {
 			}
 			return nil
 		}
-		h.onPoll[3] = func() { h.running[game] = true }
 		h.onPoll[4] = h.cancel
 		got := statusRun(h)
 		h.want("poll", "open", "notify", "close",
 			"poll", "open", "notify", "close",
 			"poll", "open", "notify", "fresh 0",
-			"poll", "switch 2",
-			"poll", "close")
-		wantStatuses(h, got, Status{Profile: -1, Waiting: "keyboard"}, Status{Profile: -1, Waiting: WaitReplug}, Status{Profile: 2})
-		h.wantLogged(1, replugMsg)
+			"poll", "poll", "close")
+		wantStatuses(h, got, Status{Profile: -1, Waiting: "keyboard"}, Status{Profile: 0, Unconfirmed: true})
+		h.wantLogged(0, replugMsg)
+	})
+}
+
+// Swarm II taking the keyboard is a new start as well.
+func TestReplugCountRestartsWhenSwarmTakesTheKeyboard(t *testing.T) {
+	test(t, func(h *harness) {
+		h.notifyErr = func(n int) error {
+			if n < 3 {
+				return semaphore
+			}
+			return nil
+		}
+		h.onPoll[2] = func() { h.running[procs.Swarm[0]] = true }
+		h.onPoll[3] = func() { h.running[procs.Swarm[0]] = false }
+		h.onPoll[5] = h.cancel
+		got := statusRun(h)
+		wantStatuses(h, got, Status{Profile: -1, Waiting: "keyboard"}, Status{Profile: -1, Waiting: "Swarm II"},
+			Status{Profile: -1, Waiting: "keyboard"}, Status{Profile: 0})
+		h.wantLogged(0, replugMsg)
+	})
+}
+
+// A profile change reported by the keyboard makes the active profile known.
+func TestProfileChangeConfirmsTheActiveProfile(t *testing.T) {
+	test(t, func(h *harness) {
+		h.switchErr = func(int) error { return unconfirmed }
+		h.scripts = [][]item{{event(proto.ProfileChanged{Profile: 2})}}
+		h.onPoll[1] = h.cancel
+		got := statusRun(h)
+		wantStatuses(h, got, Status{Profile: -1, Waiting: "keyboard"}, Status{Profile: 0, Unconfirmed: true}, Status{Profile: 2})
 	})
 }
 

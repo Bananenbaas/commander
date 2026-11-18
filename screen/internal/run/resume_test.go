@@ -3,6 +3,7 @@
 package run
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"testing"
@@ -102,8 +103,9 @@ func TestResumeOnlyAtTheFirstConnect(t *testing.T) {
 	})
 }
 
-// A first open that fails uses the resume up.
-func TestResumeDroppedWhenTheFirstOpenFails(t *testing.T) {
+// A keyboard that is gone may come back on any profile: the resume is
+// dropped.
+func TestResumeDroppedWhenTheKeyboardIsGone(t *testing.T) {
 	test(t, func(h *harness) {
 		h.resume = &Resume{Profile: 4, Active: true}
 		h.openErr = func(n int) error {
@@ -115,6 +117,39 @@ func TestResumeDroppedWhenTheFirstOpenFails(t *testing.T) {
 		h.onPoll[2] = h.cancel
 		h.run(testConfig())
 		h.want("poll", "open failed", "poll", "open", "notify", "fresh 0", "poll", "close")
+	})
+}
+
+// A connect that fails before it switches leaves the profile alone: the
+// resume is kept for the next one.
+func TestResumeKeptAcrossAFailureBeforeTheSwitch(t *testing.T) {
+	t.Run("open", func(t *testing.T) {
+		test(t, func(h *harness) {
+			h.resume = &Resume{Profile: 4, Active: true}
+			h.openErr = func(n int) error {
+				if n == 0 {
+					return errors.New("access denied")
+				}
+				return nil
+			}
+			h.onPoll[2] = h.cancel
+			h.run(testConfig())
+			h.want("poll", "open failed", "poll", "open", "notify", "poll", "close")
+		})
+	})
+	t.Run("notifications", func(t *testing.T) {
+		test(t, func(h *harness) {
+			h.resume = &Resume{Profile: 4, Active: true}
+			h.notifyErr = func(n int) error {
+				if n == 0 {
+					return semaphore
+				}
+				return nil
+			}
+			h.onPoll[2] = h.cancel
+			h.run(testConfig())
+			h.want("poll", "open", "notify", "close", "poll", "open", "notify", "poll", "close")
+		})
 	})
 }
 
