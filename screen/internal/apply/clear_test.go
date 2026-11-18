@@ -47,14 +47,54 @@ func TestClearLaunchers(t *testing.T) {
 	checkType(t, f, 2, 12, keyType(12)) // page 2's marker untouched
 }
 
-func TestClearLaunchersRefusesManagedProfile(t *testing.T) {
-	f, l, _ := restoreSetup(t, "Home")
-	if _, err := ClearLaunchers(context.Background(), f, l, 1); err == nil {
-		t.Fatal("managed profile cleared")
+func TestClearLaunchersSkipsManagedPositions(t *testing.T) {
+	f, l, _ := restoreSetup(t, "Home") // profile 1 positions 3 and 4 are managed
+	foreign(t, f, 1, 5, 12)
+	foreign(t, f, 1, 15, 13) // page 2 position 3: not managed, as only page 1 is
+	if err := f.b25[1].SetType(5, proto.AppType); err != nil {
+		t.Fatal(err)
 	}
-	if len(f.calls) != 0 {
-		t.Errorf("calls made: %q", f.calls)
+	got, err := ClearLaunchers(context.Background(), f, l, 1)
+	if err != nil {
+		t.Fatal(err)
 	}
+	want := []string{"page 1 position 5", "page 2 position 3"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cleared %q, want %q", got, want)
+	}
+	checkEntry(t, f, 1, 5, proto.Entry29{})
+	checkType(t, f, 1, 5, proto.TypeEntry{})
+	checkEntry(t, f, 1, 15, proto.Entry29{})
+	for _, pos := range []int{3, 4} {
+		if e := f.b29[1].Entry(pos); e.Kind != proto.KindApp {
+			t.Errorf("managed position %d cleared: %+v", pos, e)
+		}
+		checkType(t, f, 1, pos, proto.AppType)
+	}
+	if _, ok := l.SlotOf(own(1, 3)); !ok {
+		t.Error("the ledger lost a managed position")
+	}
+}
+
+func TestClearLaunchersLastTypeEntry(t *testing.T) {
+	// Page 3 position 11 has a 0x25 entry (37) but no 0x29 entry.
+	f := newFake(t)
+	if err := f.b25[2].SetType(37, proto.TypeEntry{Type: 0x42}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.b25[2].SetType(36, proto.TypeEntry{Type: 0x05, Value: 0x01}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ClearLaunchers(context.Background(), f, &ledger.Ledger{}, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"page 3 position 11"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("cleared %q, want %q", got, want)
+	}
+	checkType(t, f, 2, 37, proto.TypeEntry{})
+	checkType(t, f, 2, 36, proto.TypeEntry{Type: 0x05, Value: 0x01})
+	checkEntry(t, f, 2, 34, keyEntry(34))
 }
 
 func TestClearLaunchersNothingToDo(t *testing.T) {
