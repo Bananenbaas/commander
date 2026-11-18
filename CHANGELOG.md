@@ -6,6 +6,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- A project site in `site/`: one page that says where Commander is going and
+  what it does today, with a rendered example, and links to the releases for
+  the downloads. It follows the visitor's light or dark setting and has a
+  switch. The `Pages` workflow publishes it to GitHub Pages when `site/`
+  changes on `main`.
+
 ## [0.1.0-beta.6] - 2026-11-22
 
 ### Changed
