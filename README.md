@@ -4,6 +4,8 @@
 [![Release](https://img.shields.io/github/v/release/Bananenbaas/kb7-commander?include_prereleases&sort=semver)](https://github.com/Bananenbaas/kb7-commander/releases)
 [![License: GPL v2+](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Go 1.27+](https://img.shields.io/github/go-mod/go-version/Bananenbaas/kb7-commander?filename=screen%2Fgo.mod)](https://go.dev/dl/)
+[![VirusTotal: scanned per release](https://img.shields.io/badge/VirusTotal-scanned%20per%20release-394EFF?logo=virustotal&logoColor=white)](https://github.com/Bananenbaas/kb7-commander/releases)
 
 An open-source project to unlock the full potential of the **Turtle Beach
 Command Series KB7**.
