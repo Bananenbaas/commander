@@ -42,6 +42,11 @@ type Original struct {
 	Type  proto.TypeEntry
 }
 
+// slotState is a slot the ledger knows something about: its users, its
+// content, or both. A slot without users whose content is known is free but
+// still holds that picture, so a button moved to another position finds it
+// again without an upload. A slot the ledger has no state for is free and
+// its content is unknown.
 type slotState struct {
 	hash  string // "" when unknown
 	users map[Owner]bool
@@ -51,6 +56,7 @@ type slotState struct {
 type Ledger struct {
 	slots     map[byte]*slotState
 	originals map[Owner]Original
+	blocked   map[byte]bool // slots Assign must not use; not saved
 }
 
 // SlotOf returns the slot an owner currently uses.
@@ -70,7 +76,13 @@ func (l *Ledger) leave(o Owner) {
 	}
 	s := l.slots[n]
 	delete(s.users, o)
-	if len(s.users) == 0 {
+	l.drop(n)
+}
+
+// drop removes the state of slot n once it has neither users nor a known
+// content.
+func (l *Ledger) drop(n byte) {
+	if s := l.slots[n]; s != nil && len(s.users) == 0 && s.hash == "" {
 		delete(l.slots, n)
 	}
 }
@@ -88,16 +100,32 @@ func (l *Ledger) join(n byte, o Owner, hash string) {
 	s.users[o] = true
 }
 
+// keep records that the free slot n holds the picture with the given hash.
+func (l *Ledger) keep(n byte, hash string) {
+	if l.slots == nil {
+		l.slots = map[byte]*slotState{}
+	}
+	l.slots[n] = &slotState{hash: hash, users: map[Owner]bool{}}
+}
+
 // Assign picks the slot for o's picture with the given hash and reports
 // whether the picture has to be uploaded.
+//
+// A slot that holds the picture already, in use or free, is taken without
+// an upload. Otherwise o keeps its own slot if no one else uses it, or gets
+// a new one: a free slot of unknown content first, then a free slot whose
+// content is known, which that content then loses.
 func (l *Ledger) Assign(o Owner, hash string) (slot byte, upload bool, err error) {
 	cur, owns := l.SlotOf(o)
+	if owns && l.blocked[cur] {
+		owns = false
+	}
 	if owns && hash != "" && l.slots[cur].hash == hash {
 		return cur, false, nil
 	}
 	if hash != "" {
 		for n := byte(1); n <= MaxSlot; n++ {
-			if s := l.slots[n]; s != nil && s.hash == hash {
+			if s := l.slots[n]; s != nil && s.hash == hash && !l.blocked[n] {
 				l.leave(o)
 				l.join(n, o, hash)
 				return n, false, nil
@@ -108,18 +136,39 @@ func (l *Ledger) Assign(o Owner, hash string) (slot byte, upload bool, err error
 		l.slots[cur].hash = hash
 		return cur, true, nil
 	}
-	for n := byte(1); n <= MaxSlot; n++ {
-		if l.slots[n] == nil {
-			l.leave(o)
-			l.join(n, o, hash)
-			return n, true, nil
+	for _, free := range []func(*slotState) bool{
+		func(s *slotState) bool { return s == nil },
+		func(s *slotState) bool { return s != nil && len(s.users) == 0 },
+	} {
+		for n := byte(1); n <= MaxSlot; n++ {
+			if free(l.slots[n]) && !l.blocked[n] {
+				l.leave(o)
+				l.join(n, o, hash)
+				return n, true, nil
+			}
 		}
 	}
 	return 0, false, ErrNoSlot
 }
 
-// Release removes o from its slot; a slot without users becomes free.
+// Release removes o from its slot. A slot without users becomes free and
+// keeps its known content.
 func (l *Ledger) Release(o Owner) { l.leave(o) }
+
+// Block keeps slot n out of every later Assign in this ledger: it is never
+// matched, given out or uploaded to, and an owner that uses it moves to
+// another slot. The slot's content is no longer trusted. Blocks are not
+// saved.
+func (l *Ledger) Block(n byte) {
+	if l.blocked == nil {
+		l.blocked = map[byte]bool{}
+	}
+	l.blocked[n] = true
+	l.ForgetSlot(n)
+}
+
+// Blocked reports whether slot n is blocked.
+func (l *Ledger) Blocked(n byte) bool { return l.blocked[n] }
 
 // RecordOriginal stores orig unless an original is already recorded for o.
 func (l *Ledger) RecordOriginal(o Owner, orig Original) {
@@ -142,18 +191,21 @@ func (l *Ledger) Original(o Owner) (Original, bool) {
 	return orig, ok
 }
 
-// Forget clears every slot's hash but keeps users and slot numbers.
+// Forget clears every slot's hash but keeps users and slot numbers. Free
+// slots become slots of unknown content.
 func (l *Ledger) Forget() {
-	for _, s := range l.slots {
-		s.hash = ""
+	for n := range l.slots {
+		l.ForgetSlot(n)
 	}
 }
 
 // ForgetSlot clears the hash of slot n but keeps its users, so the next
-// Assign of a picture to it uploads again. A free slot is left alone.
+// Assign of a picture to it uploads again. A free slot becomes a slot of
+// unknown content.
 func (l *Ledger) ForgetSlot(n byte) {
 	if s := l.slots[n]; s != nil {
 		s.hash = ""
+		l.drop(n)
 	}
 }
 
@@ -206,6 +258,11 @@ func Load(path string) (*Ledger, error) {
 	for _, fs := range f.Slots {
 		if fs.Slot < 1 || fs.Slot > MaxSlot {
 			return nil, fmt.Errorf("ledger: %s: slot %d out of range", path, fs.Slot)
+		}
+		if len(fs.Users) == 0 && fs.Hash != "" {
+			// A free slot whose content is known. Older versions never
+			// write one, and skip it when reading.
+			l.keep(fs.Slot, fs.Hash)
 		}
 		for _, u := range fs.Users {
 			o, err := parseOwner(u)

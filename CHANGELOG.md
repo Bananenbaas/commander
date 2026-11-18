@@ -18,6 +18,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - Up to 15 pictures instead of 9: slots 10 to 15 are used too.
+- A slot freed by a removed button keeps its picture in the ledger, so a
+  button moved to another position is not uploaded again. New pictures go to
+  slots of unknown content first.
 
 ## [0.1.0-beta.2] - 2026-11-18
 

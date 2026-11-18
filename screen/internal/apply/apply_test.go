@@ -612,15 +612,40 @@ func TestRemovedButtonGetsOriginalBack(t *testing.T) {
 		t.Fatal("restored position still has a recorded original")
 	}
 	// The position is changed elsewhere and taken over again: the new
-	// takeover records what it holds now, and the freed slot is reused.
+	// takeover records what it holds now. The freed slot still holds "Two",
+	// so the new picture goes to a slot of unknown content.
 	changed := proto.Entry29{Key: 0x30, Kind: 0x01, Label: "new"}
 	if err := f.b29[1].SetEntry(4, changed); err != nil {
 		t.Fatal(err)
 	}
 	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(4, "Four"))), l, false)
-	checkEntry(t, f, 1, 4, proto.AppEntry(2, ""))
+	checkEntry(t, f, 1, 4, proto.AppEntry(3, ""))
 	if got, _ := l.Original(own(1, 4)); got.Entry != changed {
 		t.Fatalf("Original after a new takeover = %+v, want %+v", got.Entry, changed)
+	}
+}
+
+func TestMovedButtonsAreNotUploaded(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(4, "Two"), btn(5, "Three"))), l, false)
+	moved := cfgOf(prof(1, "sc.toml", "", btn(8, "One"), btn(9, "Two"), btn(5, "Three")))
+	n := len(f.calls)
+	rep := mustApply(t, f, moved, l, false)
+	if got := f.since(n); strings.Contains(got, "upload") {
+		t.Fatalf("moving buttons uploaded their pictures: %s", got)
+	}
+	sameOwners(t, "Restored", rep.Restored, []ledger.Owner{own(1, 3), own(1, 4)})
+	sameOwners(t, "Skipped", rep.Skipped, []ledger.Owner{own(1, 5), own(1, 8), own(1, 9)})
+	shows(t, f, 1, 8, "One")
+	shows(t, f, 1, 9, "Two")
+	checkEntry(t, f, 1, 3, keyEntry(3))
+
+	// --full still sends every picture.
+	n = len(f.calls)
+	rep = mustApply(t, f, moved, l, true)
+	if got := strings.Count(f.since(n), "upload"); got != 3 {
+		t.Fatalf("--full sent %d pictures, want 3: %s", got, f.since(n))
 	}
 }
 
