@@ -107,6 +107,32 @@ func TestUploadFullEcho(t *testing.T) {
 	}
 }
 
+func TestUploadBackgroundFullEcho(t *testing.T) {
+	f := &device.Fake{Echo: true}
+	kb, _ := newTest(f)
+	full := make([]byte, proto.BackgroundSize)
+	for i := range full {
+		full[i] = byte(i)
+	}
+	thumb := picture()
+	if err := kb.UploadBackground(full, thumb); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := proto.BackgroundFrames(full, thumb)
+	got := f.Frames()
+	if len(got) != len(want) {
+		t.Fatalf("%d frames sent, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i].Out {
+			t.Fatalf("frame %d differs", i)
+		}
+	}
+	if err := kb.UploadBackground(full[:5], thumb); err == nil {
+		t.Error("short background accepted")
+	}
+}
+
 func TestUploadBadSlot(t *testing.T) {
 	f := &device.Fake{Echo: true}
 	kb, _ := newTest(f)

@@ -6,6 +6,15 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `kb7screen background <image>` uploads a screen background (and the
+  thumbnail the keyboard's background picker shows), framed as Swarm II does.
+- `kb7screen clear-launchers <config> --profile N` empties the launcher
+  buttons Swarm II left on a profile, so their picture slots are free.
+
+### Changed
+- Up to 15 pictures instead of 9: slots 10 to 15 are used too.
+
 ## [0.1.0-beta.2] - 2026-11-18
 
 Commander learns to update itself. Updating from `0.1.0-beta.1` is by hand,

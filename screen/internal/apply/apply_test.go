@@ -624,37 +624,45 @@ func TestRemovedButtonGetsOriginalBack(t *testing.T) {
 	}
 }
 
+// buttons returns buttons at positions from..to-1 titled with prefix.
+func buttons(prefix string, from, to int) []layout.Button {
+	var bs []layout.Button
+	for i := from; i < to; i++ {
+		bs = append(bs, btn(i, fmt.Sprintf("%s%d", prefix, i)))
+	}
+	return bs
+}
+
 func TestRemovalAndAdditionInOneProfile(t *testing.T) {
 	f := newFake(t)
 	l := &ledger.Ledger{}
-	var full []layout.Button
-	for i := 0; i < ledger.MaxSlot; i++ {
-		full = append(full, btn(i, fmt.Sprintf("B%d", i)))
-	}
-	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", full...)), l, false)
-	// Every slot is taken; the removed button's slot must be free before the
-	// new one is assigned.
-	next := append(append([]layout.Button(nil), full[:ledger.MaxSlot-1]...), btn(ledger.MaxSlot, "New"))
-	rep := mustApply(t, f, cfgOf(prof(1, "sc.toml", "", next...)), l, false)
-	sameOwners(t, "Restored", rep.Restored, []ledger.Owner{own(1, ledger.MaxSlot-1)})
-	checkEntry(t, f, 1, ledger.MaxSlot-1, keyEntry(ledger.MaxSlot-1))
-	shows(t, f, 1, ledger.MaxSlot, "New")
+	// Every slot is taken: 11 pictures on profile 1, the rest on profile 2.
+	p2 := buttons("C", 0, ledger.MaxSlot-11)
+	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", buttons("B", 0, 11)...), prof(2, "two.toml", "", p2...)), l, false)
+	// Profile 1 drops position 10 and gains position 11: the removed
+	// button's slot must be free before the new one is assigned.
+	next := append(buttons("B", 0, 10), btn(11, "New"))
+	rep := mustApply(t, f, cfgOf(prof(1, "sc.toml", "", next...), prof(2, "two.toml", "", p2...)), l, false)
+	sameOwners(t, "Restored", rep.Restored, []ledger.Owner{own(1, 10)})
+	checkEntry(t, f, 1, 10, keyEntry(10))
+	shows(t, f, 1, 11, "New")
 }
 
 func TestRemovalInHigherProfileFreesSlot(t *testing.T) {
 	f := newFake(t)
 	l := &ledger.Ledger{}
-	var p2 []layout.Button
-	for i := 0; i < ledger.MaxSlot-1; i++ {
-		p2 = append(p2, btn(i, fmt.Sprintf("B%d", i)))
-	}
-	mustApply(t, f, cfgOf(prof(1, "a.toml", "", btn(0, "A")), prof(2, "b.toml", "", p2...)), l, false)
-	// Profile 1 gains a picture and profile 2 drops one: all of profile 2's
-	// removals happen before profile 1 needs the slot.
-	cfg := cfgOf(prof(1, "a.toml", "", btn(0, "A"), btn(1, "C")), prof(2, "b.toml", "", p2[:len(p2)-1]...))
+	// One slot free: profile 1 holds one picture, profiles 2 and 3 the rest
+	// but one.
+	p2 := buttons("B", 0, 12)
+	p3 := buttons("D", 0, ledger.MaxSlot-1-1-12)
+	mustApply(t, f, cfgOf(prof(1, "a.toml", "", btn(0, "A")), prof(2, "b.toml", "", p2...), prof(3, "c.toml", "", p3...)), l, false)
+	// Profile 1 gains two pictures and profile 2 drops one: all of profile
+	// 2's removals happen before profile 1 needs the second slot.
+	cfg := cfgOf(prof(1, "a.toml", "", btn(0, "A"), btn(1, "C"), btn(2, "E")), prof(2, "b.toml", "", p2[:len(p2)-1]...), prof(3, "c.toml", "", p3...))
 	rep := mustApply(t, f, cfg, l, false)
 	sameOwners(t, "Restored", rep.Restored, []ledger.Owner{own(2, len(p2)-1)})
 	shows(t, f, 1, 1, "C")
+	shows(t, f, 1, 2, "E")
 	checkEntry(t, f, 2, len(p2)-1, keyEntry(len(p2)-1))
 }
 

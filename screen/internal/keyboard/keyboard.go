@@ -163,6 +163,27 @@ func (k *KB) Upload(slot byte, data []byte) error {
 	if err != nil {
 		return fmt.Errorf("keyboard: upload: %w", err)
 	}
+	return k.send(frames)
+}
+
+// UploadBackground sends a screen background (proto.BackgroundSize bytes)
+// and its thumbnail (proto.PictureSize bytes), the way Swarm II does. The
+// keyboard stores it; it shows once it is chosen on the keyboard's screen.
+// It takes about half a minute and fails like Upload.
+func (k *KB) UploadBackground(full, thumb []byte) error {
+	if k.uploadOpen {
+		return fmt.Errorf("%w (an earlier upload was not completed; nothing was sent)", ErrUploadLeftOpen)
+	}
+	frames, err := proto.BackgroundFrames(full, thumb)
+	if err != nil {
+		return fmt.Errorf("keyboard: background: %w", err)
+	}
+	return k.send(frames)
+}
+
+// send writes upload frames one by one, each after the previous one was
+// acknowledged.
+func (k *KB) send(frames []proto.UploadFrame) error {
 	if err := k.drainStream(); err != nil {
 		return err
 	}

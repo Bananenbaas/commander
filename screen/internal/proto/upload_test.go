@@ -90,3 +90,36 @@ func TestUploadFramesErrors(t *testing.T) {
 		}
 	}
 }
+
+// The frame count of a background upload is pinned by the capture
+// 06-screen-background-quadrants-1: 14,006 frames for background and
+// thumbnail together.
+func TestBackgroundFrames(t *testing.T) {
+	full := make([]byte, BackgroundSize)
+	thumb := make([]byte, PictureSize)
+	frames, err := BackgroundFrames(full, thumb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(frames) != 14006 {
+		t.Errorf("%d frames, want 14006", len(frames))
+	}
+	if frames[0].Out[0] != 0xa5 || frames[0].Out[1] != 0x00 {
+		t.Errorf("first opener % x, want a5 00", frames[0].Out[:2])
+	}
+	n := 0
+	for i, f := range frames {
+		if i > 0 && f.Out[0] == 0xa5 && f.Out[1] == 0x40 {
+			n = i
+		}
+	}
+	if n != 12941 {
+		t.Errorf("thumbnail opener at frame %d, want 12941", n)
+	}
+	if _, err := BackgroundFrames(full[:10], thumb); err == nil {
+		t.Error("short background accepted")
+	}
+	if _, err := BackgroundFrames(full, thumb[:10]); err == nil {
+		t.Error("short thumbnail accepted")
+	}
+}

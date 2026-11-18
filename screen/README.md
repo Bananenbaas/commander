@@ -148,6 +148,8 @@ kb7screen <command> [flags] [config-folder]
 | `kb7screen run <config>` | carries out the buttons' actions and streams the lighting until you press Ctrl+C |
 | `kb7screen stop <config>` | asks the run for that folder to stop and waits up to 10 s for the request to be taken |
 | `kb7screen reload <config>` | asks the run for that folder to read its configuration again and waits up to 10 s for the request to be taken; the run's output or Commander's log says whether the new configuration loaded |
+| `kb7screen background <image>` | uploads a PNG or JPEG as the screen background (scaled to cover 480 x 800 and cropped in the middle; about 30 s). Choose it afterwards in the keyboard's own background settings. Refuses while Commander or `run` runs |
+| `kb7screen clear-launchers <config> --profile N` | empties the application, website and third-party application buttons on all pages of profile N, freeing their picture slots. Refuses a profile the folder manages |
 | `kb7screen keytest [--seconds N]` | prints the keys pressed on the KB7 for N seconds (default 20, 1 to 120), to check that the key reader sees the keyboard. Nothing is saved |
 | `kb7screen light-preview <config> --profile N [--out FILE]` | writes a 4 second animated GIF of the lighting of profile N, with simulated key presses. Default file: `<config>/previews/light-N.gif`. Touches no keyboard |
 
@@ -224,8 +226,11 @@ the title only.
 | `state` | name of a lighting state the button flips; see Lighting. Without an `action` the button flips only the state |
 | `confirm` | `"hold 1s"`: the button acts only once the finger has stayed on it that long (200 ms to 5 s), so an accidental touch does nothing. Not with `mode = "hold"`, and needs an `action` |
 
-At most 9 different pictures can be on the keyboard at once; buttons with an
-identical picture share one slot. `apply` refuses a folder that needs more.
+At most 15 different pictures can be on the keyboard at once, over all
+profiles; buttons with an identical picture share one slot. `apply` refuses a
+folder that needs more. Swarm II's own application buttons use the same slots;
+`kb7screen clear-launchers <config> --profile N` empties the ones it left on a
+profile that the folder does not manage.
 
 ### Action steps
 

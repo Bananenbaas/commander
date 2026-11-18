@@ -16,8 +16,9 @@ import (
 	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
 )
 
-// MaxSlot is the highest slot that is allocated until a higher one is measured.
-const MaxSlot = 9
+// MaxSlot is the highest picture slot. Slots 9-15 were seen taking uploads
+// (40-swarm-slots-pages-1); Swarm II itself allows 15 application buttons.
+const MaxSlot = 15
 
 // ErrNoSlot is returned by Assign when every slot is in use.
 var ErrNoSlot = errors.New("ledger: no free picture slot")

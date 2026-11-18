@@ -36,11 +36,18 @@ Commands:
                                  saved
   run <config>                   carry out the buttons' actions until stopped
                                  with Ctrl+C
+  background <image>             upload a PNG or JPEG as the screen background
+                                 (about 30 s); choose it afterwards on the
+                                 keyboard's own background settings
+  clear-launchers <config> --profile N
+                                 empty the application, website and
+                                 third-party application buttons that Swarm II
+                                 put on profile N (not one of the folder's)
   stop <config>                  ask the run for that folder to stop
   reload <config>                ask the run for that folder to read its
                                  configuration again
 
-check, read, apply and restore refuse to start while Swarm II or its device
+check, read, apply, restore, background and clear-launchers refuse to start while Swarm II or its device
 service runs. run waits for them to close.
 
 Flags:
@@ -83,11 +90,11 @@ func parseArgs(args []string) (command, error) {
 	case "check", "keytest":
 	case "read":
 		needsProfile = true
-	case "preview", "apply", "run", "stop", "reload":
+	case "preview", "apply", "run", "stop", "reload", "background":
 		needsConfig = true
 	case "light-preview":
 		needsConfig, needsProfile = true, true
-	case "restore":
+	case "restore", "clear-launchers":
 		needsConfig, needsProfile = true, true
 	default:
 		return c, fmt.Errorf("unknown command %q; run kb7screen --help", c.name)

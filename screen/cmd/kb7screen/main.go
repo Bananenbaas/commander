@@ -8,6 +8,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/jpeg" // background images
+	_ "image/png"
 	"io"
 	"os"
 	"os/signal"
@@ -24,6 +27,7 @@ import (
 	"github.com/Bananenbaas/kb7-commander/screen/internal/keys"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/picture"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/request"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/runlock"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/supervisor"
@@ -85,6 +89,10 @@ func execute(c command, stdout, stderr io.Writer) error {
 		return doKeytest(c, stdout)
 	case "stop", "reload":
 		return doRequest(c, stdout)
+	case "background":
+		return doBackground(c, stdout)
+	case "clear-launchers":
+		return doClearLaunchers(c, stdout)
 	}
 	return fmt.Errorf("unknown command %q", c.name)
 }
@@ -204,6 +212,83 @@ func doApply(c command, stdout io.Writer) error {
 
 	rep, err := apply.Apply(ctx, kb, cfg, l, c.full, access.ProgramRunning, save)
 	return finish(stdout, rep, err, save, errApplyStopped)
+}
+
+// doBackground uploads an image as the screen background. c.config holds
+// the image's path.
+func doBackground(c command, stdout io.Writer) error {
+	if err := access.RefuseWhileSwarm("background"); err != nil {
+		return err
+	}
+	if held, err := runlock.UserHeld(); err != nil {
+		return err
+	} else if held {
+		return errRunHoldsKeyboard
+	}
+	f, err := os.Open(c.config)
+	if err != nil {
+		return err
+	}
+	img, _, err := image.Decode(f)
+	f.Close()
+	if err != nil {
+		return fmt.Errorf("%s: %w", c.config, err)
+	}
+	full, thumb, err := picture.Background(img)
+	if err != nil {
+		return err
+	}
+	kb, err := access.OpenKeyboard()
+	if err != nil {
+		return err
+	}
+	defer kb.Close()
+	fmt.Fprintln(stdout, "Uploading the background; this takes about 30 seconds. Do not unplug the keyboard.")
+	if err := kb.UploadBackground(full, thumb); err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, "Done. Choose the new background in the keyboard's own background settings.")
+	return nil
+}
+
+// doClearLaunchers empties the launcher buttons Swarm II left on a profile.
+func doClearLaunchers(c command, stdout io.Writer) error {
+	if err := access.RefuseWhileSwarm("clear-launchers"); err != nil {
+		return err
+	}
+	dir, err := filepath.Abs(c.config)
+	if err != nil {
+		return err
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return fmt.Errorf("%s is not a folder", c.config)
+	}
+	if err := refuseWhileRun(dir); err != nil {
+		return err
+	}
+	l, _, err := access.LoadLedger(dir)
+	if err != nil {
+		return err
+	}
+	ctx, stop := stopOnSignal()
+	defer stop()
+	kb, err := access.OpenKeyboard()
+	if err != nil {
+		return err
+	}
+	defer kb.Close()
+	cleared, err := apply.ClearLaunchers(ctx, kb, l, byte(c.profile))
+	if err != nil {
+		return err
+	}
+	if len(cleared) == 0 {
+		fmt.Fprintf(stdout, "Profile %d has no application, website or third-party application buttons.\n", c.profile)
+		return nil
+	}
+	for _, w := range cleared {
+		fmt.Fprintf(stdout, "emptied profile %d %s\n", c.profile, w)
+	}
+	return nil
 }
 
 func doRestore(c command, stdout io.Writer) error {

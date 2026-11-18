@@ -8,15 +8,20 @@ import "fmt"
 // little-endian plus one straight alpha byte each.
 const PictureSize = 63048
 
+// BackgroundSize is the size of a screen background: 480 x 800 pixels of
+// RGB565 little-endian, row by row from the top left, without alpha.
+const BackgroundSize = 480 * 800 * 2
+
 const (
-	frameSize   = 64
-	frameData   = frameSize - 2 // payload bytes in a full data frame
-	blockSize   = 4096
-	maxPicSlot  = 63
-	opSlotBase  = 0x40
-	opBlockOpen = 0xf1
-	opBlockEnd  = 0xf2
-	opUploadEnd = 0xff
+	frameSize    = 64
+	frameData    = frameSize - 2 // payload bytes in a full data frame
+	blockSize    = 4096
+	maxPicSlot   = 63
+	opSlotBase   = 0x40 // + slot; slot 0 (0x40) is the background's thumbnail
+	opBackground = 0x00
+	opBlockOpen  = 0xf1
+	opBlockEnd   = 0xf2
+	opUploadEnd  = 0xff
 )
 
 // UploadFrame is one frame of a picture upload: the 64 bytes to send and the
@@ -41,7 +46,26 @@ func UploadFrames(slot byte, data []byte) ([]UploadFrame, error) {
 	if len(data) != PictureSize {
 		return nil, fmt.Errorf("picture is %d bytes, want %d", len(data), PictureSize)
 	}
-	frames := []UploadFrame{echoFrame(opSlotBase + slot)}
+	return framesFor(opSlotBase+slot, data), nil
+}
+
+// BackgroundFrames cuts a screen background and its thumbnail into the frames
+// that upload them, in the order Swarm II sends them: the background (opener
+// 0x00), then the thumbnail the keyboard shows in its background picker
+// (opener 0x40, the picture format of a button).
+func BackgroundFrames(full, thumb []byte) ([]UploadFrame, error) {
+	if len(full) != BackgroundSize {
+		return nil, fmt.Errorf("background is %d bytes, want %d", len(full), BackgroundSize)
+	}
+	if len(thumb) != PictureSize {
+		return nil, fmt.Errorf("thumbnail is %d bytes, want %d", len(thumb), PictureSize)
+	}
+	return append(framesFor(opBackground, full), framesFor(opSlotBase, thumb)...), nil
+}
+
+// framesFor frames data as one upload opened with op.
+func framesFor(op byte, data []byte) []UploadFrame {
+	frames := []UploadFrame{echoFrame(op)}
 	for off := 0; off < len(data); off += blockSize {
 		block := data[off:min(off+blockSize, len(data))]
 		frames = append(frames, echoFrame(opBlockOpen))
@@ -58,5 +82,5 @@ func UploadFrames(slot byte, data []byte) ([]UploadFrame, error) {
 		}
 		frames = append(frames, echoFrame(opBlockEnd))
 	}
-	return append(frames, echoFrame(opUploadEnd)), nil
+	return append(frames, echoFrame(opUploadEnd))
 }
