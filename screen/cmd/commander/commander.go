@@ -2,9 +2,9 @@
 
 // Command commander runs the loop of kb7screen run for one configuration
 // folder with an icon in the Windows notification area, whose menu reloads
-// the configuration, applies the buttons, switches starting with Windows and
-// quits cleanly. It is built only for Windows, as a program without a console
-// window:
+// the configuration, applies the buttons, switches starting with Windows,
+// offers and installs updates from the project's releases and quits cleanly.
+// It is built only for Windows, as a program without a console window:
 //
 //	go build -ldflags=-H=windowsgui ./cmd/commander
 //

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"runtime"
@@ -94,7 +95,7 @@ func commander(args []string) int {
 		})
 	}
 	prev := supervisor.State{Phase: supervisor.Starting, Run: run.Status{Profile: -1}}
-	sup, err := supervisor.New(dir, supervisor.Options{
+	opts := supervisor.Options{
 		Logf: logf,
 		OnState: func(st supervisor.State) {
 			defer func() {
@@ -112,7 +113,11 @@ func commander(args []string) int {
 			}
 			prev = st
 		},
-	})
+	}
+	// After an update the old Commander may still be giving back the locks.
+	sup, err := newWithRetry(context.Background(), func() (*supervisor.Supervisor, error) {
+		return supervisor.New(dir, opts)
+	}, lockWait, parsed.updatedFrom != "")
 	if err != nil {
 		logf("not started: %v", err)
 		if msg, ok := heldMessage(err); ok {
@@ -127,8 +132,15 @@ func commander(args []string) int {
 
 	exe, err := os.Executable()
 	if err != nil {
-		logf("cannot find commander.exe itself, so Start with Windows cannot be changed: %v", err)
+		logf("cannot find commander.exe itself, so Start with Windows cannot be changed and updates cannot be installed: %v", err)
 		exe = ""
+	}
+	if exe != "" {
+		// Files left by an update. After a restart the old program may still
+		// be ending; it is removed again once the tray is up.
+		for _, err := range cleanLeftovers(exe) {
+			logf("leftover of an update not removed: %v", err)
+		}
 	}
 	if fromArg {
 		if err := appdata.SaveFolder(dir); err != nil {
@@ -162,11 +174,20 @@ func commander(args []string) int {
 	var ctx context.Context
 	ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
+	// updCtx ends checks and downloads once the loop has stopped.
+	updCtx, updCancel := context.WithCancel(context.Background())
+	defer updCancel()
+	// trayUp is closed once tr is set; a menu click could come before.
+	trayUp := make(chan struct{})
+	upd := newUpdater(exe, dir, func(title, text string, onClick func()) {
+		<-trayUp
+		tr.BalloonAction(title, text, onClick)
+	}, sup.Stop, logf)
 	tr, err = tray.Run(ctx, tray.Options{
 		Icon:       normal,
 		FailedIcon: failed,
 		Tip:        tipFor(prev),
-		Items:      menu(sup, dir, exe, logf),
+		Items:      menu(sup, dir, exe, logf, updateItems(updCtx, upd, logf)),
 		OnEndSession: func() {
 			// The Windows session ends: stop cleanly, but not longer than
 			// Windows waits. An upload in progress is not cut short; when
@@ -187,9 +208,20 @@ func commander(args []string) int {
 		messageBox("Commander cannot show its icon in the notification area:\n\n"+err.Error(), windows.MB_ICONWARNING)
 		return 1
 	}
+	close(trayUp)
 	if logErr != nil {
 		tr.Balloon(appTitle, "The log cannot be written: "+logErr.Error())
 	}
+	if parsed.updatedFrom != "" {
+		logf("updated from %s to %s", parsed.updatedFrom, version)
+		if exe != "" {
+			if err := os.Remove(exe + ".old"); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				logf("the old program is left for the next start: %v", err)
+			}
+		}
+		tr.Balloon(appTitle, "Commander updated to "+version)
+	}
+	go scheduleChecks(updCtx, upd, logf)
 
 	go func() {
 		// Serve has stopped the loop and given back the locks before a
@@ -219,8 +251,18 @@ func commander(args []string) int {
 	// Commander or kb7screen run can take the keyboard while this icon is
 	// still in the notification area. That is harmless: this one no longer
 	// touches the keyboard and only removes its icon.
+	updCancel()
 	cancel()
 	<-tr.Done()
+
+	// An installed update starts the new Commander now that the locks are
+	// free and the icon is gone.
+	if restart := upd.pendingRestart(); restart != nil {
+		logf("starting the new Commander")
+		if err := restart(); err != nil {
+			logf("restart after the update: %v", err)
+		}
+	}
 
 	if sessionEnd.Load() {
 		logf("stopped for the end of the Windows session; if the session went on, start Commander again")
@@ -233,9 +275,10 @@ func commander(args []string) int {
 	return 0
 }
 
-// menu builds the tray menu.
-func menu(sup *supervisor.Supervisor, dir, exe string, logf func(string, ...any)) []tray.Item {
-	return []tray.Item{
+// menu builds the tray menu; updates are the items for updates, put after
+// Start with Windows.
+func menu(sup *supervisor.Supervisor, dir, exe string, logf func(string, ...any), updates []tray.Item) []tray.Item {
+	items := []tray.Item{
 		{Label: "Reload configuration", OnClick: func() {
 			logf("Reload configuration chosen")
 			sup.Reload()
@@ -256,6 +299,9 @@ func menu(sup *supervisor.Supervisor, dir, exe string, logf func(string, ...any)
 			},
 			OnClick: func() { toggleAutostart(exe, dir, logf) },
 		},
+	}
+	items = append(items, updates...)
+	return append(items, []tray.Item{
 		{Label: "Open configuration folder", OnClick: func() { openPath(dir, logf) }},
 		{Label: "Open log", OnClick: func() { openPath(appdata.LogPath(), logf) }},
 		{Separator: true},
@@ -263,7 +309,7 @@ func menu(sup *supervisor.Supervisor, dir, exe string, logf func(string, ...any)
 			logf("Quit chosen")
 			sup.Stop()
 		}},
-	}
+	}...)
 }
 
 // toggleAutostart switches starting with Windows on or off.
