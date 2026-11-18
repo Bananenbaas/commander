@@ -15,6 +15,7 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 | `kb7tools/analysis.py` | `Capture` (inventory, filtering), hexdump, summary, diff |
 | `kb7tools/cli.py` | `kb7cap summary \| dump \| diff` |
 | `tests/synth.py` | Builds synthetic captures (fake VID:PID 1234:5678) |
+| `site/` | The project site, plain HTML and CSS without a build step, plus `theme.js` for the light/dark switch; `.github/workflows/pages.yml` publishes it to GitHub Pages. The pictures in `site/img/` are output of `kb7screen preview` and `light-preview` |
 | `screen/` | `kb7screen`, the Go program that puts own buttons on the touchscreen; usage in `screen/README.md` |
 | `screen/cmd/kb7screen/` | Its command line: `check`, `read`, `preview`, `light-preview`, `apply`, `restore`, `run`, `keytest` |
 | `screen/internal/` | `proto` (frames), `device` (HID on Windows and Linux), `keyboard` (one frame at a time, no retries), `picture`, `layout`, `ledger`, `apply`, `action` (keystrokes, programs), `procs`, `run` |

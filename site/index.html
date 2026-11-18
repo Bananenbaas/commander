@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Commander: your keyboard, your way</title>
+<meta name="description" content="Commander is an open-source tool for using a keyboard without its maker's software. It starts with the Turtle Beach KB7: your own touchscreen buttons and layered RGB lighting, without Swarm II. Beta, Windows.">
+<link rel="canonical" href="https://commander.work/">
+<link rel="icon" type="image/png" href="img/helmet-256.png">
+<meta name="theme-color" content="#080c18" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f6fb" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Commander: your keyboard, your way">
+<meta property="og:description" content="An open-source tool for using a keyboard without its maker's software. It starts with the Turtle Beach KB7. Beta, Windows.">
+<meta property="og:url" content="https://commander.work/">
+<meta property="og:image" content="https://commander.work/img/helmet-256.png">
+<link rel="preload" href="fonts/BarlowCondensed-SemiBold.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="stylesheet" href="style.css">
+<script src="theme.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <a class="brand" href="/">
+    <img src="img/helmet-256.png" alt="" width="36" height="36">
+    <span>Commander</span>
+  </a>
+  <nav aria-label="Main">
+    <a href="#direction">Direction</a>
+    <a href="#today">Today</a>
+    <a href="#example">Example</a>
+    <a href="https://github.com/Bananenbaas/commander" rel="noopener noreferrer">GitHub</a>
+    <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch theme" hidden>
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+    </button>
+  </nav>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="hero-text">
+    <h1>Your keyboard, <span>your way.</span></h1>
+    <p class="lead">
+      Commander is an open-source tool for using a keyboard without its
+      maker's software. It starts with one keyboard, the Turtle Beach Command
+      Series KB7: your own buttons on its touchscreen and layered RGB
+      lighting, without Swarm II running.
+    </p>
+    <p class="actions">
+      <a class="btn primary" href="https://github.com/Bananenbaas/commander/releases" rel="noopener noreferrer">Get the beta on GitHub</a>
+      <a class="btn" href="#direction">See where it is going</a>
+    </p>
+    <p class="fine">
+      <strong>Beta, for Windows.</strong> A Linux build of the command line
+      exists and passes its tests, but has not been run on a keyboard yet. The
+      executables are not code-signed, so Windows SmartScreen may warn before
+      the first start. Each release lists the SHA-256 of every file and links
+      to its VirusTotal scan.
+    </p>
+  </div>
+  <figure class="hero-shot">
+    <img src="img/panel.png" alt="A grid of twelve touchscreen buttons in three columns: coloured frames with titles such as Power, Engines, Shields, Gear, Boost and Eject." width="462" height="637">
+    <figcaption>Buttons rendered by Commander for the KB7's touchscreen. Program output, not a photo of the device.</figcaption>
+  </figure>
+</section>
+
+<section id="direction" class="direction" aria-labelledby="direction-h">
+  <h2 id="direction-h">The hardware is yours. The software should be too.</h2>
+  <p class="statement">
+    Plenty of good keyboards come with software you would rather not run.
+    Commander aims to be the one tool you set up your own way and keep,
+    whichever supported keyboard is on your desk. Today that is one keyboard.
+    This is how more are meant to follow.
+  </p>
+
+  <ol class="slots">
+    <li class="slot is-live">
+      <svg viewBox="0 0 142 110" aria-hidden="true">
+        <path class="frame" d="M2 2H140V84L116 108H2Z"/>
+        <path class="stripes" d="M124 108L140 92M132 108L140 100"/>
+        <rect class="glyph" x="36" y="36" width="70" height="38" rx="5"/>
+        <path class="glyph" d="M48 48h4M59 48h4M70 48h4M81 48h4M92 48h2M48 57h4M59 57h4M70 57h4M81 57h4M92 57h2M56 66h30"/>
+      </svg>
+      <h3>KB7</h3>
+      <p class="status">Works today</p>
+      <p>Touchscreen buttons, actions on the PC and layered lighting, on Windows. In beta.</p>
+    </li>
+    <li class="slot is-planned">
+      <svg viewBox="0 0 142 110" aria-hidden="true">
+        <path class="frame" d="M2 2H140V84L116 108H2Z"/>
+        <path class="stripes" d="M124 108L140 92M132 108L140 100"/>
+        <path class="glyph" d="M44 42l5 5 9-10M44 60l5 5 9-10M68 44h30M68 62h30"/>
+      </svg>
+      <h3>Open test suite</h3>
+      <p class="status">Planned</p>
+      <p>So that support for another device can be added, and checked, in the open by someone who owns it.</p>
+    </li>
+    <li class="slot is-open">
+      <svg viewBox="0 0 142 110" aria-hidden="true">
+        <path class="frame" d="M2 2H140V84L116 108H2Z"/>
+        <path class="stripes" d="M124 108L140 92M132 108L140 100"/>
+        <path class="glyph" d="M71 40v30M56 55h30"/>
+      </svg>
+      <h3>More devices</h3>
+      <p class="status">Not supported yet</p>
+      <p>Other keyboards and button panels whose own software gets in the way. None works with Commander today.</p>
+    </li>
+  </ol>
+
+  <div class="rules">
+    <h3>How a device gets added</h3>
+    <ul>
+      <li>The protocol is worked out only by observing the USB traffic of hardware we own. The maker's programs and firmware are not decompiled or included.</li>
+      <li>Only commands that were seen in captures are ever sent to a device. No guessing and no fuzzing.</li>
+      <li>Firmware update, bootloader and factory-reset commands are never implemented.</li>
+    </ul>
+    <p>
+      The capture toolkit and the
+      <a href="https://github.com/Bananenbaas/commander/blob/main/docs/PROTOCOL.md" rel="noopener noreferrer">protocol notes</a>
+      for the KB7 are in the repository. Want to help? Start with the
+      <a href="https://github.com/Bananenbaas/commander/blob/main/CONTRIBUTING.md" rel="noopener noreferrer">contributing guide</a>.
+    </p>
+  </div>
+</section>
+
+<section id="today" aria-labelledby="today-h">
+  <h2 id="today-h">What works today, on the KB7</h2>
+  <dl class="features">
+    <div>
+      <dt>Touchscreen buttons</dt>
+      <dd>Twelve positions on the screen, per keyboard profile. Use your own PNG pictures or the built-in style: a coloured frame, an optional symbol and a title.</dd>
+    </div>
+    <div>
+      <dt>Actions on your PC</dt>
+      <dd>A button presses a key or a combination, plays a sequence with pauses, starts a program, or opens a website, file or folder. Buttons can tap, hold, or act only after a long press.</dd>
+    </div>
+    <div>
+      <dt>A profile per program</dt>
+      <dd>Each of the keyboard's five profiles can have its own layout. The keyboard switches to a profile while a program you name is running, for example a game.</dd>
+    </div>
+    <div>
+      <dt>Layered lighting</dt>
+      <dd>Stack effects on the 112 LEDs: <code>static</code>, <code>wave</code> and <code>breathing</code> as a base, a <code>ripple</code> from each key press, and <code>fixed</code> keys on top.</dd>
+    </div>
+    <div>
+      <dt>Keys that show a state</dt>
+      <dd>A <code>state</code> layer lights keys while an on/off switch is on, such as landing gear. A key chord or a screen button flips it.</dd>
+    </div>
+    <div>
+      <dt>A tray icon, no terminal</dt>
+      <dd>Commander keeps it all running from the Windows notification area: reload the configuration, apply the buttons, start with Windows, and quit cleanly.</dd>
+    </div>
+  </dl>
+</section>
+
+<section id="example" aria-labelledby="example-h">
+  <h2 id="example-h">One text file per profile</h2>
+  <p class="intro">
+    Layouts are plain TOML files in a folder. The lighting below, and the
+    buttons at the top of this page, come from this one file.
+  </p>
+
+  <figure class="wide">
+    <picture>
+      <source srcset="img/lighting-still.png" media="(prefers-reduced-motion: reduce)">
+      <img src="img/lighting.gif" alt="A simulated keyboard layout with a blue to purple wave moving to the right, W, A, S and D in white, the N key in green, and white rings spreading from pressed keys." width="780" height="420" loading="lazy">
+    </picture>
+    <figcaption>Output of <code>kb7screen light-preview</code>: a simulation with made-up key presses. Not a recording of the keyboard.</figcaption>
+  </figure>
+
+  <div class="code-pair">
+<pre tabindex="0" aria-label="Example configuration, buttons"><code><span class="c"># game.toml</span>
+profile = 1
+switch_when_running = "game.exe"
+
+[[button]]
+page = 1
+position = 0
+title = "Power"
+color = "#00AAFF"
+action = ["P", "wait 600ms", "I"]
+
+[[button]]
+page = 1
+position = 5
+title = "Boost"
+color = "#FFC830"
+action = ["LShift"]
+mode = "hold"
+
+[[button]]
+page = 1
+position = 11
+title = "Eject"
+color = "#FF5050"
+action = ["RAlt+Y"]
+confirm = "hold 1s"</code></pre>
+<pre tabindex="0" aria-label="Example configuration, lighting"><code>[light]
+
+[[light.layer]]          <span class="c"># bottom first</span>
+effect = "wave"
+colors = ["#0040FF", "#00C0FF", "#8000FF"]
+speed = 0.5
+direction = "right"
+
+[[light.layer]]
+effect = "ripple"
+color = "#FFFFFF"
+
+[[light.layer]]
+effect = "state"
+name = "gear"
+toggle = "N"
+start = "on"
+keys = ["N"]
+color = "#30E070"
+
+[[light.layer]]
+effect = "fixed"
+keys = ["W", "A", "S", "D"]
+color = "#FFFFFF"</code></pre>
+  </div>
+
+  <p class="intro">
+    Every setting, key name and effect is described in the
+    <a href="https://github.com/Bananenbaas/commander/blob/main/screen/README.md" rel="noopener noreferrer">manual</a>.
+  </p>
+</section>
+
+<section id="download" class="download" aria-labelledby="download-h">
+  <h2 id="download-h">Try the beta</h2>
+  <p>
+    Downloads are on GitHub, not on this site. The executables are built from
+    the source by GitHub Actions; check a file against its SHA-256 before you
+    run it. Close Swarm II while you use Commander. Swarm II is still needed
+    for firmware updates.
+  </p>
+  <p class="actions">
+    <a class="btn primary" href="https://github.com/Bananenbaas/commander/releases" rel="noopener noreferrer">Open the releases page</a>
+    <a class="btn" href="https://github.com/Bananenbaas/commander" rel="noopener noreferrer">Source code</a>
+  </p>
+  <p class="fine">Using this software is at your own risk. It may void your warranty.</p>
+</section>
+
+</main>
+
+<footer>
+  <p>
+    Commander is free software under the
+    <a href="https://github.com/Bananenbaas/commander/blob/main/LICENSE" rel="noopener noreferrer">GPL-2.0-or-later</a>.
+    Report problems in the
+    <a href="https://github.com/Bananenbaas/commander/issues" rel="noopener noreferrer">issue tracker</a>.
+    Headings are set in Barlow Condensed, under the
+    <a href="fonts/OFL.txt">SIL Open Font License</a>.
+  </p>
+  <p>
+    This project is not affiliated with or endorsed by Turtle Beach.
+    "Turtle Beach", "Swarm II" and "KB7" are trademarks of their respective owner.
+  </p>
+</footer>
+</body>
+</html>
