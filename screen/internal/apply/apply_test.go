@@ -325,7 +325,26 @@ func sameOwners(t *testing.T, what string, got, want []ledger.Owner) {
 	}
 }
 
+// checkCalls compares the calls from call n on with want, leaving out the
+// reads of the 0x29 tables that Apply only scans for launchers it does not
+// manage: a 0x29 read not followed by the profile's 0x25 read.
+// checkAllCalls keeps them.
 func checkCalls(t *testing.T, f *fakeKB, from int, want string) {
+	t.Helper()
+	var kept []string
+	calls := f.calls[from:]
+	for i, c := range calls {
+		if p, ok := strings.CutPrefix(c, "read29 "); ok && (i+1 == len(calls) || calls[i+1] != "read25 "+p) {
+			continue
+		}
+		kept = append(kept, c)
+	}
+	if got := strings.Join(kept, ", "); got != want {
+		t.Fatalf("calls:\n got %s\nwant %s", got, want)
+	}
+}
+
+func checkAllCalls(t *testing.T, f *fakeKB, from int, want string) {
 	t.Helper()
 	if got := f.since(from); got != want {
 		t.Fatalf("calls:\n got %s\nwant %s", got, want)
@@ -1495,4 +1514,69 @@ func TestRestoreStopsBeforeTheKeyboard(t *testing.T) {
 		t.Fatalf("keyboard calls: %v", f.calls)
 	}
 	sameOwners(t, "Owners(1)", l.Owners(1), []ledger.Owner{own(1, 3), own(1, 4)})
+}
+
+// foreign puts an application button kb7screen does not manage on entry i of
+// profile p, showing slot n.
+func foreign(t *testing.T, f *fakeKB, p byte, i int, n byte) {
+	t.Helper()
+	if err := f.b29[p].SetEntry(i, proto.AppEntry(n, "app")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSlotsOfForeignLaunchersAreLeftAlone(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	foreign(t, f, 3, 2, 1)  // another profile, page 1
+	foreign(t, f, 1, 16, 2) // the applied profile, page 2 position 4
+	foreign(t, f, 1, 7, 0)  // slot 0 is the firmware's own icon
+	rep := mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"))), l, false)
+	checkAllCalls(t, f, 0, "notify, fresh 1, read29 1, read25 1, read29 0, read29 2, read29 3, read29 4, "+
+		"upload 3, write29 1, write25 1, redraw 1")
+	checkEntry(t, f, 1, 3, proto.AppEntry(3, ""))
+	want := []string{
+		"slot 1 is shown by profile 3 page 1 position 2, which kb7screen does not manage; it is left alone",
+		"slot 2 is shown by profile 1 page 2 position 4, which kb7screen does not manage; it is left alone",
+	}
+	if fmt.Sprint(rep.Notes) != fmt.Sprint(want) {
+		t.Errorf("notes:\n got %q\nwant %q", rep.Notes, want)
+	}
+}
+
+func TestOwnSlotMovesAwayFromAForeignLauncher(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "One")))
+	mustApply(t, f, cfg, l, false)
+	foreign(t, f, 2, 0, 1) // Swarm II put a launcher on our slot
+	n := len(f.calls)
+	mustApply(t, f, cfg, l, false)
+	if got := f.since(n); !strings.Contains(got, "upload 2") || strings.Contains(got, "upload 1") {
+		t.Fatalf("calls: %s", got)
+	}
+	shows(t, f, 1, 3, "One")
+}
+
+func TestTooFewSlotsBesideForeignLaunchers(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	for n := byte(1); n < ledger.MaxSlot; n++ {
+		foreign(t, f, 2, int(n-1), n)
+	}
+	cfg := cfgOf(prof(1, "sc.toml", "", btn(3, "One"), btn(4, "Two")))
+	_, err := Apply(context.Background(), f, cfg, l, false, nothingRuns, nil)
+	if !errors.Is(err, ledger.ErrNoSlot) {
+		t.Fatalf("err = %v, want ErrNoSlot", err)
+	}
+	for _, s := range []string{"profile 2 page 1 position 0", "profile 2 page 2 position 1", "kb7screen clear-launchers"} {
+		if !strings.Contains(err.Error(), s) {
+			t.Errorf("error %q does not name %q", err, s)
+		}
+	}
+	for _, c := range f.calls {
+		if strings.HasPrefix(c, "upload") || strings.HasPrefix(c, "write") {
+			t.Fatalf("wrote although the pictures do not fit: %q", f.calls)
+		}
+	}
 }

@@ -294,3 +294,31 @@ func TestLoadOlderFile(t *testing.T) {
 	mustAssign(t, l, a, "h2", 2, false)
 	mustAssign(t, l, b, "h9", 1, true)
 }
+
+func TestBlockedSlotIsNeitherMatchedNorTaken(t *testing.T) {
+	l := &Ledger{}
+	mustAssign(t, l, a, "h1", 1, true)
+	mustAssign(t, l, b, "h2", 2, true)
+	l.Release(b)
+	l.Block(1)
+	l.Block(2)
+	l.Block(3)
+	// a leaves its blocked slot for a new one, and the free slot 2 is not
+	// matched either: a launcher kb7screen does not manage shows them.
+	mustAssign(t, l, a, "h1", 4, true)
+	mustAssign(t, l, c, "h2", 5, true)
+	if !l.Blocked(3) || l.Blocked(6) {
+		t.Fatal("Blocked does not report the blocked slots")
+	}
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := l.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Blocked(3) {
+		t.Fatal("a blocked slot was saved")
+	}
+}

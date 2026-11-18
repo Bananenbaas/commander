@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
@@ -163,7 +164,9 @@ func where(o ledger.Owner) string {
 // holds positions in, in ascending order. The first pass reads each profile's
 // tables, gives positions that are no longer in the layout their originals
 // back, records the originals of positions taken over for the first time and
-// stops trusting the slot of a position that no longer shows it. The second
+// stops trusting the slot of a position that no longer shows it; it ends by
+// reading the 0x29 tables of the other profiles and keeping the slots of
+// launchers kb7screen does not manage out of use (see avoidForeign). The second
 // pass assigns slots, sends the pictures and writes the tables, profile by
 // profile: the 0x29 table if an entry changed, then the whole 0x25 table,
 // after which Apply waits for the keyboard's redraw before it switches to
@@ -218,6 +221,9 @@ func Apply(ctx context.Context, kb Keyboard, cfg *layout.Config, l *ledger.Ledge
 		}
 		read[p] = t
 	}
+	if err := avoidForeign(kb, l, jobs, read, &rep); err != nil {
+		return rep, err
+	}
 	if err := saveLedger(save); err != nil {
 		return rep, err
 	}
@@ -250,6 +256,63 @@ func Apply(ctx context.Context, kb Keyboard, cfg *layout.Config, l *ledger.Ledge
 		return rep, err
 	}
 	return rep, s.switchTo(finalProfile(cfg, running))
+}
+
+// avoidForeign ends the first pass. It reads the 0x29 table of every profile
+// not read yet; a table is read for any profile without switching to it.
+// Every slot shown by an application button that the ledger does not own
+// and that the layouts do not take over belongs to a launcher kb7screen does
+// not manage, on any page: the ledger is told to leave such a slot alone, with
+// a note. When the layouts' pictures do not fit in the slots that are left,
+// avoidForeign refuses, naming the launchers, before anything is sent.
+func avoidForeign(kb Keyboard, l *ledger.Ledger, jobs map[byte][]job, read map[byte]tables, rep *Report) error {
+	taken := map[ledger.Owner]bool{}
+	hashes := map[string]bool{}
+	for _, js := range jobs {
+		for _, j := range js {
+			taken[j.o] = true
+			hashes[j.hash] = true
+		}
+	}
+	shownBy := map[byte][]ledger.Owner{}
+	for p := byte(0); p <= maxProfile; p++ {
+		t29 := read[p].t29
+		if t29 == nil {
+			var err error
+			if t29, err = kb.ReadButtons(p); err != nil {
+				return fmt.Errorf("profile %d: %w", p, err)
+			}
+		}
+		for i := 0; i < entries29; i++ {
+			o := ledger.Owner{Profile: int(p), Page: i/entriesPerPg + 1, Position: i % entriesPerPg}
+			e := t29.Entry(i)
+			if e.Kind != proto.KindApp || e.Slot < 1 || e.Slot > ledger.MaxSlot || taken[o] {
+				continue
+			}
+			if _, owned := l.SlotOf(o); owned {
+				continue
+			}
+			shownBy[e.Slot] = append(shownBy[e.Slot], o)
+		}
+	}
+	var launchers []string
+	for n := byte(1); n <= ledger.MaxSlot; n++ {
+		if len(shownBy[n]) == 0 {
+			continue
+		}
+		l.Block(n)
+		var at []string
+		for _, o := range shownBy[n] {
+			at = append(at, where(o))
+		}
+		launchers = append(launchers, at...)
+		rep.Notes = append(rep.Notes, fmt.Sprintf("slot %d is shown by %s, which kb7screen does not manage; it is left alone", n, strings.Join(at, " and ")))
+	}
+	if free := ledger.MaxSlot - len(shownBy); len(hashes) > free {
+		return fmt.Errorf("the layouts hold %d different pictures, but launchers that kb7screen does not manage show %d of the %d slots (%s); empty them with kb7screen clear-launchers: %w",
+			len(hashes), len(shownBy), ledger.MaxSlot, strings.Join(launchers, ", "), ledger.ErrNoSlot)
+	}
+	return nil
 }
 
 // distrust forgets the content of every slot sent in this Apply that one of

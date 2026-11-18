@@ -19,7 +19,7 @@ const (
 	valueWebsite  = 0x05
 	entriesPerPg  = 12
 	typesPerPage  = 13
-	entries29Last = 34
+	entries29     = 35 // 0x29 entries: pages 1 to 3, the last without position 11
 )
 
 // launcher reports whether a position with this entry and type launches
@@ -71,7 +71,7 @@ func ClearLaunchers(ctx context.Context, kb Keyboard, l *ledger.Ledger, profile 
 		return nil, fmt.Errorf("profile %d: %w", profile, err)
 	}
 	var cleared []string
-	for i := 0; i <= entries29Last; i++ {
+	for i := 0; i < entries29; i++ {
 		ti := typeIndex(i)
 		if !launcher(t29.Entry(i), t25.Type(ti)) {
 			continue
