@@ -1,7 +1,7 @@
 # Commander updates from GitHub releases
 
 Design for letting Commander find a newer release and replace itself. Status:
-approved; implemented, desktop check pending. Builds on [`commander-tray.md`](commander-tray.md).
+approved; implemented, desktop check partly done (see Desktop check). Builds on [`commander-tray.md`](commander-tray.md).
 
 ## Intent
 
@@ -170,3 +170,23 @@ the menu opens, like `Checked` today.
 The exact wording of the menu items, balloons and message box; how the daily
 check is timed; how the release-page link is shown in the message box; the
 package and function names.
+
+## Desktop check (2026-11-18, Windows 11)
+
+A Commander built from `main` and stamped `v0.1.0-beta.1` was put in place of
+the owner's Commander and updated itself to the published `v0.1.0-beta.2`.
+
+| Check | Result |
+|---|---|
+| **Check now** finds the newer release | Balloon "Commander v0.1.0-beta.2 is available" |
+| **Update to v0.1.0-beta.2** in the menu, confirm Yes | Downloaded, swapped and restarted within 2 s; log `updated from v0.1.0-beta.1 to v0.1.0-beta.2` |
+| The new file | SHA-256 equal to the release's `SHA256SUMS.txt`; `.old` removed |
+| After the restart | Same path, Start with Windows unchanged, keyboard taken over, stored lighting shown on the desktop profile |
+
+Not checked yet: clicking the "available" balloon, answering No, a
+`dev` build's **Check now**, and the daily check. These need a newer release
+than the running one and are left for `v0.1.0-beta.3`.
+
+Seen: typing on the KB7 stalled for a moment during the restart. Not measured
+further; whether it also happens at an ordinary start of Commander is not
+known yet.
