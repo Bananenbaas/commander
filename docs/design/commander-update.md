@@ -1,7 +1,7 @@
 # Commander updates from GitHub releases
 
 Design for letting Commander find a newer release and replace itself. Status:
-draft for approval. Builds on [`commander-tray.md`](commander-tray.md).
+approved; implemented, desktop check pending. Builds on [`commander-tray.md`](commander-tray.md).
 
 ## Intent
 

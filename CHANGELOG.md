@@ -6,6 +6,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Commander can update itself from the GitHub releases. **Check for updates**
+  in the menu (off by default) checks at start and once a day; **Check now**
+  checks at once. A newer release is offered in a balloon and as
+  **Update to v...**; after a Yes in the confirmation, Commander downloads it,
+  checks its SHA-256, replaces itself (keeping `.old`) and restarts on the same
+  folder. Not yet checked on a real desktop.
+
 ### Changed
 - Release builds keep their symbol tables (no `-s -w`), to see whether fewer
   virus scanners flag them.

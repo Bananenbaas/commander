@@ -26,6 +26,7 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 | `screen/internal/access/` | What the commands that use the keyboard share: the Swarm II check, opening the keyboard, the ledger of a folder |
 | `screen/internal/tray/` | The notification-area icon, menu, tooltip and balloons (Windows) |
 | `screen/internal/autostart/` | Start with Windows (the per-user Run key) |
+| `screen/internal/update/` | Commander updates: release versions, picking the update from GitHub's release list, `SHA256SUMS.txt`, the checked download (no Windows calls; the swap and restart are in `cmd/commander`) |
 | `screen/internal/appdata/` | Settings (`%APPDATA%\Commander\settings.toml`) and the log (`%LOCALAPPDATA%\Commander\commander.log`) |
 | `screen/internal/icon/` | The helmet icon: the generator (`gen/`), the ICO and the Windows resource with the DPI manifest; `helmet-256.png` is the reference render |
 | `screen/cmd/commander/` | Commander, the windowless tray program; design in `docs/design/commander-tray.md` |

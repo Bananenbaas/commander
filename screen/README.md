@@ -66,6 +66,13 @@ without an argument. Right-click the icon for the menu:
   its own run for the moment, applies, and starts it again.
 - **Start with Windows**: ticked, Commander starts when you sign in, on the
   folder it uses now.
+- **Check for updates**: ticked, Commander looks for a newer release about a
+  minute after it starts and once a day after that. Off by default; a check
+  that fails is only written to the log.
+- **Check now**: looks at once, ticked or not, and says the result in a
+  balloon. A build without a version (`dev`) says it is a development build.
+- **Update to v...**: shown only when a newer release was found. A balloon
+  says so too, once per version; clicking it does the same as this item.
 - **Open configuration folder** and **Open log**.
 - **Quit**: stops cleanly, releases held keys and puts the stored lighting
   back.
@@ -76,6 +83,19 @@ typing mistake in a file, or the loop ended with an error. The tooltip and a
 balloon say what is wrong; fix the file and choose Reload. A reload that fails
 while a configuration is running shows only a balloon, and the old
 configuration keeps running.
+
+Updates come from the project's GitHub releases; pre-releases count. Commander
+never updates without asking: a message box names both versions and the
+release page, and only Yes installs. It then downloads
+`commander-windows-amd64.exe`, checks it against the release's
+`SHA256SUMS.txt`, puts it in place of the running file (keeping the old one as
+`<name>.exe.old` next to it), stops cleanly and starts the new version on the
+same folder, which shows a balloon "Commander updated to v..." and removes the
+`.old` file. If anything fails before the stop, the running Commander carries
+on and a balloon says why. Commander must be in a folder you can write to; in
+`Program Files` the update stops and asks you to move it. If a new version
+does not start properly, rename `<name>.exe.old` back to `<name>.exe`. The
+requests to GitHub carry no more than a `User-Agent` of `Commander/<version>`.
 
 Settings are in `%APPDATA%\Commander\settings.toml`. The log is
 `%LOCALAPPDATA%\Commander\commander.log`; it is moved to `commander.log.1`
@@ -91,7 +111,9 @@ use `kb7screen stop <config>` and `kb7screen reload <config>` from another
 terminal.
 
 The check on the real desktop (icon, menu, Start with Windows) has passed;
-see "Desktop check" in `docs/design/commander-tray.md`.
+see "Desktop check" in `docs/design/commander-tray.md`. Updates are covered by
+unit tests only so far; their desktop check is still to be done (see
+`docs/design/commander-update.md`).
 
 ## Build
 
