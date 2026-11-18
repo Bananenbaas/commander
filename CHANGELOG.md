@@ -18,7 +18,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - When the keyboard stops answering (three failed attempts in a row to set it
   up or switch its profile, while it is still connected), `run` logs that it
   should be unplugged and plugged back in, and Commander's tooltip and a
-  balloon say so. Not yet checked on the keyboard.
+  balloon say so; the message ends as soon as the keyboard answers again. Not
+  yet checked on the keyboard.
 
 ## [0.1.0-beta.3] - 2026-11-18
 
