@@ -6,13 +6,16 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0-beta.4] - 2026-11-18
+
 ### Changed
 - A reload, or Apply buttons, no longer switches the keyboard back to the
   expected profile: the loop keeps the profile the keyboard was on, also one
   chosen by hand, unless a running program's profile differs. After a reload
   nothing is switched at all, so the screen no longer flashes another
   profile. After an unplug, and at the first start, the profile is chosen as
-  before. Not yet checked on the keyboard.
+  before. Checked on the keyboard for a reload: it stayed on a profile chosen
+  by hand, in about 2 seconds.
 
 ### Added
 - When the keyboard stops answering (three failed attempts in a row to set it
