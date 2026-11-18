@@ -36,13 +36,17 @@ jobs:
         working-directory: screen
         run: |
           mkdir -p ../dist
-          ldflags="-s -w -X main.version=${TAG}"
+          ldflags="-X main.version=${TAG}"
           GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="${ldflags}" \
             -o ../dist/kb7screen-windows-amd64.exe ./cmd/kb7screen
           GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="${ldflags} -H=windowsgui" \
             -o ../dist/commander-windows-amd64.exe ./cmd/commander
           GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="${ldflags}" \
             -o ../dist/kb7screen-linux-amd64 ./cmd/kb7screen
+          # The title font is built into the executables; its licence ships
+          # with them, as the SIL Open Font License asks.
+          cp ../LICENSE ../dist/LICENSE.txt
+          cp internal/picture/fonts/OFL.txt ../dist/OFL-BarlowCondensed.txt
 
       - name: Checksums
         working-directory: dist
@@ -91,6 +95,9 @@ jobs:
             echo "The executables are not code-signed, so Windows SmartScreen may warn"
             echo "before the first start. Check a download against its SHA-256:"
             echo "\`Get-FileHash <file> -Algorithm SHA256\` (PowerShell) or \`sha256sum <file>\`."
+            echo
+            echo "\`LICENSE.txt\` is the licence of this software (GPL-2.0-or-later);"
+            echo "\`OFL-BarlowCondensed.txt\` is the licence of the title font built into the executables."
             if [ -s virustotal.md ]; then
               echo
               echo "## VirusTotal"
@@ -111,4 +118,4 @@ jobs:
           gh release create "${TAG}" ${pre} --verify-tag \
             --title "${TAG}" --notes-file notes.md \
             dist/kb7screen-windows-amd64.exe dist/commander-windows-amd64.exe \
-            dist/kb7screen-linux-amd64 dist/SHA256SUMS.txt
+            dist/kb7screen-linux-amd64 dist/SHA256SUMS.txt dist/LICENSE.txt dist/OFL-BarlowCondensed.txt

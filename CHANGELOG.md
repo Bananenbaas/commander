@@ -6,6 +6,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Release builds keep their symbol tables (no `-s -w`), to see whether fewer
+  virus scanners flag them.
+- Releases ship `LICENSE.txt` and the title font's licence,
+  `OFL-BarlowCondensed.txt`, next to the executables.
+- The READMEs say where to download the executables, how to check them, and
+  that `--version` prints the version.
+
 ## [0.1.0-beta.1] - 2026-11-18
 
 The first release: `kb7screen` and Commander as ready-built executables.

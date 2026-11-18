@@ -13,6 +13,29 @@ The design and the measurements behind it are in
 [`docs/design/screen-app.md`](../docs/design/screen-app.md) and
 [`docs/PROTOCOL.md`](../docs/PROTOCOL.md).
 
+## Download
+
+Ready-built executables are on the
+[releases page](https://github.com/Bananenbaas/kb7-commander/releases):
+
+| File | What |
+|---|---|
+| `commander-windows-amd64.exe` | Commander, the tray program (see below) |
+| `kb7screen-windows-amd64.exe` | the command line for Windows |
+| `kb7screen-linux-amd64` | the command line for Linux (not yet run on a keyboard) |
+| `SHA256SUMS.txt` | the SHA-256 of each file |
+| `LICENSE.txt`, `OFL-BarlowCondensed.txt` | the licences of the program and of its built-in font |
+
+Rename them as you like, for example to `commander.exe` and `kb7screen.exe`;
+the examples below use those names. Check a download against its SHA-256 with
+`Get-FileHash <file> -Algorithm SHA256` in PowerShell (or `sha256sum` on
+Linux), and see the release notes for the VirusTotal scans. The files are not
+code-signed, so Windows SmartScreen may ask before the first start ("More
+info", then "Run anyway"). `kb7screen --version` prints the version; Commander
+writes it to its log when it starts.
+
+To build them yourself, see Build below.
+
 ## Commander
 
 Commander is a small program for the Windows notification area that keeps
@@ -22,7 +45,7 @@ cleanly from a menu, without a terminal or Task Manager.
 
 ![The Commander helmet icon](internal/icon/helmet-256.png)
 
-Build it without a console window:
+Download `commander-windows-amd64.exe`, or build it without a console window:
 
 ```sh
 cd screen
@@ -101,12 +124,12 @@ kb7screen <command> [flags] [config-folder]
 | `kb7screen apply <config> [--full]` | puts every layout of the folder on the keyboard. `--full` sends every picture again. Refuses while Commander or `run` runs |
 | `kb7screen restore <config> --profile N` | gives the positions kb7screen took over in profile N their original contents back |
 | `kb7screen run <config>` | carries out the buttons' actions and streams the lighting until you press Ctrl+C |
-| `kb7screen stop <config>` | asks the run for that folder to stop and waits up to 10 s for it to do so |
-| `kb7screen reload <config>` | asks the run for that folder to read its configuration again and waits up to 10 s |
+| `kb7screen stop <config>` | asks the run for that folder to stop and waits up to 10 s for the request to be taken |
+| `kb7screen reload <config>` | asks the run for that folder to read its configuration again and waits up to 10 s for the request to be taken; the run's output or Commander's log says whether the new configuration loaded |
 | `kb7screen keytest [--seconds N]` | prints the keys pressed on the KB7 for N seconds (default 20, 1 to 120), to check that the key reader sees the keyboard. Nothing is saved |
 | `kb7screen light-preview <config> --profile N [--out FILE]` | writes a 4 second animated GIF of the lighting of profile N, with simulated key presses. Default file: `<config>/previews/light-N.gif`. Touches no keyboard |
 
-`-h` or `--help` prints the usage. The exit code is 0 on success and 1 on an
+`-h` or `--help` prints the usage, `--version` the version. The exit code is 0 on success and 1 on an
 error; the message goes to standard error, prefixed with `kb7screen:`.
 
 `preview` writes one PNG per button, named `<profile>-<page>-<position>.png`
@@ -586,5 +609,6 @@ No test opens the keyboard.
 GPL-2.0-or-later, like the rest of the repository. The bundled title font is
 Barlow Condensed SemiBold under the SIL Open Font License; its licence text is
 in `internal/picture/fonts/OFL.txt`. The font is built into the executable, so
-whoever publishes a `kb7screen` executable must ship that `OFL.txt` with it,
-for example next to the executable in the same archive.
+whoever publishes a `kb7screen` or Commander executable must ship that
+`OFL.txt` with it, for example next to the executable in the same archive; the
+releases do so as `OFL-BarlowCondensed.txt`.

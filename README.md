@@ -1,6 +1,7 @@
 # KB7 Unleashed: Beyond Swarm II
 
 [![CI](https://github.com/Bananenbaas/kb7-commander/actions/workflows/ci.yml/badge.svg)](https://github.com/Bananenbaas/kb7-commander/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Bananenbaas/kb7-commander?include_prereleases&sort=semver)](https://github.com/Bananenbaas/kb7-commander/releases)
 [![License: GPL v2+](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 
@@ -26,18 +27,33 @@ The end goal is to turn the KB7 into a fully programmable hardware platform.
 
 ## Status
 
-**Phase 0: collecting captures**, with the first results in. The device is
-mapped, Swarm II's startup exchange and its live state stream are documented,
-and one command has been replayed successfully: a volume level written to the
-keyboard's screen. Progress is tracked in
-[`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+**First pre-release out: `v0.1.0-beta.1`.** `kb7screen` and Commander drive
+the keyboard on Windows without Swarm II: own buttons on the touchscreen with
+their actions, and layered RGB lighting that reacts to key presses. Swarm II
+is still needed for firmware updates. The Linux build passes its tests but has
+not been run on a keyboard yet. What is known about the protocol, and how it
+was measured, is in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 
 | Phase | Goal | State |
 |---|---|---|
-| 0 | USB captures of Swarm II ↔ KB7, one action per capture | in progress |
-| 1 | Analysis toolkit (`kb7cap`) and protocol notes | toolkit ready |
-| 2 | Safe replay: device info → RGB → button layout → image upload → touch input | first command replayed |
-| 3 | `kb7` library, daemon, dashboards, plugins, macros | not started |
+| 0 | USB captures of Swarm II ↔ KB7, one action per capture | ongoing, per new feature |
+| 1 | Analysis toolkit (`kb7cap`) and protocol notes | ready |
+| 2 | Safe replay: device info → RGB → button layout → image upload → touch input | done on Windows: buttons, pictures, touches, profile switching, lighting stream |
+| 3 | Programs built on it: `kb7screen`, Commander; later dashboards, plugins, a settings window | first pre-release |
+
+## Download
+
+Ready-built executables are on the
+[releases page](https://github.com/Bananenbaas/kb7-commander/releases):
+`commander-windows-amd64.exe` (the tray program),
+`kb7screen-windows-amd64.exe` and `kb7screen-linux-amd64` (the command line).
+They are built from this repository by GitHub Actions. Each release lists the
+SHA-256 of every file and links to its VirusTotal scan. The executables are
+not code-signed, so Windows SmartScreen may warn before the first start. A
+few of the scanners on VirusTotal flagged `v0.1.0-beta.1` (1 of 71 for
+`kb7screen`, 2 of 71 for Commander, all generic or machine-learning detections);
+the scan links show the current results. How to set them up is in
+[`screen/README.md`](screen/README.md).
 
 ## The `kb7cap` toolkit
 
@@ -69,12 +85,16 @@ recognised as HID and is not filtered. Review any output before you share it.
 
 Tests: `python -m unittest discover -s tests -t .`
 
-## `kb7screen`: your own buttons on the screen
+## `kb7screen` and Commander: your own buttons and lighting
 
 `kb7screen` is a Go program (Windows, with a Linux build) that puts your own
 pictures and titles on the KB7's touchscreen buttons and carries out their
 actions on the PC, without Swarm II: key combinations, sequences with pauses,
-programs, websites. See [`screen/README.md`](screen/README.md).
+programs, websites. It also streams layered RGB lighting: waves, breathing,
+ripples from key presses, and keys that light up with an on/off state.
+Commander is its tray program for Windows: it keeps it running, reloads the
+configuration and starts with Windows. See
+[`screen/README.md`](screen/README.md).
 
 ## Contributing
 
