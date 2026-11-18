@@ -139,8 +139,8 @@ func TestDownloadTooLarge(t *testing.T) {
 	}, sumLine([]byte("irrelevant"), ExeAsset))
 	dst := filepath.Join(t.TempDir(), "x.new")
 	err := (&Client{}).Download(context.Background(), rel, dst)
-	if err == nil {
-		t.Fatal("no error")
+	if err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("err = %v, want the size-limit error", err)
 	}
 	if _, serr := os.Stat(dst); !os.IsNotExist(serr) {
 		t.Errorf("dst still there: %v", serr)
