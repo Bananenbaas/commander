@@ -708,3 +708,15 @@ func TestNoResumeAfterTheLoopFailed(t *testing.T) {
 	eventually(t, "a second start", func() bool { return f.nStarts() == 2 })
 	wantResume(t, f, 1, nil)
 }
+
+// A profile the keyboard did not confirm is chosen again, but not assumed.
+func TestReloadAfterAnUnconfirmedSwitch(t *testing.T) {
+	f := newFake()
+	f.status = &run.Status{Profile: 4, Unconfirmed: true}
+	s, _ := newSupervisor(t, f)
+	serve(t, s)
+	eventually(t, "the loop's status", func() bool { return f.last().Run.Profile == 4 })
+	s.Reload()
+	eventually(t, "a second start", func() bool { return f.nStarts() == 2 })
+	wantResume(t, f, 1, &run.Resume{Profile: 4})
+}

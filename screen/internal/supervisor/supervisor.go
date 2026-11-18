@@ -494,8 +494,9 @@ func (s *Supervisor) start(ctx context.Context, cfg *layout.Config, errMsg, note
 
 // stopLoop stops the loop, if one runs, and waits for it to end. When the
 // loop's last status showed the keyboard in use on a profile, the next loop
-// resumes that profile, known to be active: stopping a loop closes the
-// keyboard without changing its profile. Otherwise (the keyboard was not
+// resumes that profile, taken to be active (stopping a loop closes the
+// keyboard without changing its profile) unless the keyboard did not
+// confirm the switch to it. Otherwise (the keyboard was not
 // connected, did not answer or was left to Swarm II) there is nothing to
 // resume.
 func (s *Supervisor) stopLoop() {
@@ -510,7 +511,7 @@ func (s *Supervisor) stopLoop() {
 	s.resume = nil
 	s.update(func(*State) bool {
 		if r := s.lastRun; r.Profile >= 0 && r.Waiting == "" {
-			s.resume = &run.Resume{Profile: byte(r.Profile), Active: true}
+			s.resume = &run.Resume{Profile: byte(r.Profile), Active: !r.Unconfirmed}
 			s.resumeName = r.Name
 		}
 		return false
