@@ -10,10 +10,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Commander, a program for the Windows notification area that keeps
   `kb7screen run` going. Its menu reloads the configuration, applies the
   buttons, switches Start with Windows and opens the configuration folder and
-  the log. A red dot and a balloon show when a start or reload failed, and the
-  old configuration keeps running. It is built from `internal/supervisor`,
+  the log. A balloon shows when a start or reload failed; a failed reload keeps
+  the old configuration running, and a red dot on the icon means no
+  configuration is running. It is built from `internal/supervisor`,
   `internal/tray`, `internal/autostart`, `internal/appdata` and
-  `internal/icon`, and it is not yet checked on the desktop.
+  `internal/icon`. It has been checked on the Windows 11 desktop (see
+  `docs/design/commander-tray.md`, "Desktop check").
 - `kb7screen stop <config>` and `kb7screen reload <config>` ask the running
   `run` for that folder to end cleanly or read its configuration again.
 - One program owns the keyboard per user: a second Commander or `run` refuses

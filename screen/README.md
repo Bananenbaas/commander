@@ -48,9 +48,11 @@ without an argument. Right-click the icon for the menu:
   back.
 
 The tooltip reads "Commander - KB7:" followed by the state. A red dot on the
-icon means the last start or reload failed, for example after a typing mistake
-in a file; the old configuration keeps running and the tooltip and a balloon
-say what is wrong. Fix the file and choose Reload again.
+icon means no configuration is running: the start failed, for example after a
+typing mistake in a file, or the loop ended with an error. The tooltip and a
+balloon say what is wrong; fix the file and choose Reload. A reload that fails
+while a configuration is running shows only a balloon, and the old
+configuration keeps running.
 
 Settings are in `%APPDATA%\Commander\settings.toml`. The log is
 `%LOCALAPPDATA%\Commander\commander.log`; it is moved to `commander.log.1`
@@ -65,8 +67,8 @@ Linux has no tray program. There, start `kb7screen run <config>` yourself and
 use `kb7screen stop <config>` and `kb7screen reload <config>` from another
 terminal.
 
-The program has been built and tested, but the check on the real desktop
-(icon, menu, Start with Windows) is still pending.
+The check on the real desktop (icon, menu, Start with Windows) has passed;
+see "Desktop check" in `docs/design/commander-tray.md`.
 
 ## Build
 
