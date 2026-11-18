@@ -2015,6 +2015,19 @@ func TestProfileNames(t *testing.T) {
 			}
 		})
 	})
+	t.Run("control characters are left out", func(t *testing.T) {
+		test(t, func(h *harness) {
+			h.profileNames = &[5]string{"\x1b[2JDESK\tTOP\r\n", "SC\x07", "\x7f", "DEFAULT 04", "DEFAULT 05"}
+			h.onPoll[1] = h.cancel
+			h.run(testConfig())
+			h.wantLogged(1, "keyboard ready on profile 0 ([2JDESKTOP)")
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			if !slices.Contains(h.statuses, Status{Profile: 0, Name: "[2JDESKTOP"}) {
+				t.Errorf("statuses %+v lack profile 0 named [2JDESKTOP", h.statuses)
+			}
+		})
+	})
 	t.Run("a failed read leaves numbers", func(t *testing.T) {
 		test(t, func(h *harness) {
 			h.profileNames = &[5]string{}

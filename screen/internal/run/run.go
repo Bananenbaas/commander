@@ -38,6 +38,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
@@ -355,8 +356,21 @@ func (l *loop) readNames() {
 		return
 	}
 	for i, n := range names {
-		l.profNames[i] = strings.TrimSpace(n)
+		l.profNames[i] = cleanName(n)
 	}
+}
+
+// cleanName leaves out the control characters and invalid bytes of a profile
+// name read from the keyboard, so it cannot upset a log or the tooltip, and
+// the spaces around it.
+func cleanName(n string) string {
+	n = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, strings.ToValidUTF8(n, ""))
+	return strings.TrimSpace(n)
 }
 
 // sleep waits for d or until ctx is cancelled.
