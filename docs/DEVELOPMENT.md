@@ -92,6 +92,17 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags=-H=windowsgui ./cmd/co
 go run internal/icon/gen/main.go            # regenerate the icon: writes cmd/commander/commander.ico and rsrc_windows_amd64.syso
 ```
 
+### Releases
+
+A release is made by pushing a tag `vX.Y.Z` (or `vX.Y.Z-beta.N` for a
+pre-release) on a commit of `main` whose `CHANGELOG.md` has a section
+`## [X.Y.Z…] - date`. `.github/workflows/release.yml` then tests, builds the
+executables with the version stamped in (`-X main.version=<tag>`), writes
+`SHA256SUMS.txt`, submits the files to VirusTotal when the repository secret
+`VT_API_KEY` is set, and publishes the GitHub release with the changelog
+section, the checksums and the VirusTotal links as its notes. The executables
+are not code-signed.
+
 ## Known gaps and pitfalls
 
 - **USBPcap control-transfer layout — checked, and it bit us once.** USBPcap

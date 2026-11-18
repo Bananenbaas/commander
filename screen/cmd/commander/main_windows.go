@@ -49,7 +49,7 @@ func commander(args []string) int {
 	}
 	// The log writer puts the date and time in front of every line.
 	logf := log.New(out, "", 0).Printf
-	logf("Commander starts")
+	logf("Commander %s starts", version)
 
 	dir, fromArg, err := folderFrom(args, appdata.LoadFolder)
 	if errors.Is(err, errTooManyArgs) {

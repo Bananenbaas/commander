@@ -90,6 +90,21 @@ func TestParseArgs(t *testing.T) {
 			t.Errorf("%v: err = %v, want help", args, err)
 		}
 	}
+	for _, args := range [][]string{{"--version"}, {"version"}} {
+		if _, err := parseArgs(args); !errors.Is(err, errVersion) {
+			t.Errorf("%v: err = %v, want version", args, err)
+		}
+	}
+}
+
+func TestVersion(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if code := realMain([]string{"--version"}, &out, &errOut); code != 0 {
+		t.Fatalf("version exit code %d", code)
+	}
+	if out.String() != "kb7screen dev\n" || errOut.Len() != 0 {
+		t.Fatalf("version output: %q, stderr %q", out.String(), errOut.String())
+	}
 }
 
 func TestHelpAndErrorsExitCodes(t *testing.T) {

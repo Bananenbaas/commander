@@ -29,6 +29,9 @@ import (
 	"github.com/Bananenbaas/kb7-commander/screen/internal/supervisor"
 )
 
+// version is set at release builds with -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	os.Exit(realMain(os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -39,6 +42,10 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 	c, err := parseArgs(args)
 	if errors.Is(err, errHelp) {
 		fmt.Fprint(stdout, usageText)
+		return 0
+	}
+	if errors.Is(err, errVersion) {
+		fmt.Fprintf(stdout, "kb7screen %s\n", version)
 		return 0
 	}
 	if err == nil {

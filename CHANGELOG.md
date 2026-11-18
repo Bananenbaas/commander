@@ -6,7 +6,15 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0-beta.1] - 2026-11-18
+
+The first release: `kb7screen` and Commander as ready-built executables.
+
 ### Added
+- Release builds: a version tag builds `kb7screen` for Windows and Linux and
+  Commander for Windows, publishes them with their SHA-256 checksums and
+  submits them to VirusTotal. `kb7screen --version` and Commander's log say
+  which version runs.
 - Commander, a program for the Windows notification area that keeps
   `kb7screen run` going. Its menu reloads the configuration, applies the
   buttons, switches Start with Windows and opens the configuration folder and
@@ -20,52 +28,6 @@ and the project uses [Semantic Versioning](https://semver.org/).
   `run` for that folder to end cleanly or read its configuration again.
 - One program owns the keyboard per user: a second Commander or `run` refuses
   to start, and `apply` and `restore` refuse while one of them runs.
-
-### Fixed
-- Transfers were timestamped and ordered by when the request was queued rather
-  than when it completed. For interrupt IN that is wrong by up to the gap
-  between two reports, so touch events appeared as duplicates and the order of
-  reports within a dial click was reversed. Transfers now carry their
-  completion time, with the queueing time kept in `Transfer.submitted`.
-- The keystroke filter could still leak. A report was classified by the usage
-  page in effect at its first main item only, so one that starts on a vendor
-  page and switches to the keyboard page passed as vendor data, and usage pages
-  carried in four-byte usages were ignored. Every page a report uses is now
-  recorded, and when a HID interface's report descriptor is missing from the
-  capture or truncated, its reports are hidden rather than shown.
-- Keyboard reports on a vendor-defined interface were printed in full. Hiding
-  only looked at boot-keyboard interfaces, but the KB7 also exposes a keyboard
-  report on interface 2 alongside unrelated reports, so typed text could appear
-  in `dump` output without `--show-keystrokes`. Hiding is now decided per report
-  ID from the HID report descriptor, which keeps the other reports on that
-  endpoint visible.
-- USBPcap control transfers lost their payload. USBPcap 1.5.4 attaches the data
-  of a control transfer to the COMPLETE stage and emits no DATA stage at all, so
-  every control transfer in a real capture was parsed as empty and no device or
-  configuration descriptor was ever recognised. `tests/synth.py` can now build
-  both layouts, and the device-inventory test runs against each.
-- `PROTOCOL.md` gave the selector write as `05 00 <selector> 00`. Byte 1 is the
-  profile: Swarm II writes every selector with `00` to `04` at startup
-  (`02-swarm-start-1`, `02-swarm-start-2`), and `05 01 b9 00` / `05 01 b8 00`
-  read profile 1's tables (`34-read-profile-1`).
-- `kb7screen apply` could change the wrong profile. It set each position's
-  type with report `0x35`, which names no profile and which the keyboard
-  queues: a profile switch sent right after it made the queued changes land
-  on the profile switched to (`37-kb7screen-apply-sc-1`). `apply` and
-  `restore` now write each profile's whole `0x25` table and wait for the
-  keyboard's full redraw before anything else is sent.
-- A profile switch to the profile that is already active is not confirmed by
-  the keyboard, so `apply`, `restore` and `run` timed out when the keyboard
-  was already on the profile (`38-copy-factory-to-desktop-1`). Where the
-  active profile is not known they now switch to another profile first; `run`
-  sends no switch when a program starts or stops and its profile is already
-  active.
-- `PROTOCOL.md` gave `0x29` plus `0x35` as the recipe for an application
-  button. It now records that `0x35` is queued and names no profile, that a
-  switch to the active profile is not confirmed, and that a whole `0x25` table
-  from our own code is taken over with a full redraw.
-
-### Added
 - Lighting layers in `kb7screen`: a profile's layout file can have a `[light]`
   block with a stack of effects (`static`, `fixed`, `breathing`, `wave`,
   `ripple`, `state`), each declaring its own settings, which `run` streams to
@@ -237,3 +199,47 @@ and the project uses [Semantic Versioning](https://semver.org/).
   Consumer bitmap plus a notification, and the host pushes the resulting
   absolute level back about 9 ms later. The screen is a slave display for
   host-side state.
+
+### Fixed
+- Transfers were timestamped and ordered by when the request was queued rather
+  than when it completed. For interrupt IN that is wrong by up to the gap
+  between two reports, so touch events appeared as duplicates and the order of
+  reports within a dial click was reversed. Transfers now carry their
+  completion time, with the queueing time kept in `Transfer.submitted`.
+- The keystroke filter could still leak. A report was classified by the usage
+  page in effect at its first main item only, so one that starts on a vendor
+  page and switches to the keyboard page passed as vendor data, and usage pages
+  carried in four-byte usages were ignored. Every page a report uses is now
+  recorded, and when a HID interface's report descriptor is missing from the
+  capture or truncated, its reports are hidden rather than shown.
+- Keyboard reports on a vendor-defined interface were printed in full. Hiding
+  only looked at boot-keyboard interfaces, but the KB7 also exposes a keyboard
+  report on interface 2 alongside unrelated reports, so typed text could appear
+  in `dump` output without `--show-keystrokes`. Hiding is now decided per report
+  ID from the HID report descriptor, which keeps the other reports on that
+  endpoint visible.
+- USBPcap control transfers lost their payload. USBPcap 1.5.4 attaches the data
+  of a control transfer to the COMPLETE stage and emits no DATA stage at all, so
+  every control transfer in a real capture was parsed as empty and no device or
+  configuration descriptor was ever recognised. `tests/synth.py` can now build
+  both layouts, and the device-inventory test runs against each.
+- `PROTOCOL.md` gave the selector write as `05 00 <selector> 00`. Byte 1 is the
+  profile: Swarm II writes every selector with `00` to `04` at startup
+  (`02-swarm-start-1`, `02-swarm-start-2`), and `05 01 b9 00` / `05 01 b8 00`
+  read profile 1's tables (`34-read-profile-1`).
+- `kb7screen apply` could change the wrong profile. It set each position's
+  type with report `0x35`, which names no profile and which the keyboard
+  queues: a profile switch sent right after it made the queued changes land
+  on the profile switched to (`37-kb7screen-apply-sc-1`). `apply` and
+  `restore` now write each profile's whole `0x25` table and wait for the
+  keyboard's full redraw before anything else is sent.
+- A profile switch to the profile that is already active is not confirmed by
+  the keyboard, so `apply`, `restore` and `run` timed out when the keyboard
+  was already on the profile (`38-copy-factory-to-desktop-1`). Where the
+  active profile is not known they now switch to another profile first; `run`
+  sends no switch when a program starts or stops and its profile is already
+  active.
+- `PROTOCOL.md` gave `0x29` plus `0x35` as the recipe for an application
+  button. It now records that `0x35` is queued and names no profile, that a
+  switch to the active profile is not confirmed, and that a whole `0x25` table
+  from our own code is taken over with a full redraw.

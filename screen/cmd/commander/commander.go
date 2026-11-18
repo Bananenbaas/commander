@@ -23,6 +23,9 @@ import (
 	"github.com/Bananenbaas/kb7-commander/screen/internal/supervisor"
 )
 
+// version is set at release builds with -ldflags "-X main.version=...".
+var version = "dev"
+
 const (
 	// appTitle is the title of Commander's message boxes.
 	appTitle = "Commander"

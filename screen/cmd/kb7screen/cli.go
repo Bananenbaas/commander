@@ -45,6 +45,7 @@ service runs. run waits for them to close.
 
 Flags:
   -h, --help   print this text
+  --version    print the version
 `
 
 // command is a parsed command line.
@@ -60,6 +61,9 @@ type command struct {
 // errHelp is returned by parseArgs when the usage text was asked for.
 var errHelp = errors.New("help requested")
 
+// errVersion is returned by parseArgs when the version was asked for.
+var errVersion = errors.New("version requested")
+
 // parseArgs parses the command line without the program name. Flags and the
 // config folder may come in any order.
 func parseArgs(args []string) (command, error) {
@@ -70,6 +74,8 @@ func parseArgs(args []string) (command, error) {
 	switch args[0] {
 	case "-h", "--help", "-help", "help":
 		return c, errHelp
+	case "--version", "-version", "version":
+		return c, errVersion
 	}
 	c.name = args[0]
 	needsConfig, needsProfile := false, false
