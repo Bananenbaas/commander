@@ -302,9 +302,12 @@ through another profile first. When the loop starts again within the same
 `run` or Commander (a reload, or after Apply buttons), it keeps the profile
 the keyboard was on, also one chosen on the keyboard by hand, unless a
 program of `switch_when_running` runs whose profile differs; that profile
-wins as always. After a reload the keyboard is known to be on that profile,
+wins as always. After a reload the keyboard is taken to be on that profile,
 so nothing is switched at all; after Apply buttons, which switches profiles,
-the switch back goes through another profile first. When the keyboard was
+or when the keyboard had not confirmed the switch to that profile, the
+switch back goes through another profile first. A profile tapped on the
+keyboard during the second or two of a reload is not seen until the next
+profile change: until then, touches act for the kept profile. When the keyboard was
 unplugged, did not answer or was left to Swarm II in between, `run` connects
 as at the first start. Every two seconds `run` checks the programs named in
 `switch_when_running` and switches profile when one starts or ends, unless
@@ -315,7 +318,8 @@ again. When three attempts in a row to set it up or switch its profile fail
 for another reason (the keyboard is there but its control interface times
 out, while typing may still work), `run` logs "the keyboard does not answer;
 unplug it and plug it back in" and Commander's tooltip and a balloon say the
-same. `run` keeps trying meanwhile.
+same. `run` keeps trying meanwhile; the message ends as soon as the keyboard
+answers again.
 
 `run` reads the configuration folder once, when it starts. After changing the
 folder, run `kb7screen reload <config>` (or choose Reload configuration in
