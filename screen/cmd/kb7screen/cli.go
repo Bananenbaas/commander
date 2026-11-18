@@ -47,8 +47,8 @@ Commands:
   reload <config>                ask the run for that folder to read its
                                  configuration again
 
-check, read, apply, restore, background and clear-launchers refuse to start while Swarm II or its device
-service runs. run waits for them to close.
+check, read, apply, restore, background and clear-launchers refuse to start
+while Swarm II or its device service runs. run waits for them to close.
 
 Flags:
   -h, --help   print this text
@@ -58,7 +58,7 @@ Flags:
 // command is a parsed command line.
 type command struct {
 	name    string
-	config  string // config folder, empty for check and read
+	config  string // config folder (image file for background), empty for check and read
 	profile int    // read and restore
 	full    bool   // apply
 	out     string // preview
@@ -152,13 +152,17 @@ func parseArgs(args []string) (command, error) {
 		c.profile = *profile
 	}
 	if needsConfig {
+		article, what := "a", "config folder"
+		if c.name == "background" {
+			article, what = "an", "image file"
+		}
 		switch len(rest) {
 		case 0:
-			return c, fmt.Errorf("%s needs a config folder", c.name)
+			return c, fmt.Errorf("%s needs %s %s", c.name, article, what)
 		case 1:
 			c.config = rest[0]
 		default:
-			return c, fmt.Errorf("%s takes one config folder, got %s", c.name, strings.Join(rest, " "))
+			return c, fmt.Errorf("%s takes one %s, got %s", c.name, what, strings.Join(rest, " "))
 		}
 	} else if len(rest) > 0 {
 		return c, fmt.Errorf("%s takes no arguments, got %s", c.name, strings.Join(rest, " "))

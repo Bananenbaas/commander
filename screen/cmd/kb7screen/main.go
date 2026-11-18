@@ -353,8 +353,8 @@ var (
 
 // stopOnSignal returns a context that Ctrl+C or a request to terminate
 // cancels; on Windows, closing the console window is such a request. Until
-// stop is called these signals no longer end the program, so apply and
-// restore can stop where nothing is left half done, and the ledger is saved.
+// stop is called these signals no longer end the program, so apply, restore
+// and background can stop where nothing is left half done.
 func stopOnSignal() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }

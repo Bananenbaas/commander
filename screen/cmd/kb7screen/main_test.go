@@ -97,6 +97,51 @@ func TestParseArgs(t *testing.T) {
 	}
 }
 
+func TestParseBackgroundAndClearLaunchers(t *testing.T) {
+	ok := []struct {
+		args []string
+		want command
+	}{
+		{[]string{"background", "bg.png"}, command{name: "background", config: "bg.png"}},
+		{[]string{"clear-launchers", "cfg", "--profile", "2"}, command{name: "clear-launchers", config: "cfg", profile: 2}},
+		{[]string{"clear-launchers", "--profile=0", "cfg"}, command{name: "clear-launchers", config: "cfg"}},
+	}
+	for _, c := range ok {
+		got, err := parseArgs(c.args)
+		if err != nil || got != c.want {
+			t.Errorf("%v: got %+v, %v; want %+v", c.args, got, err, c.want)
+		}
+	}
+	bad := []struct {
+		args []string
+		want string // part of the error
+	}{
+		{[]string{"background"}, "needs an image file"},
+		{[]string{"background", "a.png", "b.png"}, "takes one image file"},
+		{[]string{"background", "bg.png", "--profile", "1"}, "does not take --profile"},
+		{[]string{"background", "bg.png", "--full"}, "does not take --full"},
+		{[]string{"clear-launchers", "cfg"}, "needs --profile N"},
+		{[]string{"clear-launchers", "--profile", "1"}, "needs a config folder"},
+		{[]string{"clear-launchers", "cfg", "--profile", "5"}, "--profile must be 0 to 4"},
+		{[]string{"clear-launchers", "a", "b", "--profile", "1"}, "takes one config folder"},
+		{[]string{"clear-launchers", "cfg", "--profile", "1", "--full"}, "does not take --full"},
+	}
+	for _, c := range bad {
+		_, err := parseArgs(c.args)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%v: err %v, want one with %q", c.args, err, c.want)
+		}
+	}
+}
+
+func TestUsageFitsEightyColumns(t *testing.T) {
+	for i, line := range strings.Split(usageText, "\n") {
+		if n := len([]rune(line)); n > 80 {
+			t.Errorf("usage line %d is %d columns: %q", i+1, n, line)
+		}
+	}
+}
+
 func TestVersion(t *testing.T) {
 	var out, errOut bytes.Buffer
 	if code := realMain([]string{"--version"}, &out, &errOut); code != 0 {
