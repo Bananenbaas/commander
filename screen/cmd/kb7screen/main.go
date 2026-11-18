@@ -335,9 +335,9 @@ func doRequest(c command, stdout io.Writer) error {
 	case !taken:
 		fmt.Fprintf(stdout, "%s requested, but nothing took it within 10 s; the request was withdrawn\n", c.name)
 	case w == request.Stop:
-		fmt.Fprintln(stdout, "stop requested; the loop has stopped")
+		fmt.Fprintln(stdout, "stop request taken by the running loop")
 	default:
-		fmt.Fprintln(stdout, "reload requested; the loop has reloaded")
+		fmt.Fprintln(stdout, "reload request taken by the running loop; see its output or log for the result")
 	}
 	return nil
 }

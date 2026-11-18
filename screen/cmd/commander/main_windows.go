@@ -74,8 +74,9 @@ func commander(args []string) int {
 	var cancel context.CancelFunc
 	var crashOnce sync.Once
 	// crash ends Commander after a panic: it logs it with the stack, takes
-	// the tray icon away if it can and exits with 1. It is set up before
-	// Serve starts, the only source of the panics it is given.
+	// the tray icon away if it can and exits with 1. It is for panics on the
+	// goroutine that runs Serve, where the process cannot go on; OnState
+	// handles its own panics.
 	crash := func(v any) {
 		crashOnce.Do(func() {
 			logf("Commander failed: %v\n%s", v, debug.Stack())
@@ -97,7 +98,9 @@ func commander(args []string) int {
 		OnState: func(st supervisor.State) {
 			defer func() {
 				if v := recover(); v != nil {
-					crash(v)
+					// OnState can run on the loop goroutine, so ending the
+					// process here would skip the clean stop. Drop the update.
+					logf("tray state update dropped after a panic: %v\n%s", v, debug.Stack())
 				}
 			}()
 			// SetTip, SetFailed and Balloon only post to the tray's thread.
