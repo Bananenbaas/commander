@@ -6,6 +6,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0-beta.3] - 2026-11-18
+
 ### Added
 - `kb7screen background <image>` uploads a screen background (and the
   thumbnail the keyboard's background picker shows), framed as Swarm II does.
