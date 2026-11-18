@@ -3,11 +3,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // swapIn puts exe+".new" in the place of exe and keeps the old file as
@@ -36,16 +38,37 @@ func swapIn(exe string) (undo func() error, err error) {
 	return undo, nil
 }
 
-// cleanLeftovers removes exe+".old" and exe+".new" left by an update. Files
-// that are not there are not errors.
-func cleanLeftovers(exe string) []error {
+// cleanLeftovers removes exe+".old" and exe+".new" left by an update; with
+// keepOld only the .new one. Files that are not there are not errors.
+func cleanLeftovers(exe string, keepOld bool) []error {
 	var errs []error
-	for _, name := range []string{exe + ".old", exe + ".new"} {
+	names := []string{exe + ".new"}
+	if !keepOld {
+		names = []string{exe + ".old", exe + ".new"}
+	}
+	for _, name := range names {
 		if err := os.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			errs = append(errs, err)
 		}
 	}
 	return errs
+}
+
+// removeOld removes path, trying every half second for about 5 s while the
+// old Commander is still ending. If it stays, it is left for the next start.
+func removeOld(ctx context.Context, path string, logf func(string, ...any)) {
+	var err error
+	for i := 0; i < 10; i++ {
+		if err = os.Remove(path); err == nil || errors.Is(err, fs.ErrNotExist) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	logf("the old program is left for the next start: %v", err)
 }
 
 // checkWritable creates and removes a temporary file in dir. The error wraps

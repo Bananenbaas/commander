@@ -64,6 +64,10 @@ type updater struct {
 	// and dir the configuration folder the restarted Commander gets.
 	current, exe, dir string
 
+	// swapMu is held while a downloaded program is put in place, so that
+	// Commander never ends between the two renames of the swap.
+	swapMu sync.Mutex
+
 	mu      sync.Mutex
 	busy    bool
 	offer   update.Release
@@ -95,6 +99,13 @@ func (u *updater) offered() (update.Release, bool) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return u.offer, u.hasOff
+}
+
+// waitSwap returns once no swap is in progress. After the updater's context
+// is cancelled no new swap starts, so main can then end safely.
+func (u *updater) waitSwap() {
+	u.swapMu.Lock()
+	u.swapMu.Unlock() //nolint:staticcheck // waiting is the point
 }
 
 // pendingRestart returns the restart of an installed update, or nil.
@@ -218,8 +229,16 @@ func (u *updater) install(ctx context.Context, rel update.Release) (restart func
 		os.Remove(newFile)
 		return fail(err.Error(), err)
 	}
+	u.swapMu.Lock()
+	if err := ctx.Err(); err != nil {
+		u.swapMu.Unlock()
+		os.Remove(newFile)
+		err = fmt.Errorf("cancelled, Commander is ending: %w", err)
+		return fail(err.Error(), err)
+	}
 	undo, err := swapIn(u.exe)
 	if err != nil {
+		u.swapMu.Unlock()
 		os.Remove(newFile)
 		return fail(err.Error(), err)
 	}
@@ -227,6 +246,7 @@ func (u *updater) install(ctx context.Context, rel update.Release) (restart func
 	u.mu.Lock()
 	u.offer, u.hasOff = update.Release{}, false
 	u.mu.Unlock()
+	u.swapMu.Unlock()
 	u.logf("Commander %s is in place; the old program is kept as %s", rel.Tag, u.exe+".old")
 	return func() error { return u.restartWith(undo) }, nil
 }

@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/fs"
 	"log"
 	"os"
 	"runtime"
@@ -137,8 +136,8 @@ func commander(args []string) int {
 	}
 	if exe != "" {
 		// Files left by an update. After a restart the old program may still
-		// be ending; it is removed again once the tray is up.
-		for _, err := range cleanLeftovers(exe) {
+		// be ending, so its .old is left to the retry once the tray is up.
+		for _, err := range cleanLeftovers(exe, parsed.updatedFrom != "") {
 			logf("leftover of an update not removed: %v", err)
 		}
 	}
@@ -215,9 +214,7 @@ func commander(args []string) int {
 	if parsed.updatedFrom != "" {
 		logf("updated from %s to %s", parsed.updatedFrom, version)
 		if exe != "" {
-			if err := os.Remove(exe + ".old"); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				logf("the old program is left for the next start: %v", err)
-			}
+			go removeOld(updCtx, exe+".old", logf)
 		}
 		tr.Balloon(appTitle, "Commander updated to "+version)
 	}
@@ -252,6 +249,7 @@ func commander(args []string) int {
 	// still in the notification area. That is harmless: this one no longer
 	// touches the keyboard and only removes its icon.
 	updCancel()
+	upd.waitSwap()
 	cancel()
 	<-tr.Done()
 

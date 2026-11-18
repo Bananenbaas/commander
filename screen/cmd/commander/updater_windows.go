@@ -55,7 +55,7 @@ func askYesNo(text string) bool {
 		return false
 	}
 	title, _ := windows.UTF16PtrFromString(appTitle)
-	id, _ := windows.MessageBox(0, t, title, windows.MB_YESNO|windows.MB_ICONQUESTION)
+	id, _ := windows.MessageBox(0, t, title, windows.MB_YESNO|windows.MB_ICONQUESTION|windows.MB_SETFOREGROUND|windows.MB_TOPMOST)
 	return id == idYes
 }
 

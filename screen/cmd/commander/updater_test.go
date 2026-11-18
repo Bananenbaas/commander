@@ -297,6 +297,26 @@ func TestInstallDownloadFails(t *testing.T) {
 	}
 }
 
+func TestInstallCancelledAfterDownload(t *testing.T) {
+	u, _ := newTestUpdater(t, "v0.1.0-beta.1", nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	u.download = func(_ context.Context, _ update.Release, dst string) error {
+		cancel() // Quit chosen just as the download finishes
+		return os.WriteFile(dst, []byte("new"), 0o644)
+	}
+	restart, err := u.install(ctx, beta2())
+	if err == nil || restart != nil || !strings.Contains(err.Error(), "cancelled") {
+		t.Fatalf("install = %v, %v", restart != nil, err)
+	}
+	if read(t, u.exe) != "old" || exists(u.exe+".new") || exists(u.exe+".old") {
+		t.Error("a cancelled install touched the files")
+	}
+	u.waitSwap()
+	if !u.begin() {
+		t.Error("a cancelled install kept the updater busy")
+	}
+}
+
 func TestInstallLeftoverNew(t *testing.T) {
 	u, _ := newTestUpdater(t, "v0.1.0-beta.1", nil, nil)
 	write(t, u.exe+".new", "stale")

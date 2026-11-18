@@ -78,7 +78,7 @@ func TestCleanLeftovers(t *testing.T) {
 		if c.new {
 			write(t, exe+".new", "n")
 		}
-		if errs := cleanLeftovers(exe); len(errs) != 0 {
+		if errs := cleanLeftovers(exe, false); len(errs) != 0 {
 			t.Errorf("%+v: errors %v", c, errs)
 		}
 		if exists(exe+".old") || exists(exe+".new") || read(t, exe) != "exe" {
