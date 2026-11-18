@@ -297,13 +297,25 @@ left to the keyboard.
 expected profile and then carries out the touches of buttons it manages.
 The keyboard does not confirm a switch to the profile that is already active,
 so where the active profile is not known (the first switch of `apply` and
-`restore`, and when `run` connects) the switch goes through another profile
-first. Every two seconds `run` checks the programs named in
+`restore`, and when `run` connects for the first time) the switch goes
+through another profile first. When the loop starts again within the same
+`run` or Commander (a reload, or after Apply buttons), it keeps the profile
+the keyboard was on, also one chosen on the keyboard by hand, unless a
+program of `switch_when_running` runs whose profile differs; that profile
+wins as always. After a reload the keyboard is known to be on that profile,
+so nothing is switched at all; after Apply buttons, which switches profiles,
+the switch back goes through another profile first. When the keyboard was
+unplugged, did not answer or was left to Swarm II in between, `run` connects
+as at the first start. Every two seconds `run` checks the programs named in
 `switch_when_running` and switches profile when one starts or ends, unless
 that profile is already active. Only touches of application buttons
 act; a position that the keyboard shows as something else is left to the
 keyboard. If the keyboard is unplugged, `run` waits for it and sets it up
-again.
+again. When three attempts in a row to set it up or switch its profile fail
+for another reason (the keyboard is there but its control interface times
+out, while typing may still work), `run` logs "the keyboard does not answer;
+unplug it and plug it back in" and Commander's tooltip and a balloon say the
+same. `run` keeps trying meanwhile.
 
 `run` reads the configuration folder once, when it starts. After changing the
 folder, run `kb7screen reload <config>` (or choose Reload configuration in
