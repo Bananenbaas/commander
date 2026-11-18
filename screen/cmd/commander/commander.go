@@ -40,6 +40,12 @@ const (
 	failedTitle = "KB7 stopped: choose Reload configuration once fixed"
 	// unplugTitle is the balloon title after an interrupted upload.
 	unplugTitle = "Unplug the keyboard and plug it back in."
+	// replugTitle and replugText make the balloon shown when the keyboard
+	// stops answering.
+	replugTitle = "Keyboard not answering"
+	replugText  = "Unplug the keyboard and plug it back in."
+	// replugTip is the tooltip while the keyboard does not answer.
+	replugTip = "the keyboard does not answer — unplug and replug it"
 )
 
 // errNoFolder means Commander was not told which folder to use.
@@ -136,6 +142,8 @@ func tipFor(st supervisor.State) string {
 			what = "waiting for the keyboard"
 		case st.Run.Waiting == "Swarm II":
 			what = "waiting for Swarm II to close"
+		case st.Run.Waiting == run.WaitReplug:
+			what = replugTip
 		case st.Run.Waiting != "":
 			what = "waiting for " + st.Run.Waiting
 		case st.Run.Name != "":
@@ -185,8 +193,9 @@ type balloon struct{ title, text string }
 
 // balloonsFor returns the balloons to show for the change from prev to st:
 // an error when no loop runs, a reload or Apply that went wrong, the outcome
-// of an Apply. A report that only carries the loop's new status shows
-// nothing, nor does Stopped: Commander is ending.
+// of an Apply, and the keyboard no longer answering, once each time the loop
+// starts to report it. Any other report that only carries the loop's new
+// status shows nothing, nor does Stopped: Commander is ending.
 func balloonsFor(prev, st supervisor.State) []balloon {
 	if st.Phase == supervisor.Stopped {
 		return nil
@@ -198,6 +207,9 @@ func balloonsFor(prev, st supervisor.State) []balloon {
 	restarted := st.Phase == supervisor.Running && st.Run == (run.Status{Profile: -1}) && st.Err == "" && st.Note == ""
 	if restarted && (prev.Phase == supervisor.Running || prev.Phase == supervisor.Failed) {
 		return []balloon{{appTitle, "Configuration reloaded"}}
+	}
+	if st.Phase == supervisor.Running && st.Run.Waiting == run.WaitReplug && prev.Run.Waiting != run.WaitReplug {
+		return []balloon{{replugTitle, replugText}}
 	}
 	statusOnly := st.Phase == prev.Phase && st.Err == prev.Err && st.Note == "" && st.Run != prev.Run
 	if statusOnly {

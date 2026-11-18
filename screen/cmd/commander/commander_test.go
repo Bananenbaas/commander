@@ -31,6 +31,7 @@ func TestTipFor(t *testing.T) {
 		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "keyboard"}}, "Commander — KB7: waiting for the keyboard"},
 		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "Swarm II"}}, "Commander — KB7: waiting for Swarm II to close"},
 		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "lunch"}}, "Commander — KB7: waiting for lunch"},
+		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: run.WaitReplug}}, "Commander — KB7: the keyboard does not answer — unplug and replug it"},
 		// A reload that failed keeps the old configuration running; the
 		// balloon says so, the tip keeps showing the loop.
 		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 2}, Err: "not reloaded"}, "Commander — KB7: profile 2"},
@@ -79,6 +80,7 @@ func TestTipForLongError(t *testing.T) {
 func TestBalloonsFor(t *testing.T) {
 	running := supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 1}}
 	failed := supervisor.State{Phase: supervisor.Failed, Run: none, Err: "bad layout"}
+	notAnswering := supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: run.WaitReplug}}
 	upload := fmt.Errorf("buttons not applied: %w (frame 7 of 1065: timeout)", keyboard.ErrUploadLeftOpen).Error()
 	cases := []struct {
 		name       string
@@ -132,6 +134,16 @@ func TestBalloonsFor(t *testing.T) {
 			[]balloon{{"Unplug the keyboard and plug it back in.", upload}}},
 		{"stopped after apply", supervisor.State{Phase: supervisor.Applying, Run: none},
 			supervisor.State{Phase: supervisor.Stopped, Run: none, Note: "done"}, nil},
+		{"keyboard stops answering", running, notAnswering,
+			[]balloon{{"Keyboard not answering", "Unplug the keyboard and plug it back in."}}},
+		{"stops answering while waiting for it", supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "keyboard"}}, notAnswering,
+			[]balloon{{"Keyboard not answering", "Unplug the keyboard and plug it back in."}}},
+		{"still not answering", notAnswering,
+			supervisor.State{Phase: supervisor.Running, Run: notAnswering.Run, Err: "not reloaded, the previous configuration stays: x"},
+			[]balloon{{"Commander", "not reloaded, the previous configuration stays: x"}}},
+		{"answers again", notAnswering, running, nil},
+		{"unplugged while not answering", notAnswering,
+			supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "keyboard"}}, nil},
 	}
 	for _, c := range cases {
 		if got := balloonsFor(c.prev, c.next); !reflect.DeepEqual(got, c.want) {
