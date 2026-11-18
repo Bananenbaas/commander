@@ -104,6 +104,13 @@ executables with the version stamped in (`-X main.version=<tag>`), writes
 section, the checksums and the VirusTotal links as its notes. The executables
 are not code-signed.
 
+Compatibility contract: from v0.1.0-beta.2 on, released Commanders rely on
+every later release keeping the `--updated-from <version>` argument, the asset
+names `commander-windows-amd64.exe` and `SHA256SUMS.txt`, the `sha256sum` line
+format with plain file names, the `vMAJOR.MINOR.PATCH[-pre]` tag scheme, and
+deleting `<exe>.old` and `<exe>.new` at start. Changing any of them breaks
+updates for installed Commanders.
+
 ## Known gaps and pitfalls
 
 - **USBPcap control-transfer layout — checked, and it bit us once.** USBPcap
