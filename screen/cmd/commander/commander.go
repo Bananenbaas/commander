@@ -45,36 +45,71 @@ const (
 // errNoFolder means Commander was not told which folder to use.
 var errNoFolder = errors.New("no configuration folder")
 
-// errTooManyArgs means more than one argument was given.
-var errTooManyArgs = errors.New("more than one argument")
+// errBadArgs means the arguments are not a folder with an optional
+// --updated-from version: a second folder, an unknown flag or a flag without
+// its value.
+var errBadArgs = errors.New("unusable arguments")
 
-// tooManyArgsText is the message box text for errTooManyArgs: most likely a
+// tooManyArgsText is the message box text for errBadArgs: most likely a
 // folder path with spaces was given without quotes.
 const tooManyArgsText = usageText + "\n\nPut a folder path that has spaces in quotes, for example:\n" +
 	`commander.exe "D:\My KB7 config"`
 
-// folderFrom returns the configuration folder: the one argument, else the
-// folder the settings remember (read with saved only then). fromArg tells
-// which. More than one argument gives errTooManyArgs; no folder from
-// either gives errNoFolder.
-func folderFrom(args []string, saved func() (string, error)) (dir string, fromArg bool, err error) {
-	switch {
-	case len(args) > 1:
-		return "", false, errTooManyArgs
-	case len(args) == 1:
-		if args[0] == "" {
-			return "", false, errNoFolder
+// startArgs is what the command line says.
+type startArgs struct {
+	// dir is the configuration folder; fromArg tells whether it came from
+	// the arguments rather than from the settings.
+	dir     string
+	fromArg bool
+	// updatedFrom is the version this Commander replaced, set only by an
+	// update's restart (--updated-from).
+	updatedFrom string
+}
+
+// parseStart reads the arguments: an optional folder and an optional
+// --updated-from <version>, in either order. Without a folder it uses the one
+// the settings remember (read with saved only then). A second folder, an
+// unknown flag or --updated-from without a value gives errBadArgs; no folder
+// from either gives errNoFolder.
+func parseStart(args []string, saved func() (string, error)) (startArgs, error) {
+	var st startArgs
+	folders := 0
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--updated-from":
+			if i+1 >= len(args) || st.updatedFrom != "" {
+				return startArgs{}, errBadArgs
+			}
+			i++
+			st.updatedFrom = args[i]
+			if st.updatedFrom == "" {
+				return startArgs{}, errBadArgs
+			}
+		case strings.HasPrefix(a, "--"):
+			return startArgs{}, errBadArgs
+		default:
+			folders++
+			if folders > 1 {
+				return startArgs{}, errBadArgs
+			}
+			if a == "" {
+				return startArgs{}, errNoFolder
+			}
+			st.dir, st.fromArg = a, true
 		}
-		return args[0], true, nil
 	}
-	dir, err = saved()
+	if st.fromArg {
+		return st, nil
+	}
+	dir, err := saved()
 	if err != nil {
-		return "", false, err
+		return startArgs{}, err
 	}
 	if dir == "" {
-		return "", false, errNoFolder
+		return startArgs{}, errNoFolder
 	}
-	return dir, false, nil
+	st.dir = dir
+	return st, nil
 }
 
 // heldMessage is the message box text when supervisor.New found the keyboard

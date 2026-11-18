@@ -139,30 +139,36 @@ func TestBalloonsFor(t *testing.T) {
 	}
 }
 
-func TestFolderFrom(t *testing.T) {
+func TestParseStart(t *testing.T) {
 	saved := func(dir string, err error) func() (string, error) {
 		return func() (string, error) { return dir, err }
 	}
 	broken := errors.New("broken settings")
 	cases := []struct {
-		args    []string
-		load    func() (string, error)
-		dir     string
-		fromArg bool
-		err     error
+		args []string
+		load func() (string, error)
+		want startArgs
+		err  error
 	}{
-		{[]string{`D:\cfg`}, saved(`E:\old`, nil), `D:\cfg`, true, nil},
-		{[]string{`D:\cfg`}, saved("", broken), `D:\cfg`, true, nil},
-		{nil, saved(`E:\old`, nil), `E:\old`, false, nil},
-		{nil, saved("", nil), "", false, errNoFolder},
-		{nil, saved("", broken), "", false, broken},
-		{[]string{`D:\My`, "config"}, saved(`E:\old`, nil), "", false, errTooManyArgs},
-		{[]string{""}, saved(`E:\old`, nil), "", false, errNoFolder},
+		{[]string{`D:\cfg`}, saved(`E:\old`, nil), startArgs{dir: `D:\cfg`, fromArg: true}, nil},
+		{[]string{`D:\cfg`}, saved("", broken), startArgs{dir: `D:\cfg`, fromArg: true}, nil},
+		{nil, saved(`E:\old`, nil), startArgs{dir: `E:\old`}, nil},
+		{nil, saved("", nil), startArgs{}, errNoFolder},
+		{nil, saved("", broken), startArgs{}, broken},
+		{[]string{`D:\My`, "config"}, saved(`E:\old`, nil), startArgs{}, errBadArgs},
+		{[]string{""}, saved(`E:\old`, nil), startArgs{}, errNoFolder},
+		{[]string{`D:\cfg`, "--updated-from", "v0.1.0-beta.1"}, saved("", broken), startArgs{dir: `D:\cfg`, fromArg: true, updatedFrom: "v0.1.0-beta.1"}, nil},
+		{[]string{"--updated-from", "v0.1.0-beta.1", `D:\cfg`}, saved("", broken), startArgs{dir: `D:\cfg`, fromArg: true, updatedFrom: "v0.1.0-beta.1"}, nil},
+		{[]string{"--updated-from", "v0.1.0"}, saved(`E:\old`, nil), startArgs{dir: `E:\old`, updatedFrom: "v0.1.0"}, nil},
+		{[]string{"--updated-from"}, saved(`E:\old`, nil), startArgs{}, errBadArgs},
+		{[]string{`D:\cfg`, "--updated-from"}, saved(`E:\old`, nil), startArgs{}, errBadArgs},
+		{[]string{"--nope", "a"}, saved(`E:\old`, nil), startArgs{}, errBadArgs},
+		{[]string{"--updated-from", "v1.0.0", "--updated-from", "v2.0.0"}, saved(`E:\old`, nil), startArgs{}, errBadArgs},
 	}
 	for _, c := range cases {
-		dir, fromArg, err := folderFrom(c.args, c.load)
-		if dir != c.dir || fromArg != c.fromArg || !errors.Is(err, c.err) {
-			t.Errorf("folderFrom(%q) = %q, %v, %v; want %q, %v, %v", c.args, dir, fromArg, err, c.dir, c.fromArg, c.err)
+		got, err := parseStart(c.args, c.load)
+		if got != c.want || !errors.Is(err, c.err) {
+			t.Errorf("parseStart(%q) = %+v, %v; want %+v, %v", c.args, got, err, c.want, c.err)
 		}
 	}
 }

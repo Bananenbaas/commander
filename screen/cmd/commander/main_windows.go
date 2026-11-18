@@ -51,9 +51,10 @@ func commander(args []string) int {
 	logf := log.New(out, "", 0).Printf
 	logf("Commander %s starts", version)
 
-	dir, fromArg, err := folderFrom(args, appdata.LoadFolder)
-	if errors.Is(err, errTooManyArgs) {
-		logf("more than one argument: %q", args)
+	parsed, err := parseStart(args, appdata.LoadFolder)
+	dir, fromArg := parsed.dir, parsed.fromArg
+	if errors.Is(err, errBadArgs) {
+		logf("unusable arguments: %q", args)
 		messageBox(tooManyArgsText, windows.MB_ICONINFORMATION)
 		return 1
 	}
