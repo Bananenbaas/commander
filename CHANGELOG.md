@@ -6,6 +6,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0-beta.2] - 2026-11-18
+
+Commander learns to update itself. Updating from `0.1.0-beta.1` is by hand,
+once: that version does not have the update feature yet.
+
 ### Added
 - Commander can update itself from the GitHub releases. **Check for updates**
   in the menu (off by default) checks at start and once a day; **Check now**
