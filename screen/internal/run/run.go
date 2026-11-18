@@ -70,9 +70,20 @@ type Status struct {
 	// unknown.
 	Name string
 	// Waiting says what the loop waits for: "" (nothing, the keyboard is in
-	// use), "keyboard" (not connected) or "Swarm II" (left to Swarm II).
+	// use), "keyboard" (not connected), "Swarm II" (left to Swarm II) or
+	// WaitReplug (the keyboard does not answer).
 	Waiting string
 }
+
+// WaitReplug is Status.Waiting while the keyboard does not answer: the last
+// replugAfter attempts to connect or switch failed, for another reason than
+// the keyboard being gone. Typing may still work; unplugging the keyboard and
+// plugging it back in has been the only cure. Run keeps trying meanwhile,
+// and the status ends with the next connect or switch that works.
+const WaitReplug = "replug"
+
+// replugAfter is the number of failures in a row that make WaitReplug.
+const replugAfter = 3
 
 // Deps is what Run works with.
 type Deps struct {
@@ -171,6 +182,7 @@ type loop struct {
 	openMsg  string                // why the keyboard could not be opened, as last logged
 	runMsg   string                // why the programs could not be checked, as last logged
 	resume   *Resume               // used by the first connect, then nil
+	failures int                   // connects and switches that failed in a row
 
 	// Lighting; eng is nil without it.
 	eng        *light.Engine
@@ -346,8 +358,34 @@ func (l *loop) report(s Status) {
 	l.status(s)
 }
 
-// ready reports the active profile, with the keyboard in use.
-func (l *loop) ready() { l.report(Status{Profile: int(l.active), Name: l.nameOf(l.active)}) }
+// ready reports the active profile, with the keyboard in use, unless the
+// keyboard does not answer.
+func (l *loop) ready() {
+	if l.failures >= replugAfter {
+		l.report(Status{Profile: -1, Waiting: WaitReplug})
+		return
+	}
+	l.report(Status{Profile: int(l.active), Name: l.nameOf(l.active)})
+}
+
+// waiting reports that the keyboard is not in use: not connected, or not
+// answering.
+func (l *loop) waiting() {
+	if l.failures >= replugAfter {
+		l.report(Status{Profile: -1, Waiting: WaitReplug})
+		return
+	}
+	l.report(Status{Profile: -1, Waiting: "keyboard"})
+}
+
+// failed counts a connect or switch that failed; at the replugAfter-th in a
+// row the user is told what to do.
+func (l *loop) failed() {
+	l.failures++
+	if l.failures == replugAfter {
+		l.logf("the keyboard does not answer; unplug it and plug it back in")
+	}
+}
 
 // nameOf is the stored name of profile p, "" when not known.
 func (l *loop) nameOf(p byte) string {
@@ -514,9 +552,12 @@ func (l *loop) connect(ctx context.Context, running map[string]bool) {
 		msg := fmt.Sprintf("opening the keyboard: %v", err)
 		if errors.Is(err, device.ErrNotFound) {
 			msg = "waiting for the keyboard"
+			l.failures = 0 // unplugged: whatever comes back is a new start
+		} else {
+			l.failed()
 		}
 		l.logOnce(&l.openMsg, msg)
-		l.report(Status{Profile: -1, Waiting: "keyboard"})
+		l.waiting()
 		return
 	}
 	l.openMsg = ""
@@ -527,6 +568,7 @@ func (l *loop) connect(ctx context.Context, running map[string]bool) {
 	}
 	if err := kb.EnableNotifications(); err != nil {
 		l.logf("enabling touch notifications: %v", err)
+		l.failed()
 		l.drop(ctx)
 		return
 	}
@@ -571,6 +613,7 @@ func (l *loop) switchTo(ctx context.Context, p byte, how int) bool {
 		err = l.kb.SwitchProfileFresh(p)
 	}
 	if err != nil {
+		l.failed()
 		if !errors.Is(err, device.ErrTimeout) {
 			l.logf("switching to profile %d: %v", p, err)
 			l.drop(ctx)
@@ -579,7 +622,13 @@ func (l *loop) switchTo(ctx context.Context, p byte, how int) bool {
 		l.logf("the keyboard did not confirm the switch to profile %d; assuming it is active", p)
 	}
 	l.active, l.expected = p, p
-	return l.activate(ctx)
+	if !l.activate(ctx) {
+		return false
+	}
+	if err == nil {
+		l.failures = 0
+	}
+	return true
 }
 
 // drop releases held keys and closes the keyboard, after a keyboard error:
@@ -587,7 +636,7 @@ func (l *loop) switchTo(ctx context.Context, p byte, how int) bool {
 func (l *loop) drop(ctx context.Context) {
 	l.shut(ctx, false)
 	if l.kb == nil {
-		l.report(Status{Profile: -1, Waiting: "keyboard"})
+		l.waiting()
 	}
 }
 
