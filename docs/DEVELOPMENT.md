@@ -99,7 +99,7 @@ pre-release) on a commit of `main` whose `CHANGELOG.md` has a section
 `## [X.Y.Z…] - date`. `.github/workflows/release.yml` then tests, builds the
 executables with the version stamped in (`-X main.version=<tag>`), writes
 `SHA256SUMS.txt`, submits the files to VirusTotal when the repository secret
-`VT_API_KEY` is set, and publishes the GitHub release with the changelog
+`VIRUSTOTAL` (a VirusTotal API key) is set, and publishes the GitHub release with the changelog
 section, the checksums and the VirusTotal links as its notes. The executables
 are not code-signed.
 

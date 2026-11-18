@@ -51,11 +51,11 @@ jobs:
       - name: Submit to VirusTotal
         working-directory: dist
         env:
-          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+          VT_API_KEY: ${{ secrets.VIRUSTOTAL }}
         run: |
           : > ../virustotal.md
           if [ -z "${VT_API_KEY}" ]; then
-            echo "No VT_API_KEY secret; skipping VirusTotal."
+            echo "No VIRUSTOTAL secret; skipping VirusTotal."
             exit 0
           fi
           first=1
