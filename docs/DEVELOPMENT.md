@@ -187,7 +187,8 @@ updates for installed Commanders.
   sent, and the ledger is saved; `restore` stops only before it touches the
   keyboard. Windows ends a program a few seconds after its console is closed,
   which can still be too soon for an upload. New keyboard work in `apply`
-  must check its context only at such points.
+  must check its context only at such points. `background` catches the same
+  signals and lets its upload run to the end before it reports the stop.
 - **Tests of the per-user lock skip when a Commander or run is live.** The
   lock is per user and machine (a named mutex on Windows, a `flock` file on
   Linux), so those tests skip with a message when a real Commander or `run`

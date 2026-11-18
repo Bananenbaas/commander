@@ -149,7 +149,7 @@ kb7screen <command> [flags] [config-folder]
 | `kb7screen stop <config>` | asks the run for that folder to stop and waits up to 10 s for the request to be taken |
 | `kb7screen reload <config>` | asks the run for that folder to read its configuration again and waits up to 10 s for the request to be taken; the run's output or Commander's log says whether the new configuration loaded |
 | `kb7screen background <image>` | uploads a PNG or JPEG as the screen background (scaled to cover 480 x 800 and cropped in the middle; about 30 s). Choose it afterwards in the keyboard's own background settings. Refuses while Commander or `run` runs |
-| `kb7screen clear-launchers <config> --profile N` | empties the application, website and third-party application buttons on all pages of profile N, freeing their picture slots. Refuses a profile the folder manages |
+| `kb7screen clear-launchers <config> --profile N` | empties the application, website and third-party application buttons on all pages of profile N, freeing their picture slots. The positions the folder manages are left as they are; use `restore` for those |
 | `kb7screen keytest [--seconds N]` | prints the keys pressed on the KB7 for N seconds (default 20, 1 to 120), to check that the key reader sees the keyboard. Nothing is saved |
 | `kb7screen light-preview <config> --profile N [--out FILE]` | writes a 4 second animated GIF of the lighting of profile N, with simulated key presses. Default file: `<config>/previews/light-N.gif`. Touches no keyboard |
 
@@ -226,11 +226,19 @@ the title only.
 | `state` | name of a lighting state the button flips; see Lighting. Without an `action` the button flips only the state |
 | `confirm` | `"hold 1s"`: the button acts only once the finger has stayed on it that long (200 ms to 5 s), so an accidental touch does nothing. Not with `mode = "hold"`, and needs an `action` |
 
-At most 15 different pictures can be on the keyboard at once, over all
-profiles; buttons with an identical picture share one slot. `apply` refuses a
-folder that needs more. Swarm II's own application buttons use the same slots;
-`kb7screen clear-launchers <config> --profile N` empties the ones it left on a
-profile that the folder does not manage.
+`kb7screen` uses up to 15 picture slots, so at most 15 different pictures can
+be on the keyboard at once, over all profiles; buttons with an identical
+picture share one slot. That 15 is the highest slot is a hypothesis, taken
+from Swarm II's own limit of 15 application buttons (see `docs/PROTOCOL.md`);
+slots 1 to 15 were each seen taking an upload. `apply` refuses a folder that
+needs more.
+
+Swarm II's own application buttons use the same slots. `apply` reads the
+button tables of all five profiles and leaves every slot that such a button
+shows alone, on any page, with a note; if too few slots are left, it refuses
+before sending anything and names those buttons.
+`kb7screen clear-launchers <config> --profile N` empties them on one profile;
+the positions the folder manages are left as they are.
 
 ### Action steps
 
@@ -569,15 +577,17 @@ the keyboard. The GIF does not follow the keyboard's brightness.
   pauses, releases every held key and closes the keyboard while Swarm II runs,
   and carries on when Swarm II is closed. If Swarm II changed the buttons in
   the meantime, `run` says so; run `apply` again.
-- **Never unplug the keyboard during `apply`.** A picture upload takes about
-  2.7 seconds and must run to the end.
+- **Never unplug the keyboard during `apply` or `background`.** A picture
+  upload takes about 2.7 seconds, a background upload about 30 seconds, and
+  each must run to the end. The keyboard does not type while an upload runs.
 - **Ctrl+C during `apply`** does not cut a picture short: `apply` finishes the
   picture it is sending, writes the buttons of that profile whose pictures are
   in place, saves the ledger and ends with `stopped after the current picture;
   the ledger is saved`. Run `apply` again to finish the rest. `restore` stops
   only if it has not changed anything yet. Closing the console window asks
   for the same stop, but Windows ends the program a few seconds later, which
-  may be too soon; use Ctrl+C.
+  may be too soon; use Ctrl+C. `background` does the same: Ctrl+C lets the
+  upload finish and then says it stopped.
 - **"Unplug and replug."** If an upload is interrupted, the keyboard may stay
   in upload mode and stops working as a keyboard. `apply` then prints a
   prominent message. Unplug the keyboard, plug it back in, and run `apply`

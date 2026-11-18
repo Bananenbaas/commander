@@ -10,14 +10,21 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - `kb7screen background <image>` uploads a screen background (and the
   thumbnail the keyboard's background picker shows), framed as Swarm II does.
 - `kb7screen clear-launchers <config> --profile N` empties the launcher
-  buttons Swarm II left on a profile, so their picture slots are free.
+  buttons Swarm II left on a profile, so their picture slots are free. The
+  positions the folder manages are left as they are.
 - Commander's tooltip and the log of `run` name the active profile as the
   keyboard stores it ("SC", "DESKTOP") instead of only its number.
 - `docs/CAPTURES-WANTED.md`: the Swarm II captures the next session should
   record (renaming a profile, the volume mixer page, saving lighting, ...).
 
 ### Changed
-- Up to 15 pictures instead of 9: slots 10 to 15 are used too.
+- Up to 15 pictures instead of 9: slots 10 to 15 are used too. A ledger
+  that holds a slot above 9 is refused by older versions of kb7screen and
+  Commander, which report the slot as out of range; do not go back to one
+  after applying with this version.
+- `apply` reads the button tables of all five profiles and leaves the picture
+  slots of launchers it does not manage alone, on every page. When too few
+  slots are left it refuses before sending anything and names those launchers.
 - A slot freed by a removed button keeps its picture in the ledger, so a
   button moved to another position is not uploaded again. New pictures go to
   slots of unknown content first.
