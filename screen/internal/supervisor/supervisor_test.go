@@ -66,6 +66,9 @@ type fake struct {
 	ctxs     []context.Context
 	loopErr  error         // returned at once by the next loop started
 	status   *run.Status   // reported by every loop started
+	reports  []run.Status  // reported after status by every loop started
+	endErr   error         // returned by the next loop started once it has reported
+	resumes  []*run.Resume // the resume of every loop started
 	applyErr error         // returned by Apply
 	applyFor time.Duration // how long Apply takes
 	applies  int
@@ -90,13 +93,14 @@ func (f *fake) load(dir string) (*layout.Config, error) {
 	return cfg, nil
 }
 
-func (f *fake) loop(ctx context.Context, cfg *layout.Config, status func(run.Status)) error {
+func (f *fake) loop(ctx context.Context, cfg *layout.Config, resume *run.Resume, status func(run.Status)) error {
 	f.mu.Lock()
 	f.starts = append(f.starts, cfg)
 	f.ctxs = append(f.ctxs, ctx)
-	err := f.loopErr
-	f.loopErr = nil
-	st := f.status
+	f.resumes = append(f.resumes, resume)
+	err, endErr := f.loopErr, f.endErr
+	f.loopErr, f.endErr = nil, nil
+	st, reports := f.status, f.reports
 	f.mu.Unlock()
 	if err != nil {
 		return err
@@ -104,8 +108,21 @@ func (f *fake) loop(ctx context.Context, cfg *layout.Config, status func(run.Sta
 	if st != nil {
 		status(*st)
 	}
+	for _, r := range reports {
+		status(r)
+	}
+	if endErr != nil {
+		return endErr
+	}
 	<-ctx.Done()
 	return nil
+}
+
+// resume returns the resume of the i-th loop started.
+func (f *fake) resume(i int) *run.Resume {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.resumes[i]
 }
 
 func (f *fake) apply(ctx context.Context, cfg *layout.Config) (string, error) {
@@ -601,4 +618,93 @@ func TestSummary(t *testing.T) {
 			t.Errorf("summary = %q, want %q", got, c.want)
 		}
 	}
+}
+
+// wantResume checks the resume of the i-th loop started.
+func wantResume(t *testing.T, f *fake, i int, want *run.Resume) {
+	t.Helper()
+	got := f.resume(i)
+	if (got == nil) != (want == nil) || (got != nil && *got != *want) {
+		t.Fatalf("loop %d resumed %+v, want %+v", i, got, want)
+	}
+}
+
+func TestReloadResumesTheActiveProfile(t *testing.T) {
+	f := newFake()
+	f.status = &run.Status{Profile: 4, Name: "DEFAULT 03"}
+	s, _ := newSupervisor(t, f)
+	serve(t, s)
+	eventually(t, "the loop's status", func() bool { return f.last().Run.Profile == 4 })
+	s.Reload()
+	eventually(t, "a second start", func() bool { return f.nStarts() == 2 })
+	wantResume(t, f, 0, nil)
+	wantResume(t, f, 1, &run.Resume{Profile: 4, Active: true})
+}
+
+// A loop that lost the keyboard tells nothing about the profile.
+func TestReloadAfterADisconnectDoesNotResume(t *testing.T) {
+	for _, waiting := range []string{"keyboard", "Swarm II", run.WaitReplug} {
+		t.Run(waiting, func(t *testing.T) {
+			f := newFake()
+			f.status = &run.Status{Profile: 4}
+			f.reports = []run.Status{{Profile: -1, Waiting: waiting}}
+			s, _ := newSupervisor(t, f)
+			serve(t, s)
+			eventually(t, "the loop's status", func() bool { return f.last().Run.Waiting == waiting })
+			s.Reload()
+			eventually(t, "a second start", func() bool { return f.nStarts() == 2 })
+			wantResume(t, f, 1, nil)
+		})
+	}
+}
+
+func TestReloadBeforeAnyStatusDoesNotResume(t *testing.T) {
+	f := newFake()
+	s, _ := newSupervisor(t, f)
+	serve(t, s)
+	eventually(t, "a start", func() bool { return f.nStarts() == 1 })
+	s.Reload()
+	eventually(t, "a second start", func() bool { return f.nStarts() == 2 })
+	wantResume(t, f, 1, nil)
+}
+
+// Apply switches profiles: the profile is kept, but no longer known to be
+// active.
+func TestApplyResumesWithoutKnowingTheActiveProfile(t *testing.T) {
+	f := newFake()
+	f.status = &run.Status{Profile: 4}
+	s, _ := newSupervisor(t, f)
+	serve(t, s)
+	eventually(t, "the loop's status", func() bool { return f.last().Run.Profile == 4 })
+	s.Apply()
+	eventually(t, "a second start", func() bool { return f.nStarts() == 2 })
+	wantResume(t, f, 1, &run.Resume{Profile: 4})
+}
+
+// The resume is that of the loop just stopped, not of an older one.
+func TestResumeFollowsTheLastLoop(t *testing.T) {
+	f := newFake()
+	f.status = &run.Status{Profile: 4}
+	s, _ := newSupervisor(t, f)
+	serve(t, s)
+	eventually(t, "the loop's status", func() bool { return f.last().Run.Profile == 4 })
+	f.set(func() { f.status = nil })
+	s.Reload()
+	eventually(t, "a second start", func() bool { return f.nStarts() == 2 })
+	s.Reload()
+	eventually(t, "a third start", func() bool { return f.nStarts() == 3 })
+	wantResume(t, f, 2, nil)
+}
+
+// A loop that ended by itself leaves nothing to resume.
+func TestNoResumeAfterTheLoopFailed(t *testing.T) {
+	f := newFake()
+	f.status = &run.Status{Profile: 4}
+	f.endErr = errors.New("boom")
+	s, _ := newSupervisor(t, f)
+	serve(t, s)
+	eventually(t, "Failed", func() bool { return f.last().Phase == Failed })
+	s.Reload()
+	eventually(t, "a second start", func() bool { return f.nStarts() == 2 })
+	wantResume(t, f, 1, nil)
 }

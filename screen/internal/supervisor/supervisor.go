@@ -12,6 +12,12 @@
 // own goroutine with a context of its own, so that a stop or a reload ends it
 // the way Ctrl+C ends kb7screen run: held keys released, stored lighting
 // sent, keyboard closed.
+//
+// A loop started again in the same process (a reload, after an Apply) keeps
+// the profile the previous one left the keyboard on, also one chosen on the
+// keyboard by hand, unless a program of switch_when_running wants another
+// (see run.Resume). After a disconnect, while the keyboard did not answer or
+// after the loop ended by itself, nothing is kept.
 package supervisor
 
 import (
@@ -107,8 +113,9 @@ type Options struct {
 	// Loop runs the loop until ctx ends, reporting its status (when nil:
 	// run.Run, with a keystroke injector and program launcher made once in
 	// New, and the lighting engine and key reader made anew for every
-	// start).
-	Loop func(ctx context.Context, cfg *layout.Config, status func(run.Status)) error
+	// start). resume is the profile the previous loop left the keyboard on,
+	// nil when there is none (see run.Resume).
+	Loop func(ctx context.Context, cfg *layout.Config, resume *run.Resume, status func(run.Status)) error
 	// Apply applies the buttons of cfg and returns a one-line summary (when
 	// nil: refuse while Swarm II runs, open the keyboard, run apply.Apply
 	// with the folder's ledger and save it). It stops between two pictures
@@ -156,7 +163,7 @@ type Supervisor struct {
 	logf    func(string, ...any)
 	onState func(State)
 	load    func(string) (*layout.Config, error)
-	loop    func(context.Context, *layout.Config, func(run.Status)) error
+	loop    func(context.Context, *layout.Config, *run.Resume, func(run.Status)) error
 	apply   func(context.Context, *layout.Config) (string, error)
 	poll    time.Duration
 	release func() error // gives back what New took
@@ -166,8 +173,14 @@ type Supervisor struct {
 	queue []op
 	wake  chan struct{} // signalled when queue grows
 
-	smu   sync.Mutex
-	state State
+	smu     sync.Mutex
+	state   State
+	lastRun run.Status // the last status of the loop that runs or ran last
+
+	// resume is the profile the next loop is to keep, nil: none, and
+	// resumeName its name. Used by Serve's goroutine only.
+	resume     *run.Resume
+	resumeName string
 
 	// Used by Serve's goroutine only.
 	cur       *loopRun         // nil while no loop runs
@@ -333,6 +346,7 @@ func (s *Supervisor) set(st State) {
 // status takes a status report of the loop.
 func (s *Supervisor) status(rs run.Status) {
 	s.update(func(st *State) bool {
+		s.lastRun = rs
 		if st.Phase != Running || st.Run == rs {
 			return false
 		}
@@ -466,13 +480,24 @@ func (s *Supervisor) start(ctx context.Context, cfg *layout.Config, errMsg, note
 	// Running is reported first, so the loop's status reports are taken,
 	// and so a panic in OnState leaves no loop behind.
 	s.set(State{Phase: Running, Run: noStatus, Err: errMsg, Note: note})
+	s.update(func(*State) bool { s.lastRun = noStatus; return false })
+	resume := s.resume
+	s.resume = nil
+	if resume != nil {
+		s.logf("keeping %s", profileName(resume.Profile, s.resumeName))
+	}
 	lctx, cancel := context.WithCancel(ctx)
 	cur := &loopRun{cancel: cancel, done: make(chan error, 1)}
 	s.cur = cur
-	go func() { cur.done <- s.loop(lctx, cfg, s.status) }()
+	go func() { cur.done <- s.loop(lctx, cfg, resume, s.status) }()
 }
 
-// stopLoop stops the loop, if one runs, and waits for it to end.
+// stopLoop stops the loop, if one runs, and waits for it to end. When the
+// loop's last status showed the keyboard in use on a profile, the next loop
+// resumes that profile, known to be active: stopping a loop closes the
+// keyboard without changing its profile. Otherwise (the keyboard was not
+// connected, did not answer or was left to Swarm II) there is nothing to
+// resume.
 func (s *Supervisor) stopLoop() {
 	if s.cur == nil {
 		return
@@ -482,12 +507,30 @@ func (s *Supervisor) stopLoop() {
 		s.logf("the loop ended with an error: %v", err)
 	}
 	s.cur = nil
+	s.resume = nil
+	s.update(func(*State) bool {
+		if r := s.lastRun; r.Profile >= 0 && r.Waiting == "" {
+			s.resume = &run.Resume{Profile: byte(r.Profile), Active: true}
+			s.resumeName = r.Name
+		}
+		return false
+	})
+}
+
+// profileName is profile p for the log: "profile 1 (SC)", or "profile 1"
+// without a name.
+func profileName(p byte, name string) string {
+	if name != "" {
+		return fmt.Sprintf("profile %d (%s)", p, name)
+	}
+	return fmt.Sprintf("profile %d", p)
 }
 
 // loopEnded takes the result of a loop that ended without being stopped.
 func (s *Supervisor) loopEnded(ctx context.Context, err error) {
 	s.cur.cancel()
 	s.cur = nil
+	s.resume = nil // in doubt: the loop did not end by a stop
 	if ctx.Err() != nil {
 		// Serve is stopping.
 		if err != nil {
@@ -515,6 +558,11 @@ func (s *Supervisor) startApply(ctx context.Context) {
 		return
 	}
 	s.stopLoop()
+	if s.resume != nil {
+		// Apply switches profiles: the profile is chosen again, but the
+		// keyboard is no longer known to be on it.
+		s.resume.Active = false
+	}
 	s.logf("applying the buttons")
 	s.set(State{Phase: Applying, Run: noStatus})
 	ch := make(chan applyResult, 1)
@@ -555,8 +603,8 @@ func oneLine(err error) string {
 
 // runLoop returns the real loop: run.Run with the keyboard, the given
 // executor, and lighting and key input when the configuration has [light].
-func (s *Supervisor) runLoop(exec *action.Executor) func(context.Context, *layout.Config, func(run.Status)) error {
-	return func(ctx context.Context, cfg *layout.Config, status func(run.Status)) error {
+func (s *Supervisor) runLoop(exec *action.Executor) func(context.Context, *layout.Config, *run.Resume, func(run.Status)) error {
+	return func(ctx context.Context, cfg *layout.Config, resume *run.Resume, status func(run.Status)) error {
 		deps := run.Deps{
 			Open: func() (run.Keyboard, error) {
 				kb, err := access.OpenKeyboard()
@@ -569,6 +617,7 @@ func (s *Supervisor) runLoop(exec *action.Executor) func(context.Context, *layou
 			Exec:    exec,
 			Logf:    s.logf,
 			Status:  status,
+			Resume:  resume,
 		}
 		stacks := map[byte]*light.Stack{}
 		for _, p := range cfg.Profiles {
