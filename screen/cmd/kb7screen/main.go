@@ -238,14 +238,37 @@ func doBackground(c command, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	ctx, stop := stopOnSignal()
+	defer stop()
 	kb, err := access.OpenKeyboard()
 	if err != nil {
 		return err
 	}
 	defer kb.Close()
-	fmt.Fprintln(stdout, "Uploading the background; this takes about 30 seconds. Do not unplug the keyboard.")
-	if err := kb.UploadBackground(full, thumb); err != nil {
+	return uploadBackground(ctx, stdout, func() error { return kb.UploadBackground(full, thumb) })
+}
+
+// The errors reported when background was stopped.
+var (
+	errBackgroundNotStarted = errors.New("stopped before the background upload started; nothing was sent")
+	errBackgroundStopped    = errors.New("stopped once the background upload was done; the new background is on the keyboard")
+)
+
+// uploadBackground runs upload, which must never be cut short: an upload
+// left open stops the keyboard working as a keyboard until it is replugged.
+// ctx is cancelled by Ctrl+C or a terminate request, which stopOnSignal keeps
+// from ending the program. A stop asked before the upload sends nothing; a
+// stop asked during it is reported once the upload is done.
+func uploadBackground(ctx context.Context, stdout io.Writer, upload func() error) error {
+	if ctx.Err() != nil {
+		return errBackgroundNotStarted
+	}
+	fmt.Fprintln(stdout, "Uploading the background; this takes about 30 seconds. Do not unplug the keyboard; it does not type until the upload is done.")
+	if err := upload(); err != nil {
 		return err
+	}
+	if ctx.Err() != nil {
+		return errBackgroundStopped
 	}
 	fmt.Fprintln(stdout, "Done. Choose the new background in the keyboard's own background settings.")
 	return nil

@@ -151,6 +151,43 @@ func TestFinishReportsAStop(t *testing.T) {
 	}
 }
 
+func TestBackgroundUploadRunsToTheEnd(t *testing.T) {
+	var out bytes.Buffer
+	ran := false
+	if err := uploadBackground(context.Background(), &out, func() error { ran = true; return nil }); err != nil || !ran {
+		t.Fatalf("plain upload: ran %v, %v", ran, err)
+	}
+	if !strings.Contains(out.String(), "Done.") {
+		t.Errorf("output %q", out.String())
+	}
+
+	// A stop asked during the upload lets it finish, then says so.
+	ctx, cancel := context.WithCancel(context.Background())
+	out.Reset()
+	finished := false
+	err := uploadBackground(ctx, &out, func() error { cancel(); finished = true; return nil })
+	if !finished || err != errBackgroundStopped {
+		t.Fatalf("stopped during the upload: finished %v, %v", finished, err)
+	}
+	if strings.Contains(out.String(), "Done.") {
+		t.Errorf("a stopped upload printed Done: %q", out.String())
+	}
+
+	// A stop asked before the upload sends nothing.
+	ran = false
+	err = uploadBackground(ctx, &out, func() error { ran = true; return nil })
+	if ran || err != errBackgroundNotStarted {
+		t.Fatalf("stopped before the upload: ran %v, %v", ran, err)
+	}
+
+	// An upload error is returned as it is, even after a stop.
+	ctx, cancel = context.WithCancel(context.Background())
+	gone := errors.New("keyboard gone")
+	if err := uploadBackground(ctx, &out, func() error { cancel(); return gone }); err != gone {
+		t.Fatalf("upload error: %v", err)
+	}
+}
+
 const testLayout = `
 profile = 1
 
