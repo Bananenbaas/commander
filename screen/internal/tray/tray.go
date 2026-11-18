@@ -13,6 +13,12 @@ import (
 // Item is one entry of the tray menu.
 type Item struct {
 	Label string
+	// LabelFunc, when set, is asked each time the menu opens and used
+	// instead of Label.
+	LabelFunc func() string
+	// Visible, when set, is asked each time the menu opens; false leaves the
+	// item out of the menu that time. Separators are always shown.
+	Visible func() bool
 	// Checked, when set, is asked each time the menu opens; true shows a tick.
 	Checked func() bool
 	// OnClick runs on a goroutine of its own when the item is chosen.
@@ -66,23 +72,79 @@ func cutUnits(s string, n int) string {
 // maxBalloons is how many balloons may wait to be shown.
 const maxBalloons = 5
 
-type balloon struct{ title, text string }
+type balloon struct {
+	title, text string
+	action      func() // run when the balloon is clicked; may be nil
+}
 
 // queueBalloon adds a balloon to q. The shell shows no balloon without text,
 // so a lone title becomes the text; an empty balloon is not added. When q is
 // full the oldest one is dropped.
-func queueBalloon(q []balloon, title, text string) []balloon {
+func queueBalloon(q []balloon, title, text string, action func()) []balloon {
 	if text == "" {
 		title, text = "", title
 	}
 	if text == "" {
 		return q
 	}
-	q = append(q, balloon{title, text})
+	q = append(q, balloon{title, text, action})
 	if len(q) > maxBalloons {
 		q = append(q[:0:0], q[len(q)-maxBalloons:]...)
 	}
 	return q
+}
+
+// balloonClicks remembers the action of the balloon shown last. A click
+// counts only for that balloon, and only while it is there.
+type balloonClicks struct{ action func() }
+
+// shown records that a balloon with action (nil for none) was shown; it
+// replaces whatever was shown before.
+func (c *balloonClicks) shown(action func()) { c.action = action }
+
+// forget is called when the balloon timed out or was hidden.
+func (c *balloonClicks) forget() { c.action = nil }
+
+// click returns the action to run for a click on the balloon, or nil. The
+// action is returned once.
+func (c *balloonClicks) click() func() {
+	f := c.action
+	c.action = nil
+	return f
+}
+
+// entry is one line of the menu as it is shown.
+type entry struct {
+	ID        uintptr // menuID of the item; 0 for a separator
+	Label     string
+	Checked   bool
+	Separator bool
+}
+
+// menuEntries builds the menu as it is to be shown now: labels from
+// LabelFunc, ticks from Checked, hidden items left out. Each id stays tied
+// to the item's index, so hiding one does not change what another runs.
+func menuEntries(items []Item) []entry {
+	es := make([]entry, 0, len(items))
+	for i, it := range items {
+		if it.Separator {
+			es = append(es, entry{Separator: true})
+			continue
+		}
+		if it.Visible != nil && !it.Visible() {
+			continue
+		}
+		label := it.Label
+		if it.LabelFunc != nil {
+			label = it.LabelFunc()
+		}
+		es = append(es, entry{
+			ID:      menuID(i),
+			Label:   label,
+			Checked: it.Checked != nil && it.Checked(),
+		})
+	}
+	return es
 }
 
 // menuID is the command id of item i; 0 is reserved for "nothing chosen".

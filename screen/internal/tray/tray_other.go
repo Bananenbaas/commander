@@ -26,6 +26,9 @@ func (t *Tray) SetFailed(failed bool) {}
 // Balloon does nothing on this system.
 func (t *Tray) Balloon(title, text string) {}
 
+// BalloonAction does nothing on this system.
+func (t *Tray) BalloonAction(title, text string, onClick func()) {}
+
 // Done is closed: there is no tray thread on this system.
 func (t *Tray) Done() <-chan struct{} {
 	c := make(chan struct{})

@@ -33,8 +33,11 @@ const (
 	wmTray   = wmApp + 1 // notification-area callback
 	wmUpdate = wmApp + 2 // SetTip, SetFailed or Balloon left something to apply
 
-	ninSelect    = wmUser + 0
-	ninKeySelect = wmUser + 1
+	ninSelect           = wmUser + 0
+	ninKeySelect        = wmUser + 1
+	ninBalloonHide      = wmUser + 3
+	ninBalloonTimeout   = wmUser + 4
+	ninBalloonUserClick = wmUser + 5
 
 	nimAdd        = 0
 	nimModify     = 1
@@ -160,6 +163,7 @@ type Tray struct {
 	v4             bool // NOTIFYICON_VERSION_4 accepted
 	menuOpen       bool
 	endCalled      bool
+	clicks         balloonClicks // action of the balloon shown last
 	addedOnce      sync.Once
 	shown          chan struct{} // closed when the icon is first added
 
@@ -239,9 +243,14 @@ func (t *Tray) SetFailed(failed bool) {
 // Balloon shows a notification next to the icon. Without text the title is
 // shown as the text; with neither nothing is shown. Up to five balloons wait
 // for the icon; older ones are dropped. It may be called from any goroutine.
-func (t *Tray) Balloon(title, text string) {
+func (t *Tray) Balloon(title, text string) { t.BalloonAction(title, text, nil) }
+
+// BalloonAction is Balloon, and a click on this balloon runs onClick on a
+// goroutine of its own. A click counts only for the balloon shown last, and
+// only until it times out or is hidden. It may be called from any goroutine.
+func (t *Tray) BalloonAction(title, text string, onClick func()) {
 	t.mu.Lock()
-	t.balloons = queueBalloon(t.balloons, title, text)
+	t.balloons = queueBalloon(t.balloons, title, text, onClick)
 	t.mu.Unlock()
 	t.post()
 }
@@ -413,6 +422,7 @@ func (t *Tray) remove() {
 	n := notifyIconData{size: uint32(unsafe.Sizeof(notifyIconData{})), wnd: t.hwnd, id: iconID}
 	shellNotify(nimDelete, &n)
 	t.added = false
+	t.clicks.forget()
 }
 
 // update applies what SetTip, SetFailed and Balloon left. Balloons wait
@@ -433,7 +443,9 @@ func (t *Tray) update() {
 		n.infoFlags = niifInfo
 		putUTF16(n.infoTitle[:], cutUnits(b.title, maxTitle))
 		putUTF16(n.info[:], cutUnits(b.text, maxInfo))
-		shellNotify(nimModify, &n)
+		if shellNotify(nimModify, &n) {
+			t.clicks.shown(b.action)
+		}
 	}
 }
 
@@ -450,17 +462,17 @@ func (t *Tray) showMenu(x, y int32) {
 		return
 	}
 	defer procDestroyMenu.Call(m)
-	for i, it := range t.items {
-		if it.Separator {
+	for _, e := range menuEntries(t.items) {
+		if e.Separator {
 			procAppendMenu.Call(m, mfSeparator, 0, 0)
 			continue
 		}
 		flags := uintptr(mfString)
-		if it.Checked != nil && it.Checked() {
+		if e.Checked {
 			flags |= mfChecked
 		}
-		label := append(utf16.Encode([]rune(it.Label)), 0)
-		procAppendMenu.Call(m, flags, menuID(i), uintptr(unsafe.Pointer(&label[0])))
+		label := append(utf16.Encode([]rune(e.Label)), 0)
+		procAppendMenu.Call(m, flags, e.ID, uintptr(unsafe.Pointer(&label[0])))
 	}
 	// Without the foreground the menu does not close when clicking elsewhere.
 	procSetForegroundWindow.Call(t.hwnd)
@@ -481,7 +493,19 @@ func windowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	t := v.(*Tray)
 	switch msg {
 	case wmTray:
+		// With version 4 the event is LOWORD(lParam); before it lParam is
+		// the event itself, which the mask leaves unchanged.
 		event := lParam & 0xFFFF
+		switch event {
+		case ninBalloonUserClick:
+			if f := t.clicks.click(); f != nil {
+				go f()
+			}
+			return 0
+		case ninBalloonTimeout, ninBalloonHide:
+			t.clicks.forget()
+			return 0
+		}
 		if t.v4 {
 			if event == wmContextMenu || event == ninSelect || event == ninKeySelect {
 				// Version 4 passes the anchor point in wParam.

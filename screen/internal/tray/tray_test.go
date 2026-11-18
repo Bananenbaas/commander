@@ -5,6 +5,7 @@ package tray
 import (
 	"bytes"
 	"encoding/binary"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -62,22 +63,150 @@ func TestCutUnitsBalloonLimits(t *testing.T) {
 }
 
 func TestQueueBalloon(t *testing.T) {
-	q := queueBalloon(nil, "", "")
+	q := queueBalloon(nil, "", "", nil)
 	if len(q) != 0 {
 		t.Fatalf("empty balloon queued: %v", q)
 	}
-	q = queueBalloon(q, "Only a title", "")
+	q = queueBalloon(q, "Only a title", "", nil)
 	if len(q) != 1 || q[0].text != "Only a title" || q[0].title != "" {
 		t.Fatalf("lone title not moved to the text: %+v", q)
 	}
 	for i := 0; i < 7; i++ {
-		q = queueBalloon(q, "t", string(rune('a'+i)))
+		q = queueBalloon(q, "t", string(rune('a'+i)), nil)
 	}
 	if len(q) != maxBalloons {
 		t.Fatalf("%d queued, want %d", len(q), maxBalloons)
 	}
 	if q[0].text != "c" || q[maxBalloons-1].text != "g" {
 		t.Fatalf("oldest not dropped: first %q, last %q", q[0].text, q[maxBalloons-1].text)
+	}
+}
+
+func TestQueueBalloonKeepsActions(t *testing.T) {
+	var ran []string
+	var q []balloon
+	for i := 0; i < 7; i++ {
+		name := string(rune('a' + i))
+		var action func()
+		if i%2 == 0 {
+			action = func() { ran = append(ran, name) }
+		}
+		q = queueBalloon(q, "t", name, action)
+	}
+	if len(q) != maxBalloons {
+		t.Fatalf("%d queued, want %d", len(q), maxBalloons)
+	}
+	for _, b := range q {
+		if b.action != nil {
+			b.action()
+		}
+	}
+	// c..g are left; c, e and g have actions.
+	if got := strings.Join(ran, ""); got != "ceg" {
+		t.Fatalf("actions of the queued balloons ran %q, want %q", got, "ceg")
+	}
+	if q := queueBalloon(nil, "", "", func() {}); len(q) != 0 {
+		t.Fatalf("empty balloon with an action queued: %v", q)
+	}
+}
+
+func TestBalloonClicks(t *testing.T) {
+	var c balloonClicks
+	if c.click() != nil {
+		t.Fatal("click before any balloon returned an action")
+	}
+	n := 0
+	c.shown(func() { n++ })
+	f := c.click()
+	if f == nil {
+		t.Fatal("click on a balloon with an action returned nothing")
+	}
+	f()
+	if n != 1 {
+		t.Fatalf("action ran %d times, want 1", n)
+	}
+	if c.click() != nil {
+		t.Fatal("a second click ran the action again")
+	}
+
+	// Timeout or hide forgets the action.
+	c.shown(func() { n++ })
+	c.forget()
+	if c.click() != nil {
+		t.Fatal("click after the balloon went away returned an action")
+	}
+
+	// Only the balloon shown last counts: one without action replaces it.
+	c.shown(func() { n++ })
+	c.shown(nil)
+	if c.click() != nil {
+		t.Fatal("click on a balloon without action ran the earlier one's action")
+	}
+
+	// A later balloon with an action replaces an earlier one's.
+	first, second := 0, 0
+	c.shown(func() { first++ })
+	c.shown(func() { second++ })
+	if f := c.click(); f == nil {
+		t.Fatal("no action for the last balloon")
+	} else {
+		f()
+	}
+	if first != 0 || second != 1 {
+		t.Fatalf("first ran %d, second %d; want 0 and 1", first, second)
+	}
+}
+
+func TestMenuEntries(t *testing.T) {
+	show := false
+	label := "Update to v1.2.0"
+	items := []Item{
+		{Label: "Reload", Checked: func() bool { return true }},
+		{Separator: true},
+		{Label: "static", LabelFunc: func() string { return label }, Visible: func() bool { return show }},
+		{Separator: true},
+		{Label: "Shown", Visible: func() bool { return true }},
+		{Label: "Quit"},
+	}
+	want := []entry{
+		{ID: menuID(0), Label: "Reload", Checked: true},
+		{Separator: true},
+		{Separator: true},
+		{ID: menuID(4), Label: "Shown"},
+		{ID: menuID(5), Label: "Quit"},
+	}
+	if got := menuEntries(items); !slices.Equal(got, want) {
+		t.Fatalf("item hidden: got %+v, want %+v", got, want)
+	}
+
+	show = true
+	want = []entry{
+		{ID: menuID(0), Label: "Reload", Checked: true},
+		{Separator: true},
+		{ID: menuID(2), Label: "Update to v1.2.0"},
+		{Separator: true},
+		{ID: menuID(4), Label: "Shown"},
+		{ID: menuID(5), Label: "Quit"},
+	}
+	if got := menuEntries(items); !slices.Equal(got, want) {
+		t.Fatalf("item shown: got %+v, want %+v", got, want)
+	}
+
+	// LabelFunc is asked each time the menu opens.
+	label = "Update to v1.3.0"
+	if got := menuEntries(items)[2].Label; got != label {
+		t.Fatalf("label %q, want %q", got, label)
+	}
+	// Every id leads back to its own item, whatever is hidden.
+	show = false
+	for _, e := range menuEntries(items) {
+		if e.Separator {
+			continue
+		}
+		i, ok := itemIndex(items, e.ID)
+		if !ok || items[i].Label != e.Label {
+			t.Fatalf("id %d of %q maps to item %d (%v)", e.ID, e.Label, i, ok)
+		}
 	}
 }
 
