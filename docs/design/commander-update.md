@@ -183,9 +183,14 @@ the owner's Commander and updated itself to the published `v0.1.0-beta.2`.
 | The new file | SHA-256 equal to the release's `SHA256SUMS.txt`; `.old` removed |
 | After the restart | Same path, Start with Windows unchanged, keyboard taken over, stored lighting shown on the desktop profile |
 
-Not checked yet: clicking the "available" balloon, answering No, a
-`dev` build's **Check now**, and the daily check. These need a newer release
-than the running one and are left for `v0.1.0-beta.3`.
+Second run, `v0.1.0-beta.2` to `v0.1.0-beta.3` on the owner's own Commander:
+ticking **Check for updates** checked at once and offered the update;
+**clicking the "available" balloon** opened the confirmation, Yes installed
+it (SHA-256 equal to the release, `.old` removed), and **Check now** then said
+it was up to date.
+
+Not checked yet: answering No, a `dev` build's **Check now**, and the daily
+check.
 
 Seen: typing on the KB7 stalled for a moment during the restart. Not measured
 further; whether it also happens at an ordinary start of Commander is not
