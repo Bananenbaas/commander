@@ -1,7 +1,7 @@
 # Commander — a tray program around `kb7screen run`
 
 Design for stopping, reloading and starting `run` without a terminal or Task
-Manager. Status: approved; implemented, desktop acceptance pending. Builds
+Manager. Status: approved; implemented, desktop check done (see Desktop check). Builds
 on [`screen-app.md`](screen-app.md) and [`lighting.md`](lighting.md).
 
 ## Intent
@@ -158,6 +158,28 @@ design in a general retro style, not a copy of any existing character. Rendered 
 - The tray window itself has no unit test; a hardware and desktop checklist:
   start, tooltip, every menu item, start with Windows after a reboot, quit
   leaves the stored lighting, a second Commander refused.
+
+## Desktop check (2026-11-18, Windows 11)
+
+All on the owner's PC with the owner's Star Citizen configuration folder.
+
+| Check | Result |
+|---|---|
+| Icon in the notification area, tooltip | Seen; tooltip followed the profile (`profile 0`, then `profile 1`) |
+| Menu | Reload configuration, Apply buttons, Start with Windows, Open configuration folder, Open log, Quit |
+| Reload after a lighting change | The changed colour showed once back on the lit profile |
+| Reload with a syntax error | Balloon with the parse error; the old lighting kept running; Reload after the fix took the new one |
+| Apply buttons | Balloon and log: 0 pictures uploaded, 9 unchanged; loop running again |
+| Second Commander on the same folder | Refused with a message box; the first one kept running |
+| `kb7screen stop` from a terminal | "the loop has stopped"; Commander ended, icon gone |
+| Quit | Effects stopped; the keyboard showed its stored lighting (the same as with no program running) |
+| Start with Windows, reboot | Tick shown, `Run` value written; after a reboot Commander started and took the keyboard |
+
+Seen during the check, not changed here:
+
+- Every (re)start of the loop — Reload and Apply buttons included — switches
+  the keyboard to the profile `run` expects (the desktop profile when no
+  listed program runs), also when the owner had tapped to another profile.
 
 ## Left to the builder
 
