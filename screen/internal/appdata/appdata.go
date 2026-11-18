@@ -58,39 +58,82 @@ func settingsPath() (string, error) {
 }
 
 type settings struct {
-	Folder string `toml:"folder"`
+	Folder       string `toml:"folder"`
+	CheckUpdates bool   `toml:"check_updates"`
+}
+
+// load reads the settings. found is false when there is no file yet; a file
+// that cannot be read or parsed is an error.
+func load() (s settings, found bool, err error) {
+	path, err := settingsPath()
+	if err != nil {
+		return settings{}, false, err
+	}
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return settings{}, false, nil
+	}
+	if err != nil {
+		return settings{}, false, fmt.Errorf("reading %s: %w", path, err)
+	}
+	if err := toml.Unmarshal(raw, &s); err != nil {
+		return settings{}, true, fmt.Errorf("reading %s: %w", path, err)
+	}
+	return s, true, nil
 }
 
 // LoadFolder returns the configuration folder remembered in the settings, or
 // "" when there are no settings yet.
 func LoadFolder() (string, error) {
-	path, err := settingsPath()
+	s, _, err := load()
 	if err != nil {
 		return "", err
-	}
-	raw, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("reading %s: %w", path, err)
-	}
-	var s settings
-	if err := toml.Unmarshal(raw, &s); err != nil {
-		return "", fmt.Errorf("reading %s: %w", path, err)
 	}
 	return s.Folder, nil
 }
 
-// SaveFolder remembers dir as the configuration folder. The file is replaced
-// in one step, so a crash never leaves half a file.
+// LoadCheckUpdates reports whether Commander may look for updates by itself.
+// It is false when there are no settings or the key is missing.
+func LoadCheckUpdates() (bool, error) {
+	s, _, err := load()
+	if err != nil {
+		return false, err
+	}
+	return s.CheckUpdates, nil
+}
+
+// SaveFolder remembers dir as the configuration folder and keeps the other
+// settings. The file is replaced in one step, so a crash never leaves half a
+// file. A settings file that cannot be read is an error and is left alone.
 func SaveFolder(dir string) error {
+	s, _, err := load()
+	if err != nil {
+		return err
+	}
+	s.Folder = dir
+	return save(s)
+}
+
+// SaveCheckUpdates remembers whether Commander checks for updates by itself
+// and keeps the other settings. A settings file that cannot be read is an
+// error and is left alone.
+func SaveCheckUpdates(on bool) error {
+	s, _, err := load()
+	if err != nil {
+		return err
+	}
+	s.CheckUpdates = on
+	return save(s)
+}
+
+// save replaces the settings file in one step.
+func save(s settings) error {
 	path, err := settingsPath()
 	if err != nil {
 		return err
 	}
 	var b bytes.Buffer
-	if err := toml.NewEncoder(&b).Encode(settings{Folder: dir}); err != nil {
+	if err := toml.NewEncoder(&b).Encode(s); err != nil {
 		return fmt.Errorf("writing the settings: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

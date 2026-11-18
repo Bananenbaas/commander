@@ -75,6 +75,92 @@ func TestLoadFolderBadFile(t *testing.T) {
 	}
 }
 
+func writeSettings(t *testing.T, roaming, content string) string {
+	t.Helper()
+	dir := filepath.Join(roaming, "Commander")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "settings.toml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestCheckUpdatesDefaultsOff(t *testing.T) {
+	roaming, _ := setDirs(t)
+	if on, err := LoadCheckUpdates(); err != nil || on {
+		t.Fatalf("no file: LoadCheckUpdates = %v, %v; want false, nil", on, err)
+	}
+	writeSettings(t, roaming, `folder = 'D:\kb7'`+"\n")
+	if on, err := LoadCheckUpdates(); err != nil || on {
+		t.Fatalf("folder only: LoadCheckUpdates = %v, %v; want false, nil", on, err)
+	}
+}
+
+func TestCheckUpdatesKeepsFolder(t *testing.T) {
+	setDirs(t)
+	if err := SaveFolder(`D:\kb7`); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveCheckUpdates(true); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := LoadFolder(); err != nil || got != `D:\kb7` {
+		t.Fatalf("LoadFolder = %q, %v; want the folder kept", got, err)
+	}
+	if on, err := LoadCheckUpdates(); err != nil || !on {
+		t.Fatalf("LoadCheckUpdates = %v, %v; want true", on, err)
+	}
+	if err := SaveFolder(`E:\other`); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := LoadFolder(); got != `E:\other` {
+		t.Fatalf("LoadFolder = %q after SaveFolder", got)
+	}
+	if on, _ := LoadCheckUpdates(); !on {
+		t.Fatal("SaveFolder reset check_updates")
+	}
+	if err := SaveCheckUpdates(false); err != nil {
+		t.Fatal(err)
+	}
+	if on, _ := LoadCheckUpdates(); on {
+		t.Fatal("check_updates still on after SaveCheckUpdates(false)")
+	}
+	if got, _ := LoadFolder(); got != `E:\other` {
+		t.Fatalf("LoadFolder = %q after turning updates off", got)
+	}
+}
+
+func TestSaveCheckUpdatesWithoutFile(t *testing.T) {
+	setDirs(t)
+	if err := SaveCheckUpdates(true); err != nil {
+		t.Fatal(err)
+	}
+	if on, err := LoadCheckUpdates(); err != nil || !on {
+		t.Fatalf("LoadCheckUpdates = %v, %v; want true", on, err)
+	}
+	if got, err := LoadFolder(); err != nil || got != "" {
+		t.Fatalf("LoadFolder = %q, %v; want empty", got, err)
+	}
+}
+
+func TestSaveCheckUpdatesBadFile(t *testing.T) {
+	roaming, _ := setDirs(t)
+	path := writeSettings(t, roaming, "folder = [")
+	if err := SaveCheckUpdates(true); err == nil {
+		t.Fatal("no error for a broken settings file")
+	}
+	if err := SaveFolder(`D:\kb7`); err == nil {
+		t.Fatal("SaveFolder overwrote a broken settings file")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil || string(raw) != "folder = [" {
+		t.Fatalf("settings file = %q, %v; want unchanged", raw, err)
+	}
+}
+
 func TestLogPath(t *testing.T) {
 	_, local := setDirs(t)
 	if got, want := LogPath(), filepath.Join(local, "Commander", "commander.log"); got != want {
