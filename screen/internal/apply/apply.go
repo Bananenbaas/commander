@@ -48,6 +48,8 @@ type Keyboard interface {
 	WaitRedraw(timeout time.Duration) error
 	ReadLightsTable(p byte) (*proto.Table11, error)
 	WriteLightsTable(t *proto.Table11) error
+	ReadNamesTable() (*proto.Table16, error)
+	WriteNamesTable(t *proto.Table16) error
 }
 
 // ErrStopped is returned, wrapping the context's error, when Apply or Restore
@@ -62,11 +64,18 @@ func stopped(ctx context.Context) error {
 	return nil
 }
 
+// Rename is one profile given a new name.
+type Rename struct {
+	Profile byte
+	Name    string
+}
+
 // Report says what Apply or Restore did.
 type Report struct {
 	Uploaded, Skipped []ledger.Owner // buttons whose picture was sent, or was already in its slot
 	Restored          []ledger.Owner // positions given back their original contents
 	Lighting          []byte         // profiles whose stored lighting was written
+	Renamed           []Rename       // profiles given a new name
 	Notes             []string       // things the user should know about
 }
 
@@ -183,6 +192,9 @@ func where(o ledger.Owner) string {
 // for; see storeLighting. Other profiles' stored lighting is neither read
 // nor written.
 //
+// Then it renames the profiles whose layout has a name that differs from the
+// keyboard's, in one write of report 0x16; see rename.
+//
 // When it succeeds, Apply ends on the profile the run command would choose:
 // the first one whose program is running, otherwise the desktop profile.
 // running may be nil when no program is checked.
@@ -275,7 +287,53 @@ func Apply(ctx context.Context, kb Keyboard, cfg *layout.Config, l *ledger.Ledge
 	if err := stopped(ctx); err != nil {
 		return rep, err
 	}
+	if err := rename(kb, cfg, &rep); err != nil {
+		return rep, err
+	}
+	if err := stopped(ctx); err != nil {
+		return rep, err
+	}
 	return rep, s.switchTo(finalProfile(cfg, running))
+}
+
+// rename gives every profile whose layout has a name that differs from the
+// keyboard's that name, in one write of report 0x16 (the keyboard holds all
+// five names in it, and the write needs no profile switch). Nothing is read
+// when no layout has a name, and nothing written when every name already
+// matches.
+func rename(kb Keyboard, cfg *layout.Config, rep *Report) error {
+	var named []layout.Profile
+	for _, p := range cfg.Profiles {
+		if p.Name != "" {
+			named = append(named, p)
+		}
+	}
+	if len(named) == 0 {
+		return nil
+	}
+	sort.Slice(named, func(i, j int) bool { return named[i].Number < named[j].Number })
+	t, err := kb.ReadNamesTable()
+	if err != nil {
+		return fmt.Errorf("profile names: %w", err)
+	}
+	var done []Rename
+	for _, p := range named {
+		if t.Name(int(p.Number)) == p.Name {
+			continue
+		}
+		if err := t.SetName(int(p.Number), p.Name); err != nil {
+			return fmt.Errorf("profile %d: %w", p.Number, err)
+		}
+		done = append(done, Rename{p.Number, p.Name})
+	}
+	if len(done) == 0 {
+		return nil
+	}
+	if err := kb.WriteNamesTable(t); err != nil {
+		return fmt.Errorf("profile names: %w", err)
+	}
+	rep.Renamed = append(rep.Renamed, done...)
+	return nil
 }
 
 // lit returns the profiles of cfg with [light] or [stored_light], in

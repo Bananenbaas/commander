@@ -480,16 +480,70 @@ func TestReadTypesWrongProfile(t *testing.T) {
 	}
 }
 
-func TestProfileNames(t *testing.T) {
-	f := &device.Fake{}
+// names16 is a 0x16 report with the names Alpha, Beta, twenty c, D and none,
+// and an x after the NUL of the fourth.
+func names16() []byte {
 	r := make([]byte, 104)
-	r[0] = 0x16
+	r[0], r[1] = 0x16, 0x68
 	copy(r[2:], "Alpha")
 	copy(r[22:], "Beta")
 	copy(r[42:], strings.Repeat("c", 20))
 	r[62] = 'D'
 	r[64] = 'x' // after the NUL: ignored
+	return seal(r)
+}
+
+func TestReadWriteNamesTable(t *testing.T) {
+	f := &device.Fake{}
+	f.QueueFeature(ready(), names16(), ready())
+	k, c := newTest(f)
+	tb, err := k.ReadNamesTable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tb.SetName(1, "SC"); err != nil {
+		t.Fatal(err)
+	}
+	if err := k.WriteNamesTable(tb); err != nil {
+		t.Fatal(err)
+	}
+	sf := f.Features()
+	if len(sf) != 2 || !bytes.Equal(sf[0], proto.Select(0, proto.SelNames)) || !bytes.Equal(sf[1], tb.Bytes()) || len(sf[1]) != 104 {
+		t.Fatalf("frames %x", sf)
+	}
+	calls := f.Calls()
+	if last := calls[len(calls)-1]; last.Op != device.OpGetFeature || last.ID != 0x05 {
+		t.Errorf("last call %+v, want the 0x05 status read", last)
+	}
+	if got := c.sleeps[len(c.sleeps)-1]; got != 150*time.Millisecond {
+		t.Errorf("sleeps %v", c.sleeps)
+	}
+}
+
+func TestWriteNamesTableStatus(t *testing.T) {
+	tb, _ := proto.ParseTable16(names16())
+	f := &device.Fake{}
+	f.QueueFeature([]byte{0x05, 0x01, 0x01, 0})
+	k, _ := newTest(f)
+	if err := k.WriteNamesTable(tb); err == nil || !strings.Contains(err.Error(), "05 01 00 00") {
+		t.Fatalf("status accepted: %v", err)
+	}
+}
+
+func TestReadNamesTableBadChecksum(t *testing.T) {
+	f := &device.Fake{}
+	r := names16()
+	r[103]++
 	f.QueueFeature(ready(), r)
+	k, _ := newTest(f)
+	if _, err := k.ReadNamesTable(); err == nil {
+		t.Fatal("bad checksum accepted")
+	}
+}
+
+func TestProfileNames(t *testing.T) {
+	f := &device.Fake{}
+	f.QueueFeature(ready(), names16())
 	kb, _ := newTest(f)
 	names, err := kb.ProfileNames()
 	if err != nil {

@@ -43,11 +43,7 @@ const (
 	redrawAll      = 0x20 // Redraw view of the whole screen
 	profiles       = 5
 
-	namesID    = 0x16
-	namesLen   = 104
-	nameFields = 5
-	nameSize   = 20
-	nameBase   = 2
+	namesID = 0x16
 )
 
 // KB is an open keyboard. It is not safe for concurrent use.
@@ -270,33 +266,43 @@ func (k *KB) ReadTypes(p byte) (*proto.Table25, error) {
 
 // ProfileNames reads the names of the five profiles.
 func (k *KB) ProfileNames() ([5]string, error) {
-	var names [nameFields]string
-	if err := k.selectTable(0, proto.SelNames); err != nil {
+	var names [profiles]string
+	t, err := k.ReadNamesTable()
+	if err != nil {
 		return names, err
 	}
-	b, err := k.d.GetFeature(namesID, namesLen)
-	if err != nil {
-		return names, fmt.Errorf("keyboard: reading profile names: %w", err)
-	}
-	if len(b) != namesLen || b[0] != namesID {
-		return names, fmt.Errorf("keyboard: profile names reply is %d bytes starting 0x%02x", len(b), firstByte(b))
-	}
 	for i := range names {
-		f := b[nameBase+i*nameSize : nameBase+(i+1)*nameSize]
-		n := 0
-		for n < len(f) && f[n] != 0 {
-			n++
-		}
-		names[i] = string(f[:n])
+		names[i] = t.Name(i)
 	}
 	return names, nil
 }
 
-func firstByte(b []byte) byte {
-	if len(b) == 0 {
-		return 0
+// ReadNamesTable reads report 0x16 whole, for writing back with
+// WriteNamesTable. It holds all five names, whichever profile is asked for.
+func (k *KB) ReadNamesTable() (*proto.Table16, error) {
+	if err := k.selectTable(0, proto.SelNames); err != nil {
+		return nil, err
 	}
-	return b[0]
+	b, err := k.d.GetFeature(namesID, proto.Len16)
+	if err != nil {
+		return nil, fmt.Errorf("keyboard: reading profile names: %w", err)
+	}
+	t, err := proto.ParseTable16(b)
+	if err != nil {
+		return nil, fmt.Errorf("keyboard: %w", err)
+	}
+	return t, nil
+}
+
+// WriteNamesTable writes report 0x16, the names of all five profiles, and
+// then reads the status register as Swarm II does, which must read
+// 05 01 00 00.
+func (k *KB) WriteNamesTable(t *proto.Table16) error {
+	k.settle()
+	if err := k.d.SetFeature(t.Bytes()); err != nil {
+		return fmt.Errorf("keyboard: writing profile names: %w", err)
+	}
+	return k.checkStatus("profile names")
 }
 
 // SwitchProfile makes p the active profile and waits up to 3 s for the

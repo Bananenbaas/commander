@@ -193,6 +193,7 @@ which positions it may give back.
 
 ```toml
 profile = 1                          # which of the five profiles (0 to 4) this file owns
+name = "SC"                          # optional: the profile's name on the keyboard
 switch_when_running = "game.exe"     # optional: switch to this profile while it runs
 
 [[button]]
@@ -217,7 +218,10 @@ title = "Map"
 action = ["M"]
 ```
 
-Each file needs a `profile`. Each button needs `page`, `position` and at least
+Each file needs a `profile`. `name` is optional: `apply` gives the profile that
+name (1 to 19 printable ASCII characters, the length the keyboard stores) when
+it differs from the one on the keyboard, and leaves the name alone without it.
+Each button needs `page`, `position` and at least
 one step in `action`, unless it has a `state` (see Lighting). Buttons without `symbol` or `picture` get the frame and
 the title only.
 

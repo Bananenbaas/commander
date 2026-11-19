@@ -17,6 +17,7 @@ import (
 
 	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
 )
 
 // Mode says how a button's action is carried out.
@@ -46,6 +47,7 @@ type Button struct {
 type Profile struct {
 	Number            byte
 	File              string
+	Name              string // the profile's name on the keyboard, or empty to leave it
 	SwitchWhenRunning string
 	Buttons           []Button
 	Light             *light.Stack // nil when the layout has no [light]
@@ -67,6 +69,7 @@ type Config struct {
 
 type rawFile struct {
 	Profile           *int        `toml:"profile"`
+	Name              *string     `toml:"name"`
 	SwitchWhenRunning string      `toml:"switch_when_running"`
 	Light             *rawLight   `toml:"light"`
 	StoredLight       *rawStored  `toml:"stored_light"`
@@ -170,6 +173,12 @@ func loadFile(dir, path string) (*Profile, error) {
 		return nil, fmt.Errorf("%s: profile must be 0 to %d, got %d", name, maxProfile, *raw.Profile)
 	}
 	p := &Profile{Number: byte(*raw.Profile), File: path, SwitchWhenRunning: raw.SwitchWhenRunning}
+	if raw.Name != nil {
+		if err := proto.CheckName(*raw.Name); err != nil {
+			return nil, fmt.Errorf("%s: name: %w", name, err)
+		}
+		p.Name = *raw.Name
+	}
 	if raw.Light != nil {
 		stack, err := buildLight(raw.Light)
 		if err != nil {

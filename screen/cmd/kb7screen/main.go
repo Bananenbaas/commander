@@ -384,10 +384,13 @@ func printReport(w io.Writer, rep apply.Report) {
 	for _, p := range rep.Lighting {
 		fmt.Fprintf(w, "stored lighting written: profile %d\n", p)
 	}
+	for _, r := range rep.Renamed {
+		fmt.Fprintf(w, "profile %d renamed to %s\n", r.Profile, r.Name)
+	}
 	for _, n := range rep.Notes {
 		fmt.Fprintf(w, "note: %s\n", n)
 	}
-	if len(rep.Uploaded)+len(rep.Skipped)+len(rep.Restored)+len(rep.Lighting)+len(rep.Notes) == 0 {
+	if len(rep.Uploaded)+len(rep.Skipped)+len(rep.Restored)+len(rep.Lighting)+len(rep.Renamed)+len(rep.Notes) == 0 {
 		fmt.Fprintln(w, "nothing to report")
 	}
 }

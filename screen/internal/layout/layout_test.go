@@ -470,6 +470,40 @@ func TestLoadWithoutStoredLight(t *testing.T) {
 	}
 }
 
+func TestLoadName(t *testing.T) {
+	cfg, err := Load(folder(t, map[string]string{"a.toml": "profile = 1\nname = \"SC\"\n"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Profiles[0].Name; got != "SC" {
+		t.Errorf("Name = %q", got)
+	}
+	cfg, err = Load(folder(t, map[string]string{"a.toml": btn("")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Profiles[0].Name; got != "" {
+		t.Errorf("Name = %q without name", got)
+	}
+}
+
+func TestNameErrors(t *testing.T) {
+	for name, toml := range map[string]string{
+		"20 characters": "profile = 1\nname = \"" + strings.Repeat("a", 20) + "\"\n",
+		"empty":         "profile = 1\nname = \"\"\n",
+		"non-ASCII":     "profile = 1\nname = \"café\"\n",
+	} {
+		_, err := Load(folder(t, map[string]string{"a.toml": toml}))
+		if err == nil {
+			t.Errorf("%s: no error", name)
+			continue
+		}
+		if !strings.Contains(err.Error(), "a.toml") || !strings.Contains(err.Error(), "name") {
+			t.Errorf("%s: error %q does not name the file and key", name, err)
+		}
+	}
+}
+
 func TestStoredLightErrors(t *testing.T) {
 	cases := []struct {
 		name, toml string

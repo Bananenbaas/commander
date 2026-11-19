@@ -205,6 +205,14 @@ func TestPrintReportStoredLighting(t *testing.T) {
 	}
 }
 
+func TestPrintReportRenamed(t *testing.T) {
+	var out bytes.Buffer
+	printReport(&out, apply.Report{Renamed: []apply.Rename{{Profile: 2, Name: "TEST"}}})
+	if got, want := out.String(), "profile 2 renamed to TEST\n"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestBackgroundUploadRunsToTheEnd(t *testing.T) {
 	var out bytes.Buffer
 	ran := false

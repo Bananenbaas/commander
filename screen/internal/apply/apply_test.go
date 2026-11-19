@@ -50,6 +50,8 @@ type fakeKB struct {
 
 	b11         map[byte]*proto.Table11 // 0x11 tables, made on the first read
 	lightStatus []byte                  // status after a 0x11 write; nil means 05 01 00 00
+	b16         *proto.Table16          // the 0x16 table, made on the first read
+	namesErr    error                   // returned by WriteNamesTable
 
 	queue  []func(p byte) error // type writes not yet taken over
 	redraw bool                 // a type table was taken over since the last redraw wait

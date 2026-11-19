@@ -684,6 +684,9 @@ func (s *Supervisor) applyButtons(ctx context.Context, cfg *layout.Config) (stri
 	for _, p := range rep.Lighting {
 		s.logf("stored lighting written: profile %d", p)
 	}
+	for _, r := range rep.Renamed {
+		s.logf("profile %d renamed to %s", r.Profile, r.Name)
+	}
 	for _, n := range rep.Notes {
 		s.logf("note: %s", n)
 	}

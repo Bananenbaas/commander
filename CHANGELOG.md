@@ -7,6 +7,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Profile names: a `name` key in a layout file (1 to 19 printable ASCII
+  characters) makes `apply` rename that profile on the keyboard, in one write,
+  only when the name differs. Without `name` the name is left alone. Not yet
+  checked on the keyboard.
 - Buttons on pages 2 and 3 of the button screen: `page` takes 1 to 3 (page 3
   has positions 0 to 10). `apply`, `restore`, `clear-launchers` and `run`
   handle every page, a touch acts only for the button on the touched page,
