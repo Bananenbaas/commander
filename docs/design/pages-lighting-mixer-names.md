@@ -1,7 +1,7 @@
 # Pages 2 and 3, stored lighting, the volume mixer and profile names
 
 Design for four features unlocked by the captures of 2026-11-19 (`41`-`46`,
-see `docs/PROTOCOL.md`). Status: approved 2026-11-19; implemented, desktop check pending. Builds on
+see `docs/PROTOCOL.md`). Status: approved 2026-11-19; implemented, desktop check partly done (see Desktop check). Builds on
 [`screen-app.md`](screen-app.md), [`lighting.md`](lighting.md) and
 [`commander-tray.md`](commander-tray.md).
 
@@ -129,3 +129,22 @@ desktop check with the owner per feature.
 
 Package layout, how the COM callbacks are kept alive and on which thread
 they run, how the mixer's audio part is split for testing, log wording.
+
+## Desktop check (2026-11-19, Windows 11)
+
+| Check | Result |
+|---|---|
+| A button on page 2 (`Cycle Config`, position 9) | Shown on page 2 with the keypad keys around it unchanged |
+| Stored lighting | `apply` wrote profiles 0 and 1; after Quit on the desktop profile the keyboard was white instead of the earlier red table |
+| Profile name | Read at connect and shown in the log and tooltip; the write of `SC` over `SC` was a no-op |
+| Mixer list | The real programs appeared with their names |
+| Mixer levels | Right only after two fixes found here: the levels must follow the list by about 600 ms, and the last byte of a `0x28` row is the slider's full scale (100), not the level |
+| Sliders | A program slider set that program's volume in Windows; a change in Windows moved the slider at once |
+| Several output devices | Programs vanished when the default device changed; fixed by following every active output device (6 on the owner's PC) |
+
+Seen and not solved here: `apply` takes about half a minute when the stored
+lighting of two profiles is written for the first time and switches profiles
+several times while it does; the mixer page keeps its last values after Quit;
+the media controls of the volume page are not driven (see
+`docs/CAPTURES-WANTED.md`). Not checked: a tap on the page 2 button in the
+game, unplugging after the stored lighting was written, a page 3 button.
