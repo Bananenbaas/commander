@@ -1364,6 +1364,7 @@ data or leftover content, as in the `ALT\0K` button label, is unknown.
 | Five profile slots, with their names in report `0x16` | observed (`02-swarm-start-1`) |
 | The lighting differs per slot. The screen button tables were the same in all five at first; each profile has its own, and they differ once one is changed (see "Slots 4–9, the top row, and a second profile") | observed |
 | The keyboard switches profiles **itself**: tapping the profile name on the screen steps through the five slots in order and wraps around | observed (`08-profile-switch-desktop-sc-1`) |
+| **Renaming a profile is one write of the whole block**: `SET_REPORT` feature `0x16`, 104 bytes (`16 68`, then the five 20-byte name fields from offset 2, then a 16-bit little-endian sum of the first 102 bytes). Renaming `DEFAULT 03` to `TEST` and back changed only slot 2's field, which Swarm II wrote zero-filled after the name; the other fields went back with their bytes after the NUL unchanged. Nothing else was written for it; a `GET_REPORT` feature `0x05` (4 bytes) followed about 150 ms later | observed (`43-rename-profile-1`, `-2`) |
 | Each switch is announced with notification `03 00 01 <slot>`, followed by the `03 00 31 20 …` "profile loaded" event | observed |
 | Swarm II writes and reads nothing on a switch. It only follows: the `a1` lighting stream changes to the new profile's colours, and it re-sends the mute state, both application volumes and the system volume | observed |
 
