@@ -795,3 +795,97 @@ func TestReadLightsRefusesABrightnessOver100(t *testing.T) {
 		t.Error("brightness 101 accepted")
 	}
 }
+
+// table11 is a sealed 0x11 report of profile p with brightness level.
+func table11(p, level byte) []byte {
+	r := make([]byte, proto.Len11)
+	copy(r, []byte{0x11, 0x5c, 1, p, 1, 6, level, 0x0b, 1, 0})
+	r[10] = 0x1c
+	return seal(r)
+}
+
+func TestReadLightsTable(t *testing.T) {
+	f := &device.Fake{}
+	f.QueueFeature(ready(), table11(3, 99))
+	k, _ := newTest(f)
+	tb, err := k.ReadLightsTable(3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tb.Profile() != 3 || tb.Brightness() != 99 || !bytes.Equal(tb.Bytes(), table11(3, 99)) {
+		t.Errorf("table % x", tb.Bytes()[:10])
+	}
+	if sf := f.Features(); len(sf) != 1 || !bytes.Equal(sf[0], proto.Select(3, 0xb0)) {
+		t.Errorf("frames % x", sf)
+	}
+}
+
+func TestReadLightsTableRefuses(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		r    []byte
+	}{
+		{"other profile", table11(2, 99)},
+		{"brightness over 100", table11(3, 101)},
+	} {
+		f := &device.Fake{}
+		f.QueueFeature(ready(), c.r)
+		k, _ := newTest(f)
+		if _, err := k.ReadLightsTable(3); err == nil {
+			t.Errorf("%s accepted", c.name)
+		}
+	}
+}
+
+func TestWriteLightsTable(t *testing.T) {
+	tb, err := proto.ParseTable11(table11(3, 99))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = tb.SetBrightness(42)
+	f := &device.Fake{}
+	f.QueueFeature(ready())
+	k, c := newTest(f)
+	if err := k.WriteLightsTable(tb); err != nil {
+		t.Fatal(err)
+	}
+	if sf := f.Features(); len(sf) != 1 || !bytes.Equal(sf[0], tb.Bytes()) {
+		t.Fatalf("frames %d", len(sf))
+	}
+	calls := f.Calls()
+	if last := calls[len(calls)-1]; last.Op != device.OpGetFeature || last.ID != 0x05 {
+		t.Errorf("last call %+v, want the 0x05 status read", last)
+	}
+	if len(c.sleeps) != 1 || c.sleeps[0] != 150*time.Millisecond {
+		t.Errorf("sleeps %v", c.sleeps)
+	}
+}
+
+func TestWriteLightsTableStatus(t *testing.T) {
+	tb, _ := proto.ParseTable11(table11(3, 99))
+	for _, st := range [][]byte{{0x05, 0x00, 0, 0}, {0x05, 0x01, 0x01, 0}, {0x05, 0x01, 0, 0x02}} {
+		f := &device.Fake{}
+		f.QueueFeature(st)
+		k, _ := newTest(f)
+		err := k.WriteLightsTable(tb)
+		if err == nil {
+			t.Errorf("status % x accepted", st)
+			continue
+		}
+		if !strings.Contains(err.Error(), "05 01 00 00") {
+			t.Errorf("error %q does not say what was expected", err)
+		}
+	}
+}
+
+func TestCheckStatus(t *testing.T) {
+	f := &device.Fake{}
+	f.QueueFeature(ready())
+	k, _ := newTest(f)
+	if err := k.checkStatus("test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := k.checkStatus("test"); err == nil {
+		t.Error("missing status accepted")
+	}
+}

@@ -588,6 +588,35 @@ their starting point (no ripple, states off) instead. Nothing is sent when the
 keyboard is already gone, and lighting continues when the keyboard is plugged
 in again.
 
+### Stored lighting
+
+What the keyboard shows when nothing streams (Commander not running, a profile
+without `[light]`, a moment during a reload) is the lighting stored on the
+keyboard for that profile. `apply` sets it:
+
+- A profile with `[light]` gets a still picture of its own layers: drawn at
+  their starting point, so no ripples, every state at its `start` value, and
+  waves and breathing at time zero.
+- `[stored_light]` overrides that, or sets a profile without `[light]`:
+
+```toml
+[stored_light]
+color = "#FFFFFF"     # every LED in one colour
+brightness = 80       # percent, 0-100; optional
+```
+
+`color` and `brightness` are both optional, but one of them must be given.
+Without `brightness` the keyboard keeps the brightness it holds; without
+`color` the colours come from `[light]`, or stay as they are. A layout file may
+hold only `profile = N` and `[stored_light]`, to set a profile kb7screen has no
+buttons on.
+
+`apply` writes the stored lighting only when it differs from what the keyboard
+holds, and prints `stored lighting written: profile N` when it does. A profile
+with neither `[light]` nor `[stored_light]` is left alone. Not yet checked on
+the keyboard: the table is written as Swarm II writes it, but whether the
+keyboard keeps it after it is unplugged has not been tried.
+
 ### Preview
 
 `kb7screen light-preview <config> --profile N` writes a 4 second GIF of the

@@ -12,6 +12,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
   handle every page, a touch acts only for the button on the touched page,
   and `preview` writes a `panel-<profile>-<page>.png` for pages 2 and 3 with
   buttons. Not yet checked on the keyboard.
+- Stored lighting: `apply` writes each profile's stored lighting (what the
+  keyboard shows when nothing streams). A profile with `[light]` gets a still
+  picture of its layers (no ripples, states at their `start` value); a new
+  `[stored_light]` block with `color` and `brightness` overrides it or sets a
+  profile without `[light]`. It is written only when it differs from what the
+  keyboard holds; profiles with neither are left alone. Not yet checked on
+  the keyboard.
 
 ## [0.1.0-beta.4] - 2026-11-18
 

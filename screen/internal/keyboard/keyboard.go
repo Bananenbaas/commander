@@ -483,3 +483,52 @@ func (k *KB) ReadLights(p byte) (*proto.LightPayload, int, error) {
 	}
 	return stored, v, nil
 }
+
+// ReadLightsTable reads report 0x11 of profile p whole, for writing back
+// with WriteLightsTable.
+func (k *KB) ReadLightsTable(p byte) (*proto.Table11, error) {
+	if err := k.selectTable(p, selLights); err != nil {
+		return nil, err
+	}
+	b, err := k.d.GetFeature(lightsID, proto.Len11)
+	if err != nil {
+		return nil, fmt.Errorf("keyboard: reading lighting report: %w", err)
+	}
+	t, err := proto.ParseTable11(b)
+	if err != nil {
+		return nil, fmt.Errorf("keyboard: %w", err)
+	}
+	if t.Profile() != p {
+		return nil, fmt.Errorf("keyboard: lighting report is for profile %d, asked for %d", t.Profile(), p)
+	}
+	if v := t.Brightness(); v > 100 {
+		return nil, fmt.Errorf("keyboard: brightness %d is out of range 0 to 100", v)
+	}
+	return t, nil
+}
+
+// WriteLightsTable writes report 0x11, the stored lighting of the profile it
+// names, and then reads the status register as Swarm II does, which must
+// read 05 01 00 00.
+func (k *KB) WriteLightsTable(t *proto.Table11) error {
+	k.settle()
+	if err := k.d.SetFeature(t.Bytes()); err != nil {
+		return fmt.Errorf("keyboard: writing lighting report: %w", err)
+	}
+	return k.checkStatus("lighting report")
+}
+
+// checkStatus waits selectDelay after a configuration write and reads the
+// status register, report 0x05, which must read 05 01 00 00. what names the
+// write in the error.
+func (k *KB) checkStatus(what string) error {
+	k.sleep(selectDelay)
+	r, err := k.d.GetFeature(0x05, 4)
+	if err != nil {
+		return fmt.Errorf("keyboard: reading the status after the %s: %w", what, err)
+	}
+	if len(r) < 4 || r[0] != 0x05 || r[1] != 0x01 || r[2] != 0 || r[3] != 0 {
+		return fmt.Errorf("keyboard: status % x after the %s, want 05 01 00 00", r[:min(len(r), 4)], what)
+	}
+	return nil
+}

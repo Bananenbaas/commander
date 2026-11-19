@@ -420,3 +420,78 @@ func TestConfirmErrors(t *testing.T) {
 		t.Errorf("state-only: %v", err)
 	}
 }
+
+func TestLoadStoredLight(t *testing.T) {
+	cfg, err := Load(folder(t, map[string]string{"a.toml": btn("") + "[stored_light]\ncolor = \"#FFFFFF\"\nbrightness = 80\n"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sl := cfg.Profiles[0].StoredLight
+	if sl == nil {
+		t.Fatal("StoredLight is nil")
+	}
+	if sl.Color != (color.NRGBA{R: 255, G: 255, B: 255, A: 255}) || sl.Brightness != 80 {
+		t.Errorf("stored light %+v", *sl)
+	}
+}
+
+func TestLoadStoredLightOnly(t *testing.T) {
+	cfg, err := Load(folder(t, map[string]string{"a.toml": "profile = 3\n[stored_light]\ncolor = \"#1C36FF\"\n"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := cfg.Profiles[0]
+	if p.Number != 3 || len(p.Buttons) != 0 || p.Light != nil || p.StoredLight == nil {
+		t.Fatalf("profile %+v", p)
+	}
+	if p.StoredLight.Color != (color.NRGBA{R: 0x1c, G: 0x36, B: 0xff, A: 255}) || p.StoredLight.Brightness != -1 {
+		t.Errorf("stored light %+v", *p.StoredLight)
+	}
+}
+
+func TestLoadStoredLightBrightnessOnly(t *testing.T) {
+	cfg, err := Load(folder(t, map[string]string{"a.toml": "profile = 3\n[stored_light]\nbrightness = 0\n"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sl := cfg.Profiles[0].StoredLight
+	if sl == nil || sl.Color.A != 0 || sl.Brightness != 0 {
+		t.Errorf("stored light %+v", sl)
+	}
+}
+
+func TestLoadWithoutStoredLight(t *testing.T) {
+	cfg, err := Load(folder(t, map[string]string{"a.toml": btn("")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Profiles[0].StoredLight != nil {
+		t.Error("StoredLight set without [stored_light]")
+	}
+}
+
+func TestStoredLightErrors(t *testing.T) {
+	cases := []struct {
+		name, toml string
+		want       []string
+	}{
+		{"brightness 101", "profile = 0\n[stored_light]\ncolor = \"#FFFFFF\"\nbrightness = 101\n", []string{"a.toml", "stored_light", "brightness"}},
+		{"brightness -1", "profile = 0\n[stored_light]\ncolor = \"#FFFFFF\"\nbrightness = -1\n", []string{"a.toml", "stored_light", "brightness"}},
+		{"bad colour", "profile = 0\n[stored_light]\ncolor = \"white\"\n", []string{"a.toml", "stored_light", "color"}},
+		{"transparent colour", "profile = 0\n[stored_light]\ncolor = \"#FFFFFF80\"\n", []string{"a.toml", "stored_light", "color"}},
+		{"empty", "profile = 0\n[stored_light]\n", []string{"a.toml", "stored_light"}},
+		{"unknown key", "profile = 0\n[stored_light]\ncolour = \"#FFFFFF\"\n", []string{"a.toml", "colour"}},
+	}
+	for _, c := range cases {
+		_, err := Load(folder(t, map[string]string{"a.toml": c.toml}))
+		if err == nil {
+			t.Errorf("%s: no error", c.name)
+			continue
+		}
+		for _, w := range c.want {
+			if !strings.Contains(err.Error(), w) {
+				t.Errorf("%s: error %q lacks %q", c.name, err, w)
+			}
+		}
+	}
+}

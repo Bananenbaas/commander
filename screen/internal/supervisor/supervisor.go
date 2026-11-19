@@ -681,6 +681,9 @@ func (s *Supervisor) applyButtons(ctx context.Context, cfg *layout.Config) (stri
 	defer kb.Close()
 	rep, err := apply.Apply(ctx, kb, cfg, l, false, access.ProgramRunning, save)
 	err = access.SaveAfter(err, save, access.ErrApplyStopped)
+	for _, p := range rep.Lighting {
+		s.logf("stored lighting written: profile %d", p)
+	}
 	for _, n := range rep.Notes {
 		s.logf("note: %s", n)
 	}

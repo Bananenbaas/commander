@@ -196,6 +196,15 @@ func TestFinishReportsAStop(t *testing.T) {
 	}
 }
 
+func TestPrintReportStoredLighting(t *testing.T) {
+	var out bytes.Buffer
+	printReport(&out, apply.Report{Lighting: []byte{0, 3}})
+	want := "stored lighting written: profile 0\nstored lighting written: profile 3\n"
+	if got := out.String(); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestBackgroundUploadRunsToTheEnd(t *testing.T) {
 	var out bytes.Buffer
 	ran := false

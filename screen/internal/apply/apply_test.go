@@ -48,6 +48,9 @@ type fakeKB struct {
 	switchErr func(p byte) error
 	redrawErr error // returned by WaitRedraw instead of the redraw
 
+	b11         map[byte]*proto.Table11 // 0x11 tables, made on the first read
+	lightStatus []byte                  // status after a 0x11 write; nil means 05 01 00 00
+
 	queue  []func(p byte) error // type writes not yet taken over
 	redraw bool                 // a type table was taken over since the last redraw wait
 }
@@ -86,7 +89,7 @@ func keyEntry(pos int) proto.Entry29 {
 func keyType(pos int) proto.TypeEntry { return proto.TypeEntry{Type: 0x03, Value: byte(0x40 + pos)} }
 
 func newFake(t *testing.T) *fakeKB {
-	f := &fakeKB{t: t, b29: map[byte]*proto.Table29{}, b25: map[byte]*proto.Table25{}, slots: map[byte][]byte{}, active: -1}
+	f := &fakeKB{t: t, b29: map[byte]*proto.Table29{}, b25: map[byte]*proto.Table25{}, b11: map[byte]*proto.Table11{}, slots: map[byte][]byte{}, active: -1}
 	for p := byte(0); p < 5; p++ {
 		b := make([]byte, 584)
 		b[0], b[1], b[2], b[3] = 0x29, 0x48, 0x02, p

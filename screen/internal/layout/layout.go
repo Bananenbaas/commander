@@ -49,6 +49,14 @@ type Profile struct {
 	SwitchWhenRunning string
 	Buttons           []Button
 	Light             *light.Stack // nil when the layout has no [light]
+	StoredLight       *StoredLight // nil when the layout has no [stored_light]
+}
+
+// StoredLight is the [stored_light] table: what the keyboard's stored
+// lighting of the profile is to hold.
+type StoredLight struct {
+	Color      color.NRGBA // every LED; alpha 0 when not given
+	Brightness int         // percent, 0 to 100; -1 when not given
 }
 
 // Config is a loaded configuration folder.
@@ -61,12 +69,18 @@ type rawFile struct {
 	Profile           *int        `toml:"profile"`
 	SwitchWhenRunning string      `toml:"switch_when_running"`
 	Light             *rawLight   `toml:"light"`
+	StoredLight       *rawStored  `toml:"stored_light"`
 	Buttons           []rawButton `toml:"button"`
 }
 
 type rawLight struct {
 	FPS    int64            `toml:"fps"`
 	Layers []map[string]any `toml:"layer"`
+}
+
+type rawStored struct {
+	Color      string `toml:"color"`
+	Brightness *int64 `toml:"brightness"`
 }
 
 type rawButton struct {
@@ -163,6 +177,13 @@ func loadFile(dir, path string) (*Profile, error) {
 		}
 		p.Light = stack
 	}
+	if raw.StoredLight != nil {
+		sl, err := buildStored(raw.StoredLight)
+		if err != nil {
+			return nil, fmt.Errorf("%s: stored_light: %w", name, err)
+		}
+		p.StoredLight = sl
+	}
 	seen := map[[2]int]bool{}
 	for i, rb := range raw.Buttons {
 		if rb.Page == nil || rb.Position == nil {
@@ -236,6 +257,33 @@ func buildLight(rl *rawLight) (*light.Stack, error) {
 		return nil, fmt.Errorf("light: %s", msg)
 	}
 	return stack, nil
+}
+
+// buildStored checks the [stored_light] table. It must give a colour, a
+// brightness or both; the LEDs have no transparency, so the colour must be
+// opaque.
+func buildStored(rs *rawStored) (*StoredLight, error) {
+	sl := &StoredLight{Brightness: -1}
+	if rs.Color == "" && rs.Brightness == nil {
+		return nil, fmt.Errorf("give a color, a brightness or both")
+	}
+	if rs.Color != "" {
+		c, err := parseColor(rs.Color)
+		if err != nil {
+			return nil, err
+		}
+		if c.A != 0xFF {
+			return nil, fmt.Errorf("color must be opaque, got %q", rs.Color)
+		}
+		sl.Color = c
+	}
+	if rs.Brightness != nil {
+		if *rs.Brightness < 0 || *rs.Brightness > 100 {
+			return nil, fmt.Errorf("brightness must be 0 to 100, got %d", *rs.Brightness)
+		}
+		sl.Brightness = int(*rs.Brightness)
+	}
+	return sl, nil
 }
 
 // checkState makes sure a button's state is one the profile's [light] declares.

@@ -286,9 +286,15 @@ func (e *Engine) Rest(p byte) *proto.LightPayload {
 }
 
 func (e *Engine) payload(s *Stack, t time.Duration, in *Input) *proto.LightPayload {
+	return renderPayload(s, t, in, e.scale)
+}
+
+// renderPayload renders s at time t into a payload, each colour value passed
+// through scale.
+func renderPayload(s *Stack, t time.Duration, in *Input, scale func(uint8) byte) *proto.LightPayload {
 	out := new(proto.LightPayload)
 	for i, c := range s.Render(t, in) {
-		proto.SetLED(out, i, e.scale(c.R), e.scale(c.G), e.scale(c.B))
+		proto.SetLED(out, i, scale(c.R), scale(c.G), scale(c.B))
 	}
 	return out
 }

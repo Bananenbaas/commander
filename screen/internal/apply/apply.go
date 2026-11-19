@@ -28,6 +28,7 @@ import (
 	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/picture"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
 )
@@ -45,6 +46,8 @@ type Keyboard interface {
 	WriteButtons(t *proto.Table29) error
 	WriteTypes(t *proto.Table25) error
 	WaitRedraw(timeout time.Duration) error
+	ReadLightsTable(p byte) (*proto.Table11, error)
+	WriteLightsTable(t *proto.Table11) error
 }
 
 // ErrStopped is returned, wrapping the context's error, when Apply or Restore
@@ -63,6 +66,7 @@ func stopped(ctx context.Context) error {
 type Report struct {
 	Uploaded, Skipped []ledger.Owner // buttons whose picture was sent, or was already in its slot
 	Restored          []ledger.Owner // positions given back their original contents
+	Lighting          []byte         // profiles whose stored lighting was written
 	Notes             []string       // things the user should know about
 }
 
@@ -173,6 +177,12 @@ func where(o ledger.Owner) string {
 // picture while that profile still shows it. With full, every picture is sent
 // again.
 //
+// Last, Apply sets the stored lighting (report 0x11) of every profile whose
+// layout has [light] or [stored_light], in ascending order, where the
+// keyboard holds other colours or another brightness than the layout asks
+// for; see storeLighting. Other profiles' stored lighting is neither read
+// nor written.
+//
 // When it succeeds, Apply ends on the profile the run command would choose:
 // the first one whose program is running, otherwise the desktop profile.
 // running may be nil when no program is checked.
@@ -250,10 +260,78 @@ func Apply(ctx context.Context, kb Keyboard, cfg *layout.Config, l *ledger.Ledge
 			return rep, err
 		}
 	}
+	for _, p := range lit(cfg) {
+		if err := stopped(ctx); err != nil {
+			return rep, err
+		}
+		written, err := storeLighting(s, p)
+		if err != nil {
+			return rep, err
+		}
+		if written {
+			rep.Lighting = append(rep.Lighting, p.Number)
+		}
+	}
 	if err := stopped(ctx); err != nil {
 		return rep, err
 	}
 	return rep, s.switchTo(finalProfile(cfg, running))
+}
+
+// lit returns the profiles of cfg with [light] or [stored_light], in
+// ascending order.
+func lit(cfg *layout.Config) []layout.Profile {
+	var out []layout.Profile
+	for _, p := range cfg.Profiles {
+		if p.Light != nil || p.StoredLight != nil {
+			out = append(out, p)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Number < out[j].Number })
+	return out
+}
+
+// storeLighting reads the stored lighting of p and writes it back when it
+// differs from what the layout asks for, switching to p first. The colours
+// asked for are the [stored_light] colour on every LED when it gives one,
+// else the still picture of the [light] layers (light.Still), else the ones
+// the keyboard holds; the brightness is the [stored_light] one when given,
+// else the keyboard's. Every byte the table does not interpret is written
+// back as read. It reports whether it wrote.
+func storeLighting(s *session, p layout.Profile) (bool, error) {
+	t, err := s.kb.ReadLightsTable(p.Number)
+	if err != nil {
+		return false, fmt.Errorf("profile %d: %w", p.Number, err)
+	}
+	have := t.Colours()
+	colours, brightness := have, t.Brightness()
+	sl := p.StoredLight
+	switch {
+	case sl != nil && sl.Color.A != 0:
+		colours = new(proto.LightPayload)
+		for led := range light.NumLEDs {
+			proto.SetLED(colours, led, sl.Color.R, sl.Color.G, sl.Color.B)
+		}
+	case p.Light != nil:
+		colours = light.Still(p.Light)
+	}
+	if sl != nil && sl.Brightness >= 0 {
+		brightness = sl.Brightness
+	}
+	if *colours == *have && brightness == t.Brightness() {
+		return false, nil
+	}
+	t.SetColours(colours)
+	if err := t.SetBrightness(brightness); err != nil {
+		return false, fmt.Errorf("profile %d: %w", p.Number, err)
+	}
+	if err := s.switchTo(p.Number); err != nil {
+		return false, err
+	}
+	if err := s.kb.WriteLightsTable(t); err != nil {
+		return false, fmt.Errorf("profile %d: stored lighting: %w", p.Number, err)
+	}
+	return true, nil
 }
 
 // avoidForeign ends the first pass. It reads the 0x29 table of every profile
