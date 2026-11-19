@@ -27,11 +27,16 @@ const (
 	mixerName    = 41
 )
 
-// MixerRow is one row of the volume mixer page: a name and a level, 0 to 100.
+// MixerRow is one row of the volume mixer page. The list carries only the
+// name: the levels travel in the a3 frames.
 type MixerRow struct {
-	Name  string
-	Level int
+	Name string
 }
+
+// mixerFullScale is the last byte of every row: the slider's full-scale
+// value. Written as a level, it put the knob at the far right while the
+// number showed the level.
+const mixerFullScale = 100
 
 // SystemSlide is the system volume slider moved on the mixer page.
 type SystemSlide struct{ Level int }
@@ -42,8 +47,9 @@ type ProgramSlide struct{ Row, Level int }
 
 // MixerList builds report 0x28, the rows of the volume mixer page: `28 34 01`,
 // the row count, `00`, one 43-byte row per entry from offset 5 (row number,
-// the name in a 41-byte zero-padded field, the level), zeros, and the 16-bit
-// little-endian sum of the first 306 bytes. Row 0 must be SystemRow. Names
+// the name in a 41-byte zero-padded field, 100: the slider's full scale),
+// zeros, and the 16-bit little-endian sum of the first 306 bytes. Row 0 must
+// be SystemRow. Names
 // are sent as ASCII: other characters become '?', and they are cut to
 // MaxMixerName bytes.
 func MixerList(rows []MixerRow) ([]byte, error) {
@@ -61,7 +67,7 @@ func MixerList(rows []MixerRow) ([]byte, error) {
 		row := b[mixerBase+i*mixerRowSize:]
 		row[0] = byte(i)
 		copy(row[1:1+MaxMixerName], asciiName(r.Name))
-		row[1+mixerName] = level(r.Level)
+		row[1+mixerName] = mixerFullScale
 	}
 	s := Sum16(b[:Len28-2])
 	b[Len28-2], b[Len28-1] = byte(s), byte(s>>8)

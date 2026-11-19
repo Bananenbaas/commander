@@ -222,9 +222,9 @@ func (l *loop) sendMixer(mk mixerKeyboard, sys Session, progs []Session) error {
 		names[i], levels[i], ids[i] = p.Name, p.Level, p.ID
 	}
 	if m.list == nil || !slices.Equal(m.list, names) {
-		rows := []proto.MixerRow{{Name: proto.SystemRow, Level: sys.Level}}
+		rows := []proto.MixerRow{{Name: proto.SystemRow}}
 		for _, p := range progs {
-			rows = append(rows, proto.MixerRow{Name: p.Name, Level: p.Level})
+			rows = append(rows, proto.MixerRow{Name: p.Name})
 		}
 		b, err := proto.MixerList(rows)
 		if err != nil {

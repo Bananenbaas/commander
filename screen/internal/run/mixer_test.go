@@ -19,8 +19,8 @@ import (
 
 var _ mixerKeyboard = (*keyboard.KB)(nil)
 
-// WriteMixerList records the list's rows in the log: "list SystemVolume
-// 50|Steam 42".
+// WriteMixerList records the list's names in the log: "list
+// SystemVolume|Steam". Every row must carry the full-scale value 100.
 func (k *fakeKB) WriteMixerList(b []byte) error {
 	k.enter("WriteMixerList")
 	defer k.leave()
@@ -33,7 +33,10 @@ func (k *fakeKB) WriteMixerList(b []byte) error {
 	var rows []string
 	for i := 0; i < int(b[3]); i++ {
 		r := b[5+43*i : 5+43*(i+1)]
-		rows = append(rows, fmt.Sprintf("%s %d", bytes.TrimRight(r[1:42], "\x00"), r[42]))
+		if r[42] != 100 {
+			k.h.t.Errorf("mixer list row %d: full scale %d, want 100", i, r[42])
+		}
+		rows = append(rows, string(bytes.TrimRight(r[1:42], "\x00")))
 	}
 	k.h.record("list " + strings.Join(rows, "|"))
 	k.h.mixAt = append(k.h.mixAt, time.Since(k.h.start))
@@ -144,7 +147,7 @@ func TestMixerSendsListAndLevels(t *testing.T) {
 		h.onPoll[3] = h.cancel
 		h.run(testConfig())
 		h.want(logOf(startLog, []string{
-			"list SystemVolume 50|Steam 42|Opera 100", "programs 1-2: 42 100", "programs 3-4: 0 0", "system 50",
+			"list SystemVolume|Steam|Opera", "programs 1-2: 42 100", "programs 3-4: 0 0", "system 50",
 			"poll", "poll", "close",
 		})...)
 		if a.reads != 2 {
@@ -166,8 +169,8 @@ func TestMixerLevelsWaitAfterList(t *testing.T) {
 		sent := func(list string, levels string) []string {
 			return []string{list, "programs 1-2: " + levels, "programs 3-4: 0 0", "system 50"}
 		}
-		h.want(logOf(startLog, sent("list SystemVolume 50|Steam 42", "42 0"),
-			[]string{"poll"}, sent("list SystemVolume 50|Steam 42|Opera 100", "42 100"),
+		h.want(logOf(startLog, sent("list SystemVolume|Steam", "42 0"),
+			[]string{"poll"}, sent("list SystemVolume|Steam|Opera", "42 100"),
 			[]string{"poll", "close"})...)
 		lists := []time.Duration{h.notified(0) + quietGap, h.pollTimes[2]}
 		for i, list := range lists {
@@ -192,7 +195,7 @@ func TestMixerLevelChangeSentAtOnce(t *testing.T) {
 		h.onPoll[3] = h.cancel
 		h.run(testConfig())
 		h.want(logOf(startLog, []string{
-			"list SystemVolume 50|Steam 42", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
+			"list SystemVolume|Steam", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
 			"poll", "programs 1-2: 60 0",
 			"poll", "close",
 		})...)
@@ -211,7 +214,7 @@ func TestMixerSendsOnlyChangedLevels(t *testing.T) {
 		h.onPoll[5] = h.cancel
 		h.run(testConfig())
 		h.want(logOf(startLog, []string{
-			"list SystemVolume 50|Steam 42|Opera 100", "programs 1-2: 42 100", "programs 3-4: 0 0", "system 50",
+			"list SystemVolume|Steam|Opera", "programs 1-2: 42 100", "programs 3-4: 0 0", "system 50",
 			"poll", "programs 1-2: 60 100",
 			"poll", "system 70 muted",
 			"poll", "poll", "close",
@@ -228,8 +231,8 @@ func TestMixerNewProgramSendsNewList(t *testing.T) {
 		h.onPoll[3] = h.cancel
 		h.run(testConfig())
 		h.want(logOf(startLog, []string{
-			"list SystemVolume 50|Steam 42", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
-			"poll", "list SystemVolume 50|Steam 42|Spotify ? Premium 80", "programs 1-2: 42 80", "programs 3-4: 0 0", "system 50",
+			"list SystemVolume|Steam", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
+			"poll", "list SystemVolume|Steam|Spotify ? Premium", "programs 1-2: 42 80", "programs 3-4: 0 0", "system 50",
 			"poll", "close",
 		})...)
 	})
@@ -245,9 +248,9 @@ func TestMixerShowsFourPrograms(t *testing.T) {
 		h.onPoll[4] = h.cancel
 		h.run(testConfig())
 		h.want(logOf(startLog, []string{
-			"list SystemVolume 50|A 1|B 2|C 3|D 4", "programs 1-2: 1 2", "programs 3-4: 3 4", "system 50",
+			"list SystemVolume|A|B|C|D", "programs 1-2: 1 2", "programs 3-4: 3 4", "system 50",
 			"poll",
-			"poll", "list SystemVolume 50|B 2|C 3|D 4|E 5", "programs 1-2: 2 3", "programs 3-4: 4 5", "system 50",
+			"poll", "list SystemVolume|B|C|D|E", "programs 1-2: 2 3", "programs 3-4: 4 5", "system 50",
 			"poll", "close",
 		})...)
 	})
@@ -266,8 +269,8 @@ func TestMixerActiveNewcomerReplacesIdle(t *testing.T) {
 		h.onPoll[3] = h.cancel
 		h.run(testConfig())
 		h.want(logOf(startLog, []string{
-			"list SystemVolume 50|A 1|B 2|C 3|D 4", "programs 1-2: 1 2", "programs 3-4: 3 4", "system 50",
-			"poll", "list SystemVolume 50|A 1|B 2|C 3|Z 9", "programs 1-2: 1 2", "programs 3-4: 3 9", "system 50",
+			"list SystemVolume|A|B|C|D", "programs 1-2: 1 2", "programs 3-4: 3 4", "system 50",
+			"poll", "list SystemVolume|A|B|C|Z", "programs 1-2: 1 2", "programs 3-4: 3 9", "system 50",
 			"poll", "close",
 		})...)
 	})
@@ -283,9 +286,9 @@ func TestMixerPlayingProgramsStay(t *testing.T) {
 		h.onPoll[4] = h.cancel
 		h.run(testConfig())
 		h.want(logOf(startLog, []string{
-			"list SystemVolume 50|A 1|B 2|C 3|D 4", "programs 1-2: 1 2", "programs 3-4: 3 4", "system 50",
+			"list SystemVolume|A|B|C|D", "programs 1-2: 1 2", "programs 3-4: 3 4", "system 50",
 			"poll",
-			"poll", "list SystemVolume 50|A 1|C 3|D 4|Zero 9", "programs 1-2: 1 3", "programs 3-4: 4 9", "system 50",
+			"poll", "list SystemVolume|A|C|D|Zero", "programs 1-2: 1 3", "programs 3-4: 4 9", "system 50",
 			"poll", "close",
 		})...)
 	})
@@ -309,7 +312,7 @@ func TestMixerSlides(t *testing.T) {
 		h.onPoll[3] = h.cancel
 		h.run(testConfig())
 		h.want(logOf(startLog, []string{
-			"list SystemVolume 50|Steam 42|Opera 100", "programs 1-2: 42 100", "programs 3-4: 0 0", "system 50",
+			"list SystemVolume|Steam|Opera", "programs 1-2: 42 100", "programs 3-4: 0 0", "system 50",
 			"set b 30", "set system 95",
 			"poll",
 			"poll", "close",
@@ -329,7 +332,7 @@ func TestMixerAudioErrorLoggedOnce(t *testing.T) {
 		h.want(logOf(startLog, []string{
 			"down A", "up A",
 			"poll",
-			"poll", "list SystemVolume 50|Steam 42", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
+			"poll", "list SystemVolume|Steam", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
 			"poll", "close",
 		})...)
 		h.wantLogged(1, "no output device")
@@ -357,7 +360,7 @@ func TestMixerWriteErrorBacksOff(t *testing.T) {
 		h.want(logOf(startLog, []string{
 			"mixer failed", // 2.5 s
 			"poll", "poll", // 4 s and 6 s: no write before 7.5 s
-			"list SystemVolume 50|Steam 42",
+			"list SystemVolume|Steam",
 			"poll", // 8 s; the frames follow at 8.1 s
 			"programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
 			"poll", "close",
@@ -379,8 +382,8 @@ func TestMixerStalledFrameDropsKeyboard(t *testing.T) {
 		}
 		h.onPoll[4] = h.cancel
 		h.run(testConfig())
-		sent := []string{"list SystemVolume 50|Steam 42", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50"}
-		h.want(logOf(startLog, []string{"list SystemVolume 50|Steam 42", "mixer failed", "close",
+		sent := []string{"list SystemVolume|Steam", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50"}
+		h.want(logOf(startLog, []string{"list SystemVolume|Steam", "mixer failed", "close",
 			"poll", "open", "notify", "fresh 0", "poll"}, sent, []string{"poll", "close"})...)
 		h.wantLogged(1, "did not take")
 	})
@@ -393,7 +396,7 @@ func TestMixerAgainAfterSwitchAndReconnect(t *testing.T) {
 		h.onPoll[4] = func() { h.running[game] = true }
 		h.onPoll[6] = h.cancel
 		h.run(testConfig())
-		sent := []string{"list SystemVolume 50|Steam 42", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50"}
+		sent := []string{"list SystemVolume|Steam", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50"}
 		h.want(logOf(startLog, sent, []string{"close", "poll", "open", "notify", "fresh 0", "poll"}, sent,
 			[]string{"poll", "switch 2"}, sent, []string{"poll", "poll", "close"})...)
 	})
@@ -406,7 +409,7 @@ func TestMixerRedrawSendsLevelsAgain(t *testing.T) {
 		h.onPoll[2] = h.cancel
 		h.run(testConfig())
 		h.want(logOf(startLog, []string{
-			"list SystemVolume 50|Steam 42", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
+			"list SystemVolume|Steam", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
 			"programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
 			"poll", "close",
 		})...)

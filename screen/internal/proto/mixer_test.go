@@ -26,8 +26,8 @@ func TestMixerListCapture(t *testing.T) {
 		t.Fatalf("capture: %d bytes, %v", len(want), err)
 	}
 	rows := []MixerRow{
-		{"SystemVolume", 100}, {"GroverPro", 100}, {"Steam", 100},
-		{"Opera GX Internet Browser", 100}, {"Opera GX Internet Browser", 100},
+		{"SystemVolume"}, {"GroverPro"}, {"Steam"},
+		{"Opera GX Internet Browser"}, {"Opera GX Internet Browser"},
 	}
 	got, err := MixerList(rows)
 	if err != nil {
@@ -37,32 +37,32 @@ func TestMixerListCapture(t *testing.T) {
 		t.Errorf("got\n% x\nwant\n% x", got, want)
 	}
 
-	six := append(append([]MixerRow(nil), rows...), MixerRow{"Spotify", 50})
+	six := append(append([]MixerRow(nil), rows...), MixerRow{"Spotify"})
 	if _, err := MixerList(six); err == nil {
 		t.Error("six rows: no error")
 	}
 	if _, err := MixerList(nil); err == nil {
 		t.Error("no rows: no error")
 	}
-	if _, err := MixerList([]MixerRow{{"Steam", 100}}); err == nil {
+	if _, err := MixerList([]MixerRow{{"Steam"}}); err == nil {
 		t.Error("row 0 not SystemVolume: no error")
 	}
 }
 
 func TestMixerListNames(t *testing.T) {
 	long := strings.Repeat("abcdefghij", 5)
-	got, err := MixerList([]MixerRow{{"SystemVolume", 100}, {long, 7}, {"Spotify · Premium", 101}, {"Café\x01", -3}})
+	got, err := MixerList([]MixerRow{{"SystemVolume"}, {long}, {"Spotify · Premium"}, {"Café\x01"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	row := func(i int) []byte { return got[5+43*i : 5+43*(i+1)] }
-	if r := row(1); r[0] != 1 || string(r[1:41]) != long[:40] || r[41] != 0 || r[42] != 7 {
+	if r := row(1); r[0] != 1 || string(r[1:41]) != long[:40] || r[41] != 0 || r[42] != 100 {
 		t.Errorf("long name row: % x", r)
 	}
 	if r := row(2); r[0] != 2 || string(bytes.TrimRight(r[1:42], "\x00")) != "Spotify ? Premium" || r[42] != 100 {
 		t.Errorf("non-ASCII row: % x", r)
 	}
-	if r := row(3); string(bytes.TrimRight(r[1:42], "\x00")) != "Caf??" || r[42] != 0 {
+	if r := row(3); string(bytes.TrimRight(r[1:42], "\x00")) != "Caf??" || r[42] != 100 {
 		t.Errorf("accent row: % x", r)
 	}
 	if got[3] != 4 {

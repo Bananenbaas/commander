@@ -945,7 +945,7 @@ func TestCheckStatus(t *testing.T) {
 }
 
 func TestWriteMixerList(t *testing.T) {
-	list, err := proto.MixerList([]proto.MixerRow{{Name: proto.SystemRow, Level: 50}, {Name: "Steam", Level: 42}})
+	list, err := proto.MixerList([]proto.MixerRow{{Name: proto.SystemRow}, {Name: "Steam"}})
 	if err != nil {
 		t.Fatal(err)
 	}
