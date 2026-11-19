@@ -621,6 +621,20 @@ with neither `[light]` nor `[stored_light]` is left alone. Not yet checked on
 the keyboard: the table is written as Swarm II writes it, but whether the
 keyboard keeps it after it is unplugged has not been tried.
 
+### Volume mixer
+
+On Windows, `run` (and so Commander) keeps the keyboard's volume mixer page in
+step with the computer's sound: the first slider is the system volume, and the
+next ones are the programs that play sound at that moment, shown by their name
+(the program's own name when it gives one, otherwise the executable's name).
+At most four programs are shown; when more play, the four that `run` saw first keep their place and the rest are left out. Moving a slider on the
+keyboard sets that volume in Windows, and a change made in Windows moves the
+slider on the keyboard. Nothing needs to be configured.
+
+The mixer is Windows only. When Windows audio cannot be used (no output
+device, for example), `run` logs one line and carries on with the buttons and
+the lighting. Not yet checked on the keyboard.
+
 ### Preview
 
 `kb7screen light-preview <config> --profile N` writes a 4 second GIF of the

@@ -1,7 +1,7 @@
 # Pages 2 and 3, stored lighting, the volume mixer and profile names
 
 Design for four features unlocked by the captures of 2026-11-19 (`41`–`46`,
-see `docs/PROTOCOL.md`). Status: approved 2026-11-19. Builds on
+see `docs/PROTOCOL.md`). Status: approved 2026-11-19; implemented, desktop check pending. Builds on
 [`screen-app.md`](screen-app.md), [`lighting.md`](lighting.md) and
 [`commander-tray.md`](commander-tray.md).
 
@@ -61,7 +61,8 @@ step with Windows:
   (`IAudioSessionEvents`), the system volume changes
   (`IAudioEndpointVolumeCallback`), or the default device changes
   (`IMMNotificationClient`). On a change it writes report `0x28`: the system
-  volume first, then up to six programs by their display name (the executable
+  volume first, then up to four programs (only the level frames for programs 1-2 and 3-4,
+  `03 0e` and `06 0e`, have been observed) by their display name (the executable
   name without `.exe` when a program gives none). Nothing is polled while
   nothing changes.
 - It sends the levels as `a3` frames (`00 0d` for the system volume, `03 0e`
