@@ -176,6 +176,11 @@ type harness struct {
 
 	// The profile Run is to resume, set before Run starts; nil: none.
 	resume *Resume
+
+	// The audio of the mixer page, set before Run starts; nil: none.
+	audio  Audio
+	mixErr func(n int) error // fails the nth mixer write of the fake keyboard
+	mixes  int
 }
 
 // namedKB is a fake keyboard that can tell its profile names.
@@ -221,6 +226,7 @@ func (h *harness) deps() Deps {
 		Light:   h.engine,
 		Keys:    h.keys,
 		Resume:  h.resume,
+		Audio:   h.audio,
 		Status: func(st Status) {
 			h.mu.Lock()
 			h.statuses = append(h.statuses, st)

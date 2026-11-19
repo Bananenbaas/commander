@@ -127,6 +127,9 @@ type Deps struct {
 	// nil: none. It is used at the first attempt to open the keyboard only,
 	// and dropped when Swarm II runs before that.
 	Resume *Resume
+	// Audio is shown on the keyboard's volume mixer page while the keyboard
+	// is in use; nil: no mixer, nothing of it is written. See Run.
+	Audio Audio
 }
 
 // Resume is a profile an earlier Run left the keyboard on.
@@ -203,6 +206,8 @@ type loop struct {
 	brightMsg  string                       // why report 0x11 could not be read, as last logged
 	profNames  [5]string                    // the profile names read when the keyboard was opened; "" when unknown
 	stored     map[byte]*proto.LightPayload // each profile's 0x11 colours read since the keyboard was opened, unscaled
+
+	mix mixer // the volume mixer page
 }
 
 // Run carries out the actions of the buttons of cfg until ctx is cancelled,
@@ -242,6 +247,19 @@ type loop struct {
 // keyboard does not acknowledge, the next one waits 2.5 s; any other stream
 // error, a write the keyboard does not take included, closes the keyboard.
 //
+// With d.Audio, the keyboard's volume mixer page shows the system volume and
+// up to four programs, in the order they were first seen in this Run (those
+// first seen together by ID). From 2.5 s after notifications are enabled,
+// and again after every profile change and every change signal of d.Audio,
+// the volumes are read: the list (report 0x28) is written when the shown
+// names changed, and the a3 level frames that changed are sent, all of them
+// after a new list, a reconnect or a profile change; a redraw of the main
+// page sends the levels again. This happens between lighting sets, never
+// inside one. A slider moved on the page sets the system volume or the
+// volume of the program on its row; a row without a program is ignored. An
+// error of d.Audio or of the mixer writes is logged once and the mixer waits
+// for the next change; buttons and lighting go on.
+//
 // If a call panics, Run still releases every held key and closes the
 // keyboard before the panic goes on.
 func Run(ctx context.Context, cfg *layout.Config, d Deps) error {
@@ -255,6 +273,8 @@ func Run(ctx context.Context, cfg *layout.Config, d Deps) error {
 	next := l.now()
 	for ctx.Err() == nil {
 		l.drainKeys() // so a frame sent below shows every key event so far
+		l.drainChanges()
+		l.mixStep() // between two lighting sets, never inside one
 		if !l.now().Before(next) {
 			l.poll(ctx)
 			next = l.now().Add(l.every)
@@ -298,6 +318,9 @@ func newLoop(cfg *layout.Config, d Deps) (*loop, error) {
 	}
 	if d.Light != nil && anyLit(cfg.Profiles) {
 		l.eng, l.keys = d.Light, d.Keys
+	}
+	if d.Audio != nil {
+		l.mix.audio, l.mix.changes = d.Audio, d.Audio.Changes()
 	}
 	if l.running == nil {
 		l.running = procs.Running
@@ -594,6 +617,7 @@ func (l *loop) connect(ctx context.Context, running map[string]bool) {
 	l.failures = 0
 	l.resume = nil // the connect switches now: the resume is used up
 	l.nextFrame, l.streamed, l.ackLogged = l.now().Add(quiet), false, false
+	l.mix.after = l.now().Add(quiet)
 	l.readNames()
 	if !l.switchTo(ctx, target, how) {
 		return
@@ -788,6 +812,14 @@ func (l *loop) read(ctx context.Context, timeout time.Duration) {
 		}
 	case proto.Touch:
 		l.touch(ev)
+	case proto.SystemSlide:
+		l.systemSlide(ev)
+	case proto.ProgramSlide:
+		l.programSlide(ev)
+	case proto.Redraw:
+		if ev.View == redrawMain {
+			l.mixRedraw()
+		}
 	case proto.Brightness:
 		if l.eng != nil {
 			l.eng.SetBrightness(ev.Percent)

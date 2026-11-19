@@ -943,3 +943,68 @@ func TestCheckStatus(t *testing.T) {
 		t.Error("missing status accepted")
 	}
 }
+
+func TestWriteMixerList(t *testing.T) {
+	list, err := proto.MixerList([]proto.MixerRow{{Name: proto.SystemRow, Level: 50}, {Name: "Steam", Level: 42}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &device.Fake{}
+	f.QueueFeature(ready())
+	k, c := newTest(f)
+	if err := k.WriteMixerList(list); err != nil {
+		t.Fatal(err)
+	}
+	if sf := f.Features(); len(sf) != 1 || !bytes.Equal(sf[0], list) {
+		t.Fatalf("features %d", len(sf))
+	}
+	calls := f.Calls()
+	if last := calls[len(calls)-1]; last.Op != device.OpGetFeature || last.ID != 0x05 {
+		t.Errorf("last call %+v, want the 0x05 status read", last)
+	}
+	if len(c.sleeps) != 1 || c.sleeps[0] != 150*time.Millisecond {
+		t.Errorf("sleeps %v", c.sleeps)
+	}
+
+	f = &device.Fake{}
+	f.QueueFeature([]byte{0x05, 0x00, 0, 0})
+	k, _ = newTest(f)
+	if err := k.WriteMixerList(list); err == nil || !strings.Contains(err.Error(), "05 01 00 00") {
+		t.Errorf("bad status: %v", err)
+	}
+
+	f = &device.Fake{}
+	k, _ = newTest(f)
+	for _, bad := range [][]byte{list[:300], append([]byte{0x29}, list[1:]...)} {
+		if err := k.WriteMixerList(bad); err == nil {
+			t.Errorf("% x... accepted", bad[:4])
+		}
+	}
+	if len(f.Calls()) != 0 {
+		t.Errorf("calls %v for refused lists", f.Calls())
+	}
+}
+
+func TestSendFrame(t *testing.T) {
+	f := &device.Fake{}
+	k, _ := newTest(f)
+	fr := proto.SystemLevelFrame(83, false)
+	if err := k.SendFrame(fr); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.Frames(); len(got) != 1 || got[0] != fr {
+		t.Fatalf("frames %v", got)
+	}
+	if calls := f.Calls(); len(calls) != 1 {
+		t.Errorf("calls %+v, want only the write: an a3 frame is not answered", calls)
+	}
+	var a5 [64]byte
+	a5[0] = 0xa5
+	if err := k.SendFrame(a5); err == nil {
+		t.Error("an a5 frame was accepted")
+	}
+	f.FailAt(device.OpWriteStream, 2, device.ErrTimeout)
+	if err := k.SendFrame(fr); !errors.Is(err, ErrStreamStalled) {
+		t.Errorf("timed-out write: %v, want ErrStreamStalled", err)
+	}
+}

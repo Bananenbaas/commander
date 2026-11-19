@@ -3,7 +3,8 @@
 package proto
 
 // Touch is a touch or release on a widget, from input report 0x33. Page is
-// byte 1 of the report (1 to 3).
+// byte 1 of the report (1 to 3). The mixer page's sliders, with byte 1 00 and
+// kind 06 or 07, are parsed as SystemSlide and ProgramSlide instead.
 type Touch struct {
 	Page, Position, Kind byte
 	Down                 bool
@@ -32,6 +33,14 @@ func ParseReport(b []byte) (any, bool) {
 	case 0x33:
 		if len(b) < 8 {
 			return nil, false
+		}
+		if b[1] == 0x00 { // the volume mixer page
+			switch b[3] {
+			case 0x06:
+				return SystemSlide{Level: int(b[7])}, true
+			case 0x07:
+				return ProgramSlide{Row: int(b[5]), Level: int(b[7])}, true
+			}
 		}
 		return Touch{Page: b[1], Position: b[2], Kind: b[3], Down: b[7] == 1}, true
 	case 0x03:

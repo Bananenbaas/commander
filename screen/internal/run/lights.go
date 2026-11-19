@@ -270,8 +270,9 @@ func (l *loop) readLights() error {
 // stored lighting read earlier since the keyboard was opened; without one
 // the rest frame of the profile last streamed is sent instead. When the
 // keyboard is gone it is closed. It reports false when the keyboard failed
-// and was closed.
+// and was closed. The mixer page is sent again from scratch (see resetMixer).
 func (l *loop) activate(ctx context.Context) bool {
+	l.resetMixer()
 	if l.eng == nil {
 		return true
 	}

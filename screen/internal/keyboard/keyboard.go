@@ -538,3 +538,36 @@ func (k *KB) checkStatus(what string) error {
 	}
 	return nil
 }
+
+// WriteMixerList writes report 0x28, the rows of the volume mixer page (see
+// proto.MixerList), and then reads the status register as Swarm II does,
+// which must read 05 01 00 00.
+func (k *KB) WriteMixerList(b []byte) error {
+	if len(b) != proto.Len28 || b[0] != 0x28 {
+		return fmt.Errorf("keyboard: a mixer list is %d bytes starting 28, not %d bytes", proto.Len28, len(b))
+	}
+	k.settle()
+	if err := k.d.SetFeature(b); err != nil {
+		return fmt.Errorf("keyboard: writing the mixer list: %w", err)
+	}
+	return k.checkStatus("mixer list")
+}
+
+// SendFrame writes one a3 frame, such as a volume level, to the stream. The
+// keyboard does not answer a3 frames, so nothing is read: in every capture
+// the frame read after one is the acknowledgement of the next lighting bank.
+// Other frames are refused. Call it between lighting sets, never inside one
+// (StreamLights writes a whole set in one call). A write that times out
+// wraps ErrStreamStalled.
+func (k *KB) SendFrame(f [64]byte) error {
+	if f[0] != 0xa3 {
+		return fmt.Errorf("keyboard: frame %02x refused, only a3 frames are sent this way", f[0])
+	}
+	if err := k.d.WriteStream(f); err != nil {
+		if errors.Is(err, device.ErrTimeout) {
+			return fmt.Errorf("keyboard: a3 frame: %w", ErrStreamStalled)
+		}
+		return fmt.Errorf("keyboard: a3 frame: %w", err)
+	}
+	return nil
+}
