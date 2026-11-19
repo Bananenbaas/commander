@@ -257,8 +257,10 @@ type loop struct {
 // page sends the levels again. This happens between lighting sets, never
 // inside one. A slider moved on the page sets the system volume or the
 // volume of the program on its row; a row without a program is ignored. An
-// error of d.Audio or of the mixer writes is logged once and the mixer waits
-// for the next change; buttons and lighting go on.
+// error of d.Audio is logged once and the mixer waits for the next change; a
+// mixer write the keyboard refused is logged once and tried again after 5 s;
+// a stalled frame or a keyboard that is gone closes the keyboard. Buttons and
+// lighting go on.
 //
 // If a call panics, Run still releases every held key and closes the
 // keyboard before the panic goes on.
@@ -274,7 +276,7 @@ func Run(ctx context.Context, cfg *layout.Config, d Deps) error {
 	for ctx.Err() == nil {
 		l.drainKeys() // so a frame sent below shows every key event so far
 		l.drainChanges()
-		l.mixStep() // between two lighting sets, never inside one
+		l.mixStep(ctx) // between two lighting sets, never inside one
 		if !l.now().Before(next) {
 			l.poll(ctx)
 			next = l.now().Add(l.every)

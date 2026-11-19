@@ -4,10 +4,14 @@ package run
 
 import (
 	"cmp"
+	"context"
+	"errors"
 	"slices"
 	"time"
 
 	"github.com/Bananenbaas/kb7-commander/screen/internal/audio"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/keyboard"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
 )
 
@@ -38,6 +42,10 @@ type mixerKeyboard interface {
 // carry four.
 const maxPrograms = proto.MaxMixerRows - 1
 
+// mixBackoff is how long the mixer waits after a write the keyboard refused
+// before it writes again.
+const mixBackoff = 5 * time.Second
+
 // Kinds of mixer errors, each logged once until that kind works again.
 const (
 	mixRead = iota
@@ -57,6 +65,7 @@ type mixer struct {
 	shown   []string        // the IDs of the programs on the page, row 1 first
 	list    []string        // the names of the list written; nil: none since the keyboard was opened or switched
 	sys     *[64]byte       // the system frame sent last; nil: none
+	muted   bool            // the system mute sent last
 	levels  []int           // the program levels sent last; nil: none
 	logged  [mixKinds]bool  // the kind of error was logged
 }
@@ -107,9 +116,12 @@ func (l *loop) mixerKB() (mixerKeyboard, bool) {
 
 // mixStep reads the sessions when they changed and sends what differs from
 // what the keyboard shows: the list (report 0x28) when the names changed,
-// and the level frames that changed. An error pauses the mixer until the
-// next change signal, reconnect or profile switch.
-func (l *loop) mixStep() {
+// and the level frames that changed. An error of the audio pauses the mixer
+// until the next change signal, reconnect or profile switch. A write the
+// keyboard refused is tried again, all of it, once mixBackoff has passed; a
+// stalled frame or a keyboard that is gone closes the keyboard, as for
+// lighting.
+func (l *loop) mixStep(ctx context.Context) {
 	m := &l.mix
 	mk, ok := l.mixerKB()
 	if !ok || !m.dirty || l.now().Before(m.after) {
@@ -125,7 +137,13 @@ func (l *loop) mixStep() {
 	progs = l.pickPrograms(progs)
 	if err := l.sendMixer(mk, sys, progs); err != nil {
 		m.list, m.sys, m.levels = nil, nil, nil // all again next time
-		l.mixLog(mixWrite, "writing the mixer page: %v; it waits for the next change", err)
+		if errors.Is(err, keyboard.ErrStreamStalled) || errors.Is(err, device.ErrDisconnected) || errors.Is(err, device.ErrClosed) {
+			l.logf("writing the mixer page: %v; opening the keyboard again", err)
+			l.drop(ctx)
+			return
+		}
+		m.dirty, m.after = true, l.now().Add(mixBackoff)
+		l.mixLog(mixWrite, "writing the mixer page: %v; trying again in %v", err, mixBackoff)
 		return
 	}
 	m.logged[mixWrite] = false
@@ -198,23 +216,29 @@ func (l *loop) sendMixer(mk mixerKeyboard, sys Session, progs []Session) error {
 		if err := mk.SendFrame(f); err != nil {
 			return err
 		}
-		m.sys = &f
+		m.sys, m.muted = &f, sys.Muted
 	}
 	return nil
 }
 
 // systemSlide sets the system volume to the system slider's level. The
-// level frame follows once the audio reports the change.
+// keyboard already shows the level, so it counts as sent (with the mute sent
+// last): a drag is not echoed back.
 func (l *loop) systemSlide(ev proto.SystemSlide) {
 	m := &l.mix
 	if _, ok := l.mixerKB(); !ok {
 		return
 	}
-	if err := m.audio.SetSystemLevel(min(max(ev.Level, 0), 100)); err != nil {
+	v := min(max(ev.Level, 0), 100)
+	if err := m.audio.SetSystemLevel(v); err != nil {
 		l.mixLog(mixSet, "setting the volume: %v", err)
 		return
 	}
 	m.logged[mixSet] = false
+	if m.sys != nil {
+		f := proto.SystemLevelFrame(v, m.muted)
+		m.sys = &f
+	}
 }
 
 // programSlide sets the volume of the program shown on the slider's row;

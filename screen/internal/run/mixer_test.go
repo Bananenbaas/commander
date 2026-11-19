@@ -212,8 +212,8 @@ func TestMixerSlides(t *testing.T) {
 			event(proto.ProgramSlide{Row: 0, Level: 10}),
 			event(proto.SystemSlide{Level: 95}),
 		}}
-		// The audio reports the slides: the program's level is on the
-		// keyboard already, the system level is sent.
+		// The audio reports the slides: both levels are on the keyboard
+		// already, so nothing is echoed back mid-drag.
 		h.onPoll[2] = func() {
 			a.change(func(a *fakeAudio) { a.progs[1].Level, a.sys.Level = 30, 95 })
 		}
@@ -222,7 +222,7 @@ func TestMixerSlides(t *testing.T) {
 		h.want(logOf(startLog, []string{
 			"list SystemVolume 50|Steam 42|Opera 100", "programs 1-2: 42 100", "programs 3-4: 0 0", "system 50",
 			"set b 30", "set system 95",
-			"poll", "system 95",
+			"poll",
 			"poll", "close",
 		})...)
 	})
@@ -250,12 +250,14 @@ func TestMixerAudioErrorLoggedOnce(t *testing.T) {
 	})
 }
 
-func TestMixerWriteErrorRetriesAtNextChange(t *testing.T) {
+// A refused write waits 5 s, whatever changes meanwhile, and is then tried
+// again without a new change.
+func TestMixerWriteErrorBacksOff(t *testing.T) {
 	test(t, func(h *harness) {
 		a := newAudio(h, 50, prog("a", "Steam", 42))
 		h.mixErr = func(n int) error {
-			if n < 2 {
-				return errors.New("pipe broken")
+			if n < 1 {
+				return errors.New("keyboard: status 05 01 01 00 after the mixer list, want 05 01 00 00")
 			}
 			return nil
 		}
@@ -264,12 +266,32 @@ func TestMixerWriteErrorRetriesAtNextChange(t *testing.T) {
 		h.onPoll[4] = h.cancel
 		h.run(testConfig())
 		h.want(logOf(startLog, []string{
-			"mixer failed",
-			"poll", "mixer failed",
-			"poll", "list SystemVolume 50|Steam 42", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
+			"mixer failed", // 2.5 s
+			"poll", "poll", // 4 s and 6 s: no write before 7.5 s
+			"list SystemVolume 50|Steam 42", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
 			"poll", "close",
 		})...)
-		h.wantLogged(1, "pipe broken")
+		h.wantLogged(1, "05 01 01 00")
+	})
+}
+
+// A stalled level frame closes the keyboard, as a stalled lighting frame
+// does; the page is sent again once it is open.
+func TestMixerStalledFrameDropsKeyboard(t *testing.T) {
+	test(t, func(h *harness) {
+		newAudio(h, 50, prog("a", "Steam", 42))
+		h.mixErr = func(n int) error {
+			if n == 1 {
+				return fmt.Errorf("keyboard: a3 frame: %w", keyboard.ErrStreamStalled)
+			}
+			return nil
+		}
+		h.onPoll[4] = h.cancel
+		h.run(testConfig())
+		sent := []string{"list SystemVolume 50|Steam 42", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50"}
+		h.want(logOf(startLog, []string{"list SystemVolume 50|Steam 42", "mixer failed", "close",
+			"poll", "open", "notify", "fresh 0", "poll"}, sent, []string{"poll", "close"})...)
+		h.wantLogged(1, "did not take")
 	})
 }
 
