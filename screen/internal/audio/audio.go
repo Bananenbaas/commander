@@ -14,6 +14,10 @@ import (
 // ErrClosed is returned by the calls made after Close.
 var ErrClosed = errors.New("the audio is closed")
 
+// ErrUnsupported is returned by New on systems other than Windows, which
+// have no mixer.
+var ErrUnsupported = errors.New("the mixer needs Windows")
+
 // ErrNoDevice is returned while the computer has no default output device.
 var ErrNoDevice = errors.New("no default audio output device")
 
@@ -48,7 +52,8 @@ type request struct {
 }
 
 // New starts following the Windows audio. logf receives the rare messages
-// worth a log line; nil discards them. Off Windows it returns an error.
+// worth a log line; nil discards them. Off Windows it returns ErrUnsupported,
+// and on 32-bit or ARM Windows another error.
 func New(logf func(string, ...any)) (*Windows, error) {
 	return start(logf, openEngine)
 }

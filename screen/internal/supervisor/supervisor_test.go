@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Bananenbaas/kb7-commander/screen/internal/apply"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/audio"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/request"
@@ -788,5 +789,30 @@ func TestAudioFailureLogsOnceAndLeavesNoMixer(t *testing.T) {
 	defer mu.Unlock()
 	if len(lines) != 1 || !strings.Contains(lines[0], "no output device") {
 		t.Fatalf("log = %q, want one line naming the error", lines)
+	}
+}
+
+// Off Windows the mixer is simply not there: nothing is logged.
+func TestAudioUnsupportedIsNotLogged(t *testing.T) {
+	old := openAudio
+	openAudio = func(func(string, ...any)) (run.Audio, io.Closer, error) {
+		return nil, nil, fmt.Errorf("audio: %w", audio.ErrUnsupported)
+	}
+	t.Cleanup(func() { openAudio = old })
+	var mu sync.Mutex
+	var lines []string
+	s := realLoopSupervisor(t, func(f string, a ...any) {
+		mu.Lock()
+		defer mu.Unlock()
+		lines = append(lines, fmt.Sprintf(f, a...))
+	})
+	defer s.Close()
+	if s.audio != nil {
+		t.Fatalf("audio = %v, want a nil interface", s.audio)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(lines) != 0 {
+		t.Fatalf("log = %q, want nothing", lines)
 	}
 }

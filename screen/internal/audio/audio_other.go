@@ -15,5 +15,5 @@ func openEngine(func(), func(string, ...any)) (engine, error) {
 	if runtime.GOOS == "windows" {
 		return nil, errors.New("the mixer needs 64-bit x86 Windows")
 	}
-	return nil, errors.New("the mixer needs Windows")
+	return nil, ErrUnsupported
 }

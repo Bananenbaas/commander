@@ -275,7 +275,9 @@ func New(dir string, o Options) (*Supervisor, error) {
 			release = func() error { return errors.Join(cl.Close(), locks()) }
 		}
 		if a, cl, err := openAudio(s.logf); err != nil {
-			s.logf("the volume mixer is off: %v", err)
+			if !errors.Is(err, audio.ErrUnsupported) { // off Windows there is no mixer to miss
+				s.logf("the volume mixer is off: %v", err)
+			}
 		} else {
 			s.audio = a
 			locks := release
