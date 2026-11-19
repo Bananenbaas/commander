@@ -87,6 +87,8 @@ func execute(c command, stdout, stderr io.Writer) error {
 		return doRun(c, stderr)
 	case "keytest":
 		return doKeytest(c, stdout)
+	case "audio":
+		return doAudio(stdout, stderr)
 	case "stop", "reload":
 		return doRequest(c, stdout)
 	case "background":

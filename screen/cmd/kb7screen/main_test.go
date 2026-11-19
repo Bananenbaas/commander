@@ -43,6 +43,7 @@ func TestParseArgs(t *testing.T) {
 		{[]string{"keytest"}, command{name: "keytest", seconds: 20}},
 		{[]string{"keytest", "--seconds", "1"}, command{name: "keytest", seconds: 1}},
 		{[]string{"keytest", "--seconds=120"}, command{name: "keytest", seconds: 120}},
+		{[]string{"audio"}, command{name: "audio"}},
 	}
 	for _, c := range ok {
 		got, err := parseArgs(c.args)
@@ -55,6 +56,8 @@ func TestParseArgs(t *testing.T) {
 		nil,
 		{"frobnicate"},
 		{"check", "cfg"},
+		{"audio", "cfg"},
+		{"audio", "--seconds", "5"},
 		{"check", "--full"},
 		{"read"},
 		{"read", "--profile", "5"},
@@ -678,5 +681,12 @@ func TestStopWithNothingRunning(t *testing.T) {
 	}
 	if code := realMain([]string{"reload", filepath.Join(dir, "missing")}, &out, &errOut); code != 1 {
 		t.Fatalf("missing folder: exit code %d", code)
+	}
+}
+
+// The audio command is for developers: it works but is not in the usage text.
+func TestAudioHidden(t *testing.T) {
+	if strings.Contains(usageText, "audio") {
+		t.Error("the usage text names the audio command")
 	}
 }

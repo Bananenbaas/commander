@@ -87,7 +87,7 @@ func parseArgs(args []string) (command, error) {
 	c.name = args[0]
 	needsConfig, needsProfile := false, false
 	switch c.name {
-	case "check", "keytest":
+	case "check", "keytest", "audio": // audio: a developer check, not in the usage text
 	case "read":
 		needsProfile = true
 	case "preview", "apply", "run", "stop", "reload", "background":
