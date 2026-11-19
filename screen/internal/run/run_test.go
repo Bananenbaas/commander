@@ -181,6 +181,7 @@ type harness struct {
 	audio  Audio
 	mixErr func(n int) error // fails the nth mixer write of the fake keyboard
 	mixes  int
+	mixAt  []time.Duration // when each list and level frame was recorded
 }
 
 // namedKB is a fake keyboard that can tell its profile names.

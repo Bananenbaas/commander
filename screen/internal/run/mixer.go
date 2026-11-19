@@ -47,6 +47,12 @@ const maxPrograms = proto.MaxMixerRows - 1
 // before it writes again.
 const mixBackoff = 5 * time.Second
 
+// mixSettle is how long the level frames wait after a list (report 0x28): the
+// keyboard ignores the frames sent right after it. Swarm II waits about 580 ms
+// (capture 45-mixer-new-app-1: the 0x28 write at 6.038 s, the first a3 03 0e
+// frame at 6.615 s).
+const mixSettle = 600 * time.Millisecond
+
 // Kinds of mixer errors, each logged once until that kind works again.
 const (
 	mixRead = iota
@@ -116,8 +122,9 @@ func (l *loop) mixerKB() (mixerKeyboard, bool) {
 }
 
 // mixStep reads the sessions when they changed and sends what differs from
-// what the keyboard shows: the list (report 0x28) when the names changed,
-// and the level frames that changed. An error of the audio pauses the mixer
+// what the keyboard shows: the list (report 0x28) when the names changed, or
+// else the level frames that changed; after a list, all the frames follow in
+// a later step, once mixSettle has passed. An error of the audio pauses the mixer
 // until the next change signal, reconnect or profile switch. A write the
 // keyboard refused is tried again, all of it, once mixBackoff has passed; a
 // stalled frame or a keyboard that is gone closes the keyboard, as for
@@ -148,6 +155,17 @@ func (l *loop) mixStep(ctx context.Context) {
 		return
 	}
 	m.logged[mixWrite] = false
+}
+
+// mixDue tells how long until the mixer has something to send, when it waits
+// for its time to come: the frames after a list, or a write after a refused
+// one.
+func (l *loop) mixDue() (time.Duration, bool) {
+	if _, ok := l.mixerKB(); !ok || !l.mix.dirty {
+		return 0, false
+	}
+	until := l.mix.after.Sub(l.now())
+	return until, until > 0
 }
 
 // pickPrograms returns at most maxPrograms of progs. A shown program that
@@ -192,9 +210,9 @@ func (l *loop) pickPrograms(progs []Session) []Session {
 	return picked
 }
 
-// sendMixer sends the list when its names changed, then the program frames
-// and the system frame that changed (all of them after a new list), in the
-// order Swarm II sends them.
+// sendMixer sends the list when its names changed and leaves all the level
+// frames to the step after mixSettle. Otherwise it sends the program frames
+// and the system frame that changed, in the order Swarm II sends them.
 func (l *loop) sendMixer(mk mixerKeyboard, sys Session, progs []Session) error {
 	m := &l.mix
 	names := make([]string, len(progs))
@@ -216,7 +234,9 @@ func (l *loop) sendMixer(mk mixerKeyboard, sys Session, progs []Session) error {
 		if err := mk.WriteMixerList(b); err != nil {
 			return err
 		}
-		m.list = names
+		m.list, m.shown = names, ids
+		m.dirty, m.after = true, l.now().Add(mixSettle)
+		return nil
 	}
 	m.shown = ids
 	frames := proto.ProgramLevelFrames(levels)

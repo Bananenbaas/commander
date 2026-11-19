@@ -63,8 +63,9 @@ step with Windows:
   (`IMMNotificationClient`). On a change it writes report `0x28`: the system
   volume first, then up to four programs (only the level frames for programs 1-2 and 3-4,
   `03 0e` and `06 0e`, have been observed) by their display name (the executable
-  name without `.exe` when a program gives none). Nothing is polled while
-  nothing changes.
+  name without `.exe` when a program gives none). The level frames follow
+  600 ms after a list: the keyboard ignores frames sent right after it, and
+  Swarm II waits about 580 ms. Nothing is polled while nothing changes.
 - Which programs: sessions that are expired are dropped; a program that
   plays sound comes before one that is only listed (Windows keeps sessions of
   programs that once played). A shown program keeps its row while it plays;

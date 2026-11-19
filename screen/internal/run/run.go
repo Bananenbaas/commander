@@ -255,7 +255,8 @@ type loop struct {
 // and again after every profile change and every change signal of d.Audio,
 // the volumes are read: the list (report 0x28) is written when the shown
 // names changed, and the a3 level frames that changed are sent, all of them
-// after a new list, a reconnect or a profile change; a redraw of the main
+// after a new list (600 ms after it, as Swarm II does), a reconnect or a
+// profile change; a redraw of the main
 // page sends the levels again. This happens between lighting sets, never
 // inside one. A slider moved on the page sets the system volume or the
 // volume of the program on its row; a row without a program is ignored. An
@@ -299,6 +300,9 @@ func Run(ctx context.Context, cfg *layout.Config, d Deps) error {
 				l.frame(ctx)
 				continue
 			}
+			wait = min(wait, until)
+		}
+		if until, ok := l.mixDue(); ok {
 			wait = min(wait, until)
 		}
 		l.read(ctx, wait)

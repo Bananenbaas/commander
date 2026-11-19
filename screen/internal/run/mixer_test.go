@@ -36,6 +36,7 @@ func (k *fakeKB) WriteMixerList(b []byte) error {
 		rows = append(rows, fmt.Sprintf("%s %d", bytes.TrimRight(r[1:42], "\x00"), r[42]))
 	}
 	k.h.record("list " + strings.Join(rows, "|"))
+	k.h.mixAt = append(k.h.mixAt, time.Since(k.h.start))
 	return nil
 }
 
@@ -61,6 +62,7 @@ func (k *fakeKB) SendFrame(f [64]byte) error {
 	default:
 		k.h.t.Errorf("frame % x", f[:12])
 	}
+	k.h.mixAt = append(k.h.mixAt, time.Since(k.h.start))
 	return nil
 }
 
@@ -145,8 +147,57 @@ func TestMixerSendsListAndLevels(t *testing.T) {
 			"list SystemVolume 50|Steam 42|Opera 100", "programs 1-2: 42 100", "programs 3-4: 0 0", "system 50",
 			"poll", "poll", "close",
 		})...)
-		if a.reads != 1 {
-			h.t.Errorf("%d reads of the sessions, want 1", a.reads)
+		if a.reads != 2 {
+			h.t.Errorf("%d reads of the sessions, want 2: one for the list, one for the levels", a.reads)
+		}
+	})
+}
+
+// The level frames wait 600 ms after a list, as Swarm II's do: the keyboard
+// ignores those sent right after it.
+func TestMixerLevelsWaitAfterList(t *testing.T) {
+	test(t, func(h *harness) {
+		a := newAudio(h, 50, prog("a", "Steam", 42))
+		h.onPoll[2] = func() {
+			a.change(func(a *fakeAudio) { a.progs = append(a.progs, prog("b", "Opera", 100)) })
+		}
+		h.onPoll[3] = h.cancel
+		h.run(testConfig())
+		sent := func(list string, levels string) []string {
+			return []string{list, "programs 1-2: " + levels, "programs 3-4: 0 0", "system 50"}
+		}
+		h.want(logOf(startLog, sent("list SystemVolume 50|Steam 42", "42 0"),
+			[]string{"poll"}, sent("list SystemVolume 50|Steam 42|Opera 100", "42 100"),
+			[]string{"poll", "close"})...)
+		lists := []time.Duration{h.notified(0) + quietGap, h.pollTimes[2]}
+		for i, list := range lists {
+			at := h.mixAt[4*i : 4*i+4]
+			if at[0] != list {
+				t.Errorf("list %d at %v, want %v", i, at[0], list)
+			}
+			for j, f := range at[1:] {
+				if f != list+600*time.Millisecond {
+					t.Errorf("list %d: frame %d at %v, want %v", i, j, f, list+600*time.Millisecond)
+				}
+			}
+		}
+	})
+}
+
+// A level that changes without a new list is sent at once.
+func TestMixerLevelChangeSentAtOnce(t *testing.T) {
+	test(t, func(h *harness) {
+		a := newAudio(h, 50, prog("a", "Steam", 42))
+		h.onPoll[2] = func() { a.change(func(a *fakeAudio) { a.progs[0].Level = 60 }) }
+		h.onPoll[3] = h.cancel
+		h.run(testConfig())
+		h.want(logOf(startLog, []string{
+			"list SystemVolume 50|Steam 42", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
+			"poll", "programs 1-2: 60 0",
+			"poll", "close",
+		})...)
+		if got := h.mixAt[len(h.mixAt)-1]; got != h.pollTimes[2] {
+			t.Errorf("level frame at %v, want %v", got, h.pollTimes[2])
 		}
 	})
 }
@@ -244,7 +295,7 @@ func TestMixerSlides(t *testing.T) {
 	test(t, func(h *harness) {
 		a := newAudio(h, 50, prog("a", "Steam", 42), prog("b", "Opera", 100))
 		h.scripts = [][]item{{
-			idleFor(3 * time.Second),
+			idleFor(3500 * time.Millisecond),
 			event(proto.ProgramSlide{Row: 2, Level: 30}),
 			event(proto.ProgramSlide{Row: 3, Level: 10}), // no program on row 3
 			event(proto.ProgramSlide{Row: 0, Level: 10}),
@@ -282,8 +333,8 @@ func TestMixerAudioErrorLoggedOnce(t *testing.T) {
 			"poll", "close",
 		})...)
 		h.wantLogged(1, "no output device")
-		if a.reads != 3 {
-			h.t.Errorf("%d reads, want 3: one at the start and one per change", a.reads)
+		if a.reads != 4 {
+			h.t.Errorf("%d reads, want 4: one at the start, one per change and one for the levels after the list", a.reads)
 		}
 	})
 }
@@ -301,12 +352,14 @@ func TestMixerWriteErrorBacksOff(t *testing.T) {
 		}
 		h.onPoll[2] = func() { a.change(func(*fakeAudio) {}) }
 		h.onPoll[3] = func() { a.change(func(*fakeAudio) {}) }
-		h.onPoll[4] = h.cancel
+		h.onPoll[5] = h.cancel
 		h.run(testConfig())
 		h.want(logOf(startLog, []string{
 			"mixer failed", // 2.5 s
 			"poll", "poll", // 4 s and 6 s: no write before 7.5 s
-			"list SystemVolume 50|Steam 42", "programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
+			"list SystemVolume 50|Steam 42",
+			"poll", // 8 s; the frames follow at 8.1 s
+			"programs 1-2: 42 0", "programs 3-4: 0 0", "system 50",
 			"poll", "close",
 		})...)
 		h.wantLogged(1, "05 01 01 00")
@@ -349,7 +402,7 @@ func TestMixerAgainAfterSwitchAndReconnect(t *testing.T) {
 func TestMixerRedrawSendsLevelsAgain(t *testing.T) {
 	test(t, func(h *harness) {
 		newAudio(h, 50, prog("a", "Steam", 42))
-		h.scripts = [][]item{{idleFor(3 * time.Second), event(proto.Redraw{View: 0x20})}}
+		h.scripts = [][]item{{idleFor(3500 * time.Millisecond), event(proto.Redraw{View: 0x20})}}
 		h.onPoll[2] = h.cancel
 		h.run(testConfig())
 		h.want(logOf(startLog, []string{
