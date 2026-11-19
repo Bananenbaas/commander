@@ -498,11 +498,13 @@ to 100 produced the system-volume `a3 … 00 0d` frames above, one per step.
 | Finding | Status |
 |---|---|
 | A mixer slider moved on the keyboard reports `33 00 03 07 00 01 03 <level>`, level 0–100 | observed (`44-mixer-slider-1`) |
-| Byte 3 `07` is the slider widget type; byte 2 `03` and byte 6 `03` name the slider (here the first application) | hypothesis — one slider moved |
+| **The system slider** reports `33 00 00 06 00 00 03 <level>`: type `06`, byte 5 `00` | observed (`47-mixer-system-and-second-1`) |
+| **A program slider** reports `33 00 03 07 00 <row> 03 <level>`: type `07`, **byte 5 the program's row, 1-based** — `01` for the first program, `02` for the second; bytes 2 and 6 stayed `03` for both | observed (`44-mixer-slider-1`, `47-mixer-system-and-second-1`) |
+| Moving the system slider on the keyboard is answered by Swarm II with the system-volume `a3 … 00 0d` frame once Windows has the new level | observed (`47-mixer-system-and-second-1`) |
 | The application list is **one write**: `SET_REPORT` feature `0x28`, 308 bytes, sent when a program with sound appears | observed (`45-mixer-new-app-1`) |
 | Layout of `0x28`: `28 34 01` (id, length 0x134 little-endian), byte 3 the number of rows (5 here: the system volume and four programs), byte 4 `00`; then one 43-byte row per entry from offset 5: row number (`00`…), the name as ASCII in a 41-byte zero-padded field (`SystemVolume`, `GroverPro`, `Steam`, `Opera GX Internet Browser` twice), and a level byte (`64` for all five); the rest zero, then a 16-bit little-endian sum of the first 306 bytes. Room for seven rows | observed (`45-mixer-new-app-1`) |
 | The live levels follow as `a3` frames right after the list: `a3 00 01 00 03 0e 00 64 64 00 2a 2a` — the first two programs, GroverPro at 100 and Steam at 42 (as set in `44-mixer-slider-1`), each level twice — then `a3 00 01 00 06 0e 00 64 64 00 64 64` for programs three and four, then the system volume `00 0d` and the mute frame `01 02 02` | observed (`45-mixer-new-app-1`) |
-| A program's slider keeps its row: GroverPro, now the first program, reported `33 00 03 07 00 01 03 <level>` when dragged to 67 — the same bytes as Steam when it was first. So `03` names the first program's row, not the program | observed (`44-mixer-slider-1`, `45-mixer-new-app-1`) |
+| A program's slider keeps its row: GroverPro, now the first program, reported `33 00 03 07 00 01 03 <level>` when dragged to 67 — the same bytes as Steam when it was first. The report names the row, not the program | observed (`44-mixer-slider-1`, `45-mixer-new-app-1`) |
 | The level byte in the `0x28` rows (100 for Steam although it stood at 42) | unknown — perhaps a default the `a3` frames override |
 
 **This answers open question 2.** Live PC data is pushed as **numbers**, not as
