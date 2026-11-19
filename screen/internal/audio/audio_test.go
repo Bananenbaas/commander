@@ -38,16 +38,13 @@ func TestLevelOf(t *testing.T) {
 }
 
 func TestMergeSessions(t *testing.T) {
-	exe := func(pid uint32) string {
-		return map[uint32]string{100: "opera", 200: "GroverPro", 300: ""}[pid]
-	}
 	raw := []rawSession{
-		{PID: 100, Display: "", Level: 80},
-		{PID: 200, Display: "@%SystemRoot%\\x.dll,-1", Level: 30, Muted: true, Active: true},
-		{PID: 100, Display: "Opera", Level: 20, Muted: true, Active: true},
+		{PID: 100, Display: "", Exe: "opera", Level: 80},
+		{PID: 200, Display: "@%SystemRoot%\\x.dll,-1", Exe: "GroverPro", Level: 30, Muted: true, Active: true},
+		{PID: 100, Display: "Opera", Exe: "opera", Level: 20, Muted: true, Active: true},
 		{PID: 300, Display: "  ", Level: 5},
 	}
-	got := merge(raw, exe)
+	got := merge(raw)
 	want := []Session{
 		// Two sessions of one process are one program: the first session's
 		// level and mute, the first usable display name, active when any of
@@ -59,7 +56,7 @@ func TestMergeSessions(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("merge =\n%+v\nwant\n%+v", got, want)
 	}
-	if got := merge(nil, exe); len(got) != 0 {
+	if got := merge(nil); len(got) != 0 {
 		t.Errorf("merge(nil) = %+v", got)
 	}
 }

@@ -44,8 +44,9 @@ type winSession struct {
 	ctl    *comPtr // IAudioSessionControl2
 	simple *comPtr // ISimpleAudioVolume
 	pid    uint32
-	listed bool // evCB is registered with ctl
-	seen   bool // listed by the latest enumeration
+	exe    string // the executable name, read once when the session is followed
+	listed bool   // evCB is registered with ctl
+	seen   bool   // listed by the latest enumeration
 }
 
 // openEngine initialises COM (multithreaded) on the calling thread, which
@@ -170,7 +171,7 @@ func (e *winEngine) sessions() (Session, []Session, error) {
 	if err == nil {
 		var raw []rawSession
 		if raw, err = e.read(); err == nil {
-			return system, merge(raw, processName), nil
+			return system, merge(raw), nil
 		}
 	}
 	// The device may be gone (unplugged, disabled): take it again next time.
@@ -235,7 +236,7 @@ func (e *winEngine) read() ([]rawSession, error) {
 		s.simple.call(mSimpleGetMute, uintptr(unsafe.Pointer(&muted)))
 		var state int32
 		active := !s.ctl.call(mGetState, uintptr(unsafe.Pointer(&state))).failed() && state == sessionActive
-		raw = append(raw, rawSession{PID: s.pid, Display: s.ctl.text(mGetDisplayName), Level: levelOf(f), Muted: muted != 0, Active: active})
+		raw = append(raw, rawSession{PID: s.pid, Display: s.ctl.text(mGetDisplayName), Exe: s.exe, Level: levelOf(f), Muted: muted != 0, Active: active})
 	}
 	return raw, nil
 }
@@ -277,6 +278,7 @@ func (e *winEngine) track(c *comPtr) *winSession {
 	if ctl.call(mGetProcessID, uintptr(unsafe.Pointer(&s.pid))).failed() {
 		s.pid = 0
 	}
+	s.exe = processName(s.pid)
 	s.listed = !ctl.call(mRegisterAudioSessionNotification, e.evCB.ptr()).failed()
 	e.followed[id] = s
 	return s

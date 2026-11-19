@@ -165,6 +165,7 @@ func levelOf(f float32) int {
 type rawSession struct {
 	PID     uint32
 	Display string // the display name the program set; may be empty or an @-resource
+	Exe     string // the executable name without ".exe"; "" when unknown
 	Level   int
 	Muted   bool
 	Active  bool // the session plays sound
@@ -190,12 +191,14 @@ func exeName(path string) string {
 
 // merge turns sessions into programs, one per process, in the order of each
 // process's first session. A program's level and mute are those of its
-// first session, and it is active when any of its sessions is; its name is the first usable display name of its sessions,
-// else the executable name from exe, else "Program <pid>".
-func merge(raw []rawSession, exe func(pid uint32) string) []Session {
+// first session, and it is active when any of its sessions is. Its name is
+// the first usable display name of its sessions, else the executable name of
+// its first session that has one, else "Program <pid>".
+func merge(raw []rawSession) []Session {
 	var out []Session
 	at := map[uint32]int{}
 	named := map[uint32]bool{}
+	exe := map[uint32]string{}
 	for _, r := range raw {
 		i, seen := at[r.PID]
 		if !seen {
@@ -204,6 +207,9 @@ func merge(raw []rawSession, exe func(pid uint32) string) []Session {
 			out = append(out, Session{ID: strconv.FormatUint(uint64(r.PID), 10), Level: r.Level, Muted: r.Muted})
 		}
 		out[i].Active = out[i].Active || r.Active
+		if exe[r.PID] == "" {
+			exe[r.PID] = r.Exe
+		}
 		if !named[r.PID] && usableName(r.Display) {
 			out[i].Name = strings.TrimSpace(r.Display)
 			named[r.PID] = true
@@ -213,7 +219,7 @@ func merge(raw []rawSession, exe func(pid uint32) string) []Session {
 		if named[pid] {
 			continue
 		}
-		if name := exe(pid); name != "" {
+		if name := exe[pid]; name != "" {
 			out[i].Name = name
 		} else {
 			out[i].Name = "Program " + out[i].ID
