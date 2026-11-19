@@ -103,8 +103,16 @@ func newSession(kb Keyboard) *session { return &session{kb: kb, active: noProfil
 
 // switchTo makes p the active profile. The switch is left out when the
 // keyboard last confirmed p and the input that waits reports no change since.
-// A failed switch leaves the active profile unknown.
+// A failed switch leaves the active profile unknown. The error names p.
 func (s *session) switchTo(p byte) error {
+	if err := s.switchBare(p); err != nil {
+		return fmt.Errorf("profile %d: %w", p, err)
+	}
+	return nil
+}
+
+// switchBare is switchTo with the keyboard's error as it is.
+func (s *session) switchBare(p byte) error {
 	if s.active == int(p) {
 		s.follow()
 		if s.active == int(p) {
@@ -120,7 +128,7 @@ func (s *session) switchTo(p byte) error {
 		err = s.kb.SwitchProfileFresh(p)
 	}
 	if err != nil {
-		return fmt.Errorf("profile %d: %w", p, err)
+		return err
 	}
 	s.active = int(p)
 	return nil
@@ -350,7 +358,10 @@ func lit(cfg *layout.Config) []layout.Profile {
 }
 
 // storeLighting reads the stored lighting of p and writes it back when it
-// differs from what the layout asks for, switching to p first. The colours
+// differs from what the layout asks for, switching to p first. When the
+// table cannot be read while another profile is active (reading the table
+// of an inactive profile is not measured), it switches to p and reads it
+// again. The colours
 // asked for are the [stored_light] colour on every LED when it gives one,
 // else the still picture of the [light] layers (light.Still), else the ones
 // the keyboard holds; the brightness is the [stored_light] one when given,
@@ -359,7 +370,12 @@ func lit(cfg *layout.Config) []layout.Profile {
 func storeLighting(s *session, p layout.Profile) (bool, error) {
 	t, err := s.kb.ReadLightsTable(p.Number)
 	if err != nil {
-		return false, fmt.Errorf("profile %d: %w", p.Number, err)
+		if err := s.switchBare(p.Number); err != nil {
+			return false, fmt.Errorf("profile %d: stored lighting: %w", p.Number, err)
+		}
+		if t, err = s.kb.ReadLightsTable(p.Number); err != nil {
+			return false, fmt.Errorf("profile %d: %w", p.Number, err)
+		}
 	}
 	have := t.Colours()
 	colours, brightness := have, t.Brightness()
@@ -383,8 +399,8 @@ func storeLighting(s *session, p layout.Profile) (bool, error) {
 	if err := t.SetBrightness(brightness); err != nil {
 		return false, fmt.Errorf("profile %d: %w", p.Number, err)
 	}
-	if err := s.switchTo(p.Number); err != nil {
-		return false, err
+	if err := s.switchBare(p.Number); err != nil {
+		return false, fmt.Errorf("profile %d: stored lighting: %w", p.Number, err)
 	}
 	if err := s.kb.WriteLightsTable(t); err != nil {
 		return false, fmt.Errorf("profile %d: stored lighting: %w", p.Number, err)

@@ -5,6 +5,7 @@ package apply
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image/color"
 	"slices"
@@ -35,9 +36,14 @@ func stored11(t *testing.T, p byte) *proto.Table11 {
 }
 
 // ReadLightsTable gives a copy of the profile's 0x11 table; a table is read
-// for any profile without switching to it.
+// for any profile without switching to it, unless activeOnly is set: then
+// the active profile's table comes back and the profile check of the real
+// keyboard refuses it.
 func (f *fakeKB) ReadLightsTable(p byte) (*proto.Table11, error) {
 	f.record("read11 %d", p)
+	if f.activeOnly && f.active != int(p) {
+		return nil, fmt.Errorf("fake: lighting report is for profile %d, asked for %d", f.active, p)
+	}
 	if f.b11[p] == nil {
 		f.b11[p] = stored11(f.t, p)
 	}
@@ -195,5 +201,39 @@ func TestApplyLightingStatusError(t *testing.T) {
 	_, err := Apply(context.Background(), f, lightingCfg(t), &ledger.Ledger{}, false, nothingRuns, nil)
 	if err == nil || !strings.Contains(err.Error(), "profile 0") || !strings.Contains(err.Error(), "05 01 00 00") {
 		t.Fatalf("err = %v, want the status error naming profile 0", err)
+	}
+}
+
+// When the keyboard gives a table only for the active profile, Apply
+// switches to the profile and reads it again.
+func TestApplyReadsStoredLightingAfterSwitch(t *testing.T) {
+	f := newFake(t)
+	f.activeOnly = true
+	rep := mustApply(t, f, lightingCfg(t), &ledger.Ledger{}, false)
+	if !slices.Equal(rep.Lighting, []byte{0, 1}) {
+		t.Errorf("Lighting = %v, want [0 1]", rep.Lighting)
+	}
+	i := slices.Index(f.calls, "read11 0")
+	if i < 0 || !slices.Contains(f.calls[i+1:], "read11 0") || !slices.Contains(f.calls[i+1:], "write11 0") {
+		t.Errorf("calls %v: want profile 0 read again after the switch, then written", f.calls)
+	}
+}
+
+// A failed switch for the stored lighting names the profile and the step.
+func TestApplyStoredLightingSwitchError(t *testing.T) {
+	f := newFake(t)
+	switches := 0
+	f.switchErr = func(p byte) error {
+		if p != 0 {
+			return nil
+		}
+		if switches++; switches > 1 { // the first one reads the buttons
+			return errors.New("not confirmed")
+		}
+		return nil
+	}
+	_, err := Apply(context.Background(), f, lightingCfg(t), &ledger.Ledger{}, false, nothingRuns, nil)
+	if err == nil || !strings.HasPrefix(err.Error(), "profile 0: stored lighting: ") || !strings.Contains(err.Error(), "not confirmed") {
+		t.Fatalf("err = %v, want profile 0: stored lighting: ...; calls %v", err, f.calls)
 	}
 }
