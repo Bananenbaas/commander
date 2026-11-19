@@ -44,6 +44,10 @@ const (
 	// stops answering.
 	replugTitle = "Keyboard not answering"
 	replugText  = "Unplug the keyboard and plug it back in."
+	// applyingTitle and applyingText make the balloon shown when Apply
+	// buttons starts.
+	applyingTitle = "Applying buttons and lighting"
+	applyingText  = "Keep the keyboard plugged in; it does not type while pictures upload."
 	// replugTip is the tooltip while the keyboard does not answer.
 	replugTip = "the keyboard does not answer, unplug and replug it"
 )
@@ -210,6 +214,9 @@ func balloonsFor(prev, st supervisor.State) []balloon {
 	}
 	if st.Phase == supervisor.Running && st.Run.Waiting == run.WaitReplug && prev.Run.Waiting != run.WaitReplug {
 		return []balloon{{replugTitle, replugText}}
+	}
+	if st.Phase == supervisor.Applying && prev.Phase != supervisor.Applying {
+		return []balloon{{applyingTitle, applyingText}}
 	}
 	statusOnly := st.Phase == prev.Phase && st.Err == prev.Err && st.Note == "" && st.Run != prev.Run
 	if statusOnly {
