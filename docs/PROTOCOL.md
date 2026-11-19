@@ -93,7 +93,7 @@ From the report descriptors fetched during enumeration in `01-plug-in-1`.
 | 2 | `0x03` | `0xff01` vendor | in 7 B | observed (`01-plug-in-1`) |
 | 2 | `0x04` | `0x0007` keyboard/keypad | in 20 B | observed (`01-plug-in-1`) |
 | 2 | `0x33` | `0xff02` vendor | in 11 B | observed (`01-plug-in-1`) |
-| 2 | 37 further IDs | `0xff03` vendor | **feature** only, 3–1043 B | observed (`01-plug-in-1`) |
+| 2 | 37 further IDs | `0xff03` vendor | **feature** only, 3-1043 B | observed (`01-plug-in-1`) |
 | 3 | `0x00` | `0x0008` LED / `0x0007` keyboard | in 8 B, out 1 B | observed (`01-plug-in-1`) |
 
 Interface 2 carries 42 reports in total. The ordinary input ones are the media
@@ -188,11 +188,11 @@ take 2   03 00 31 20 c9 da 00 00
 | Field | Reading | Status |
 |---|---|---|
 | Byte 0 | report ID `0x03` | observed |
-| Bytes 1–3 | `00 31 20`, identical in both takes | observed |
+| Bytes 1-3 | `00 31 20`, identical in both takes | observed |
 | Byte 4 | **varies between otherwise identical runs** (`0xd1` / `0xc9`), treat as noise, not payload | observed |
 | Byte 5 | `0xda`, identical in both takes | observed |
-| Bytes 6–7 | `00 00` in both takes | observed |
-| What byte 4 means | unclear. With byte 5 as a little-endian pair it reads `0xdad1` / `0xdac9`, eight apart. The same event appears after profile switches and screen changes with bytes 4–6 different every time, but not as a steadily rising counter (see "Device notifications") | unknown |
+| Bytes 6-7 | `00 00` in both takes | observed |
+| What byte 4 means | unclear. With byte 5 as a little-endian pair it reads `0xdad1` / `0xdac9`, eight apart. The same event appears after profile switches and screen changes with bytes 4-6 different every time, but not as a steadily rising counter (see "Device notifications") | unknown |
 
 Comparing the two takes also confirms the report map itself is **stable**: all 45
 report-descriptor entries are byte-identical between the captures, so the map in
@@ -217,9 +217,9 @@ for a whole enumeration. Traffic on the KB7 was 4926 transfers out on `0x0d` and
 | Offset | OUT on `0x0d` | IN on `0x85` | Status |
 |---|---|---|---|
 | 0 | `a1` constant | `32` constant | observed (`00-idle-1`) |
-| 1 | bank number, `01`–`06` | the **same** bank number echoed back | observed (`00-idle-1`) |
-| 2–3 | `68 01` on bank 1, `00 00` on banks 2–6 | `00 00` | observed (`00-idle-1`) |
-| 4–63 | 60 bytes of payload | 60 zero bytes | observed (`00-idle-1`) |
+| 1 | bank number, `01`-`06` | the **same** bank number echoed back | observed (`00-idle-1`) |
+| 2-3 | `68 01` on bank 1, `00 00` on banks 2-6 | `00 00` | observed (`00-idle-1`) |
+| 4-63 | 60 bytes of payload | 60 zero bytes | observed (`00-idle-1`) |
 
 `0x0168` = **360** = 6 banks × 60 payload bytes, so bank 1 declares the total
 payload length of the cycle. The device's reply carries no data at all: it is a
@@ -325,7 +325,7 @@ lighting page is one complete `0x11` block.
 |---|---|
 | Storing a profile's lighting is a write of the whole `0x11` block for that profile (byte 3 the slot, `03` for `DEFAULT 04`), with the colours in the usual layout (`1c`, `36`, `ff` for 28, 54, 255) | observed (`46-light-save-static-blue-1`) |
 | **Byte 6 is the profile's brightness in percent**: the brightness slider wrote `63`, `46`, `2a`, `1b`, `63` (99, 70, 42, 27, 99), nothing else changing | observed (`46-light-save-static-blue-1`) |
-| Bytes 4–5 `01 06` and 7–9 `0b 01 00` stayed the same through every write | observed; meaning unknown |
+| Bytes 4-5 `01 06` and 7-9 `0b 01 00` stayed the same through every write | observed; meaning unknown |
 | The stored table survives unplugging the keyboard | not yet checked |
 
 #### Streaming our own LED frames works, and contends with Swarm II
@@ -344,12 +344,12 @@ whichever frame arrived last, roughly twenty-eight times a second.
 | Finding | Status |
 |---|---|
 | The `a1` stream drives the LEDs, and frames written from our own code are rendered | **confirmed** (`13-replay-led-stream-green-1`) |
-| A frame is 64 bytes: `a1 <bank 01–06> <len-lo> <len-hi>` plus 60 payload bytes, with the length only on bank 1 | **confirmed** |
+| A frame is 64 bytes: `a1 <bank 01-06> <len-lo> <len-hi>` plus 60 payload bytes, with the length only on bank 1 | **confirmed** |
 | Writing goes to the interface 1 collection as a 65-byte `WriteFile`, exactly like the `a3` volume frame | **confirmed** |
 | The device renders the most recent frame; there is no arbitration between writers | observed |
 | A frame streamed after a profile switch stays on the LEDs: switching from the profile `kb7screen run` streamed (SC) to one it does not (DESKTOP), the keyboard first showed DESKTOP's stored `0x11` lighting, then the one frame `run` sent after the switch replaced it and stayed (seen on WASD) | observed (`kb7screen run`, owner's observation, no capture) |
 | The LEDs also keep the last frame when the stream stops without a switch (the streaming program ends or crashes) | hypothesis, expected from the row above, not observed |
-| A set cut short after bank 1 left the LEDs frozen until the keyboard was unplugged; later sets were not acknowledged | observed (owner, `kb7screen run`, no capture); cause: hypothesis, the keyboard waits for banks 2–6 of the started set |
+| A set cut short after bank 1 left the LEDs frozen until the keyboard was unplugged; later sets were not acknowledged | observed (owner, `kb7screen run`, no capture); cause: hypothesis, the keyboard waits for banks 2-6 of the started set |
 | Neither writer loses frames under contention: all 1188 of ours and all 3734 of Swarm II's appear in the capture | observed (`13-replay-led-stream-green-1`) |
 
 **The architectural consequence.** Lighting cannot be shared. Whoever streams
@@ -388,7 +388,7 @@ IN  0x80   05 01 00 00                  device reports ready
 IN  0x80   <report id> <len> <data>     the selected block
 ```
 
-Byte 1 of the selector write is the profile, `00`–`04`; an earlier version of
+Byte 1 of the selector write is the profile, `00`-`04`; an earlier version of
 this section read it as a constant `00`. Both startup captures
 (`02-swarm-start-1`, `02-swarm-start-2`) write each selector once per profile,
 as `05 00 <selector> 00`, `05 01 <selector> 00` … `05 04 <selector> 00`.
@@ -426,7 +426,7 @@ what ties the report map to real behaviour.
 | `b4` and `b5` both return report `0x31`, `b6` and `b7` both return `0x32`: two selectors, one block shape. Likely separate slots of the same kind of block, for instance per profile or per layer | hypothesis |
 | Each selector was read five times in this capture, once per profile, except `ba` once | observed (`02-swarm-start-1`) |
 | Report `0x16` (103 B, selector `ba`) holds the names of all five profiles, see "Profiles". Not a host name, as first assumed | observed (`02-swarm-start-1`) |
-| **Byte 1 of the selector write chooses the profile slot, 0–4, and the block names it again** (byte 3 of `0x29`, byte 2 of `0x25`). At startup every selector read five times is written with byte 1 `00`…`04`, and the five blocks returned count `00`…`04` in their profile byte. The lighting block `0x11` differs between slots; the screen block `0x29` is identical in all five apart from that byte | observed (`02-swarm-start-1`, `02-swarm-start-2`, reports `0x11`, `0x21`, `0x29`) |
+| **Byte 1 of the selector write chooses the profile slot, 0-4, and the block names it again** (byte 3 of `0x29`, byte 2 of `0x25`). At startup every selector read five times is written with byte 1 `00`…`04`, and the five blocks returned count `00`…`04` in their profile byte. The lighting block `0x11` differs between slots; the screen block `0x29` is identical in all five apart from that byte | observed (`02-swarm-start-1`, `02-swarm-start-2`, reports `0x11`, `0x21`, `0x29`) |
 | Reading one profile on its own: `05 01 b9 00` returns the `0x29` block of profile 1 (byte 3 `01`), and `05 01 b8 00` its `0x25` block (byte 2 `01`) | observed (`34-read-profile-1`) |
 | Report `0x0e` is written as `0e 05 00 00 00` and `0e 05 01 00 00`, a register taking 0 and 1, looks like enabling something before the reads | hypothesis |
 | From a cold start (`02-swarm-start-2`, the keyboard silent since the PC booted), `0e 05 01 00 00` is Swarm II's **first write**, before any selector read, and the screen redraws (`31` event) two seconds later. Replayed on its own, it switches on the notifications described under "Without Swarm II" | **confirmed** (`19-replay-0e-1`) |
@@ -467,13 +467,13 @@ exactly:
 | Finding | Status |
 |---|---|
 | `a3 00 01 00 00 0d` introduces a system-volume frame; the level sits at offsets 6 **and** 10 | **confirmed** (`09-volume-50-1`, replayed in `11-replay-volume-07-1`) |
-| The level is a plain percentage, 0–100 decimal, not a 0–255 scale | **confirmed** (`09-volume-50-1`, replayed in `11-replay-volume-07-1`) |
+| The level is a plain percentage, 0-100 decimal, not a 0-255 scale | **confirmed** (`09-volume-50-1`, replayed in `11-replay-volume-07-1`) |
 | `a3` frames are change-driven, not periodic | observed (`00-idle-1` has none, `09-volume-50-1` has nine) |
 | Why the level is repeated at two offsets, two channels, or current and target | unknown |
 
-Bytes 4–5 distinguish frame types. Seen so far:
+Bytes 4-5 distinguish frame types. Seen so far:
 
-| Bytes 4–5 | Body | Reading | Status |
+| Bytes 4-5 | Body | Reading | Status |
 |---|---|---|---|
 | `00 0d` | `<vol> 00 <unmuted> 00 <vol> 00` | system volume. Byte 8 is `01` while sound is on and `00` while muted | observed (`09-volume-50-1`, `05-touch-tap-volumeicon-1`) |
 | `03 0e` | `00 64 64 00 64 64 00` | per-application volume. The volume page on the screen shows the system level plus two applications, both at 100%, which matches two pairs of `0x64` | hypothesis |
@@ -482,7 +482,7 @@ Bytes 4–5 distinguish frame types. Seen so far:
 | `01 02 04` | `00 00 02 00 00 0c` | unknown | unknown |
 | `01 02 0b` | `00 00 <value> 00` | CPU temperature in °C for the widget at position 2: `10` = 16, drawn as "16 °C". Sent once in 3.5 minutes, so change-driven like the rest; with no host sending, the widget shows 0 °C after a redraw | observed (`15-screen-assign-app3-cputemp-1`, screen) |
 
-Read with the last two rows, bytes 4–5 of the `01 …` frames look like
+Read with the last two rows, bytes 4-5 of the `01 …` frames look like
 `<position> <kind>`: the speaker sits at position 2, which carries the mute
 state (`02`), and, after the CPU temperature widget was dropped there, the
 temperature (`0b`). A hypothesis with two data points.
@@ -497,7 +497,7 @@ to 100 produced the system-volume `a3 … 00 0d` frames above, one per step.
 
 | Finding | Status |
 |---|---|
-| A mixer slider moved on the keyboard reports `33 00 03 07 00 01 03 <level>`, level 0–100 | observed (`44-mixer-slider-1`) |
+| A mixer slider moved on the keyboard reports `33 00 03 07 00 01 03 <level>`, level 0-100 | observed (`44-mixer-slider-1`) |
 | **The system slider** reports `33 00 00 06 00 00 03 <level>`: type `06`, byte 5 `00` | observed (`47-mixer-system-and-second-1`) |
 | **A program slider** reports `33 00 03 07 00 <row> 03 <level>`: type `07`, **byte 5 the program's row, 1-based**: `01` for the first program, `02` for the second; bytes 2 and 6 stayed `03` for both | observed (`44-mixer-slider-1`, `47-mixer-system-and-second-1`) |
 | Moving the system slider on the keyboard is answered by Swarm II with the system-volume `a3 … 00 0d` frame once Windows has the new level | observed (`47-mixer-system-and-second-1`) |
@@ -583,7 +583,7 @@ Byte 2 selects the kind of event. Seen so far:
 | `11` | `03 00 11 <off> 00 00 00 00` | the RGB on/off button: `01` when it switched the LEDs off, `00` when back on | observed |
 | `f1` | `03 00 f1 08 57 11 <down> 00` | sent alongside the Microphone Off button's own `02` event | observed; meaning unknown |
 | `f1` | `03 00 f1 01 <id> <down> 00` | an application button touched (`01`) or released (`00`), alongside its `0x33`. `<id>` is 16-bit little-endian and follows the position, not the image slot: `5f 12` at position 3, `61 12` at 5, `62 12` at 6, i.e. `0x125c` + position | observed (`27-touch-app-swarm-1`, `28-touch-app-0e-1`, `32-convert-ins-slot3-1`) |
-| `fa` | `03 00 fa …` | hundreds per second while Fn is held; bytes 3–5 change as other keys are pressed | observed; meaning unknown |
+| `fa` | `03 00 fa …` | hundreds per second while Fn is held; bytes 3-5 change as other keys are pressed | observed; meaning unknown |
 
 **What `04-rgb-fn-keys-and-mic-1` shows about who does what.** Swarm II was
 running and sent nothing to the keyboard but its lighting stream throughout.
@@ -598,7 +598,7 @@ running and sent nothing to the keyboard but its lighting stream throughout.
   change and no stream change, with a Swarm II profile active. Whether they do
   something without Swarm II is open.
 
-Bytes 4–6 of the `31` event vary every time, and they are not a simple counter:
+Bytes 4-6 of the `31` event vary every time, and they are not a simple counter:
 across five profile switches they happened to rise (`11 1b 83` … `b9 30 87`),
 but in `06-screen-background-ff0000-1` they went from `0c 1e 01` to `3a f4 00`.
 Their meaning is unknown, and so is that of the "noise" byte in the plug-in
@@ -626,12 +626,12 @@ stream stays unchanged, so lighting is configuration, not a per-frame stream.
 | 1 | `5c` | constant across every `0x11` frame seen | observed |
 | 2 | `01` | constant | observed |
 | 3 | `00` / `04` | varies between the read and the write | unknown |
-| 4–5 | `01 06` | constant | observed |
+| 4-5 | `01 06` | constant | observed |
 | 6 | `63` / `64` | brightness in percent: Swarm II wrote 99 while the brightness was at 99 %, which the Fn-key capture confirms independently through the stream values | observed, by agreement with `04-rgb-fn-keys-and-mic-1` |
 | 7 | `0b` / `03` | differs between the written and the read frame, effect or mode | hypothesis |
-| 8–9 | `01 00` | constant | observed |
-| 10–345 | 336 bytes | the LED table, see below | observed |
-| 346–347 | checksum | 16-bit sum, see below | **confirmed by arithmetic** |
+| 8-9 | `01 00` | constant | observed |
+| 10-345 | 336 bytes | the LED table, see below | observed |
+| 346-347 | checksum | 16-bit sum, see below | **confirmed by arithmetic** |
 
 **The LED table is planar in groups of sixteen.** The 336-byte data area is
 `336 = 7 × 48`, and each 48-byte block holds sixteen reds, then sixteen greens,
@@ -726,7 +726,7 @@ entry, the slot byte and the checksum changed. Each button is a 16-byte entry,
 | 1 | key, as a HID keyboard usage | `46` Print Screen, `47` Scroll Lock, `48` Pause |
 | 2 | kind of binding: `0c` a key, `06` a modifier on its own, `07` a macro, `0b` an application | |
 | 3 | `00` for keys, modifiers and macros; for an application, its **image slot** | |
-| 4–15 | label, ASCII, NUL-terminated. Drawn only for macro and application buttons, see below | `PRINT`, `SCR LK` |
+| 4-15 | label, ASCII, NUL-terminated. Drawn only for macro and application buttons, see below | `PRINT`, `SCR LK` |
 
 Two more kinds, set from Swarm II:
 
@@ -759,10 +759,10 @@ the `K` left over from `BREAK`. Harmless, since the label is NUL-terminated.
 | Finding | Status |
 |---|---|
 | Report `0x29` holds the screen page's button bindings and labels, 16 bytes per position | observed (`02-swarm-start-1`, `15-screen-assign-break-1`) |
-| Header: `29 48 02 <slot>`; offsets 199–581 hold 30 further non-zero bytes of unknown meaning | observed / unknown |
-| The trailer is the same 16-bit sum as report `0x11`: `sum(bytes[0:582]) & 0xffff`, little-endian at 582–583 | **confirmed by arithmetic** on six frames |
+| Header: `29 48 02 <slot>`; offsets 199-581 hold 30 further non-zero bytes of unknown meaning | observed / unknown |
+| The trailer is the same 16-bit sum as report `0x11`: `sum(bytes[0:582]) & 0xffff`, little-endian at 582-583 | **confirmed by arithmetic** on six frames |
 | Report `0x35` sets the **widget type of one position**, see below | observed (`15-screen-assign-break-1`, `15-screen-remove-print-1`) |
-| Where the three icon buttons (positions 0–2) get their actions | unknown |
+| Where the three icon buttons (positions 0-2) get their actions | unknown |
 
 **Report `0x35` decides whether a position is drawn at all.**
 `15-screen-remove-print-1`: in Swarm II I deleted the PRINT button from the
@@ -793,7 +793,7 @@ so the three icon buttons of the top row take a type like any other position.
 **Report `0x25` is the page's whole type table.** 164 bytes: a 10-byte header
 `25 a4 00 00 00 00 01 00 00 00`, then four bytes per position from offset 10,
 `<type> 00 <value> 00`, bytes 6 and 8 of a `0x35` frame, and the same 16-bit
-sum at bytes 162–163. As stored after three applications had been set:
+sum at bytes 162-163. As stored after three applications had been set:
 
 ```
 pos  0-2    3b 00 00 00 | 3e 00 00 00 | 48 00 00 00   lock, snipping, speaker
@@ -822,13 +822,13 @@ tile, no label, the background image shows through.
 | Byte 3 is the position, numbered as in touch report `0x33` (PRINT `03`, BREAK `05`) | observed |
 | Byte 6 is the widget type, with the same values as byte 3 of touch report `0x33`: `03` a key, `05` a modifier on its own, and `00` an **empty slot** | observed |
 | An empty slot is not drawn; the background shows through. The slot's label stays in `0x29` | observed (`15-screen-remove-print-1`, and on the screen) |
-| Bytes 10–11 are the 16-bit sum of bytes 0–9, little-endian, as in `0x11` and `0x29` | confirmed by arithmetic on three frames |
+| Bytes 10-11 are the 16-bit sum of bytes 0-9, little-endian, as in `0x11` and `0x29` | confirmed by arithmetic on three frames |
 | Byte 8 is `0b` for the restored PRINT key and `01` for Left Alt, not a HID usage. It is the value that goes with the type: a key's internal number, or the subtype of type `05` (see the type table under report `0x25`) | observed |
 | Bytes 2 and 4 (`01` in every frame) | unknown, byte 2 may be the page |
 
 So a custom layout can leave key positions empty and show its own artwork from
 the background image in their place. Whether the three icon buttons
-(positions 0–2) can be emptied the same way is untested.
+(positions 0-2) can be emptied the same way is untested.
 
 **Replayed** (`22-replay-0x35-print-1`, no Swarm II component running, report
 `0x0e` written first): the two PRINT frames above, sent on their own with
@@ -976,8 +976,8 @@ two parts:
 
 | Bytes | Content |
 |---|---|
-| 0 – 42,031 | 142 x 148 pixels, RGB565 little-endian, row by row from the top left |
-| 42,032 – 63,047 | 142 x 148 alpha values, one byte per pixel: `00` transparent, `ff` opaque |
+| 0 - 42,031 | 142 x 148 pixels, RGB565 little-endian, row by row from the top left |
+| 42,032 - 63,047 | 142 x 148 alpha values, one byte per pixel: `00` transparent, `ff` opaque |
 
 In Swarm II's upload the alpha is above zero on exactly the 5,135 pixels that
 form the icon, and zero on the 15,873 black pixels around it; 8 dark pixels on
@@ -1037,7 +1037,7 @@ Three things went wrong on the way, and each is a rule now:
 
 | Open | Status |
 |---|---|
-| How many image slots exist | open: 1–9 seen, see below |
+| How many image slots exist | open: 1-9 seen, see below |
 | The `0x25` header and its entries past position 11 | unknown |
 | Byte 1 of an application's `0x29` entry (`01`), and the `01` before the id in `f1` | unknown |
 
@@ -1093,7 +1093,7 @@ Measured with our own code (`37-kb7screen-apply-sc-1`,
 |---|---|
 | **Report `0x35` carries no profile and is queued by the keyboard.** Seven `0x35` frames sent within 2 ms were taken over one by one, from 80 ms to 2.7 s after sending, each answered by `03 00 31 01 <position>`. A `0x06` switch to another profile sent 10 ms after them made the queued type changes land on **that other profile**: the wrong profile was changed | observed (`37-kb7screen-apply-sc-1`) |
 | **A switch (`0x06`) to the profile that is already active is not confirmed**: no `03 00 01 <profile>` came within 5 s. Switching to another profile first and then to the target gives two confirmations | observed (`38-copy-factory-to-desktop-1`, `-2`) |
-| **A whole `0x25` table written from our own code is taken over** when sent at least 200 ms after the `0x29` write: profile 0's tables (`0x29`, then 200 ms, then `0x25`) were replaced, and the keyboard answered with one full redraw `03 00 31 20 …` about 0.2–2 s later | observed (`38-copy-factory-to-desktop-1`, `-2`) |
+| **A whole `0x25` table written from our own code is taken over** when sent at least 200 ms after the `0x29` write: profile 0's tables (`0x29`, then 200 ms, then `0x25`) were replaced, and the keyboard answered with one full redraw `03 00 31 20 …` about 0.2-2 s later | observed (`38-copy-factory-to-desktop-1`, `-2`) |
 
 So a profile's types are written as its whole `0x25` table, and nothing that
 may switch profile is sent before the `03 00 31 20` redraw that follows it.
@@ -1101,7 +1101,7 @@ may switch profile is sent before the `03 00 31 20` redraw that follows it.
 written to the profile in its own byte 2, is not measured; waiting for the
 redraw covers both.
 
-#### Slots 4–9, the top row, and a second profile
+#### Slots 4-9, the top row, and a second profile
 
 `33-convert-home-slot4-1`, from our own code: HOME became an application button
 with a new picture in slot 4 (`a5 44`), shown with its label, and its taps
@@ -1125,7 +1125,7 @@ SET_REPORT 0x06   06 04 00 05             -> 03 00 01 00, 03 00 31 20 …   prof
 
 | Finding | Status |
 |---|---|
-| Slots 1–9 exist (`a5 41`–`a5 49`); slots 1–4 have been written from our own code. The highest slot is unknown | observed |
+| Slots 1-9 exist (`a5 41`-`a5 49`); slots 1-4 have been written from our own code. The highest slot is unknown | observed |
 | **Slots are numbered across profiles**: the first application on profile 1 got slot 9. Each profile has its own `0x29` and `0x25` tables, with the profile in byte 3 of the `0x29` header and byte 2 of the `0x25` header | observed |
 | **The top row can hold application buttons**: the lock button (position 0) became one, showing its picture without a tile | observed (screen) |
 | **The host can switch the active profile**: `SET_REPORT 0x06`, `06 04 <profile> 05`. The keyboard announces the switch as when the profile name is tapped, but not a switch to the profile that is already active (see "Type writes are queued" above) | observed |
@@ -1142,13 +1142,13 @@ wins.
 
 #### Slots up to 15, and pages 2 and 3
 
-`40-swarm-slots-pages-1`: with our own pictures in slots 1–8 (profile 1), Swarm
+`40-swarm-slots-pages-1`: with our own pictures in slots 1-8 (profile 1), Swarm
 II was given seven application buttons on page 1 of profile 2 (`DEFAULT 03`),
 then a website button on page 2 and a third-party application on page 3. Swarm
 II refused an eighth application button with "You can have up to 15 Launch
 Application widgets on the display".
 
-- **Swarm II uploaded to slots 9 to 15** (`a5 49` … `a5 4f`) and left 1–8
+- **Swarm II uploaded to slots 9 to 15** (`a5 49` … `a5 4f`) and left 1-8
   alone, so this time it counted the slots already named in the button tables
   rather than only its own.
 - **Byte 2 of report `0x35` is the page.** `35 0c 02 04 01 00 05 00 05 00`
@@ -1157,7 +1157,7 @@ Application widgets on the display".
   on page 3, position 4.
 - **Report `0x29` holds pages one after the other, twelve entries each.** The
   website button's entry `07 0b 00 "hohoho.nl"` (binding kind `07`) is entry
-  16, i.e. page 2 position 4; page 2's numeric keypad keys fill entries 12–23.
+  16, i.e. page 2 position 4; page 2's numeric keypad keys fill entries 12-23.
   With 35 entries the table ends at page 3 position 10.
 - **Report `0x25` gives every page a marker in front of its twelve types.**
   Page 1's marker is header byte 6 (`01`), page 2's is entry 12 (`02 00 00 00`)
@@ -1166,13 +1166,13 @@ Application widgets on the display".
 
 | Finding | Status |
 |---|---|
-| Image slots 9–15 exist and take uploads | observed (`40-swarm-slots-pages-1`) |
+| Image slots 9-15 exist and take uploads | observed (`40-swarm-slots-pages-1`) |
 | 15 is the highest slot | hypothesis, Swarm II's own limit of 15 application widgets |
-| Byte 2 of `0x35` is the page, 1–3 | observed (`40-swarm-slots-pages-1`) |
+| Byte 2 of `0x35` is the page, 1-3 | observed (`40-swarm-slots-pages-1`) |
 | `0x29` entry of page *g* position *p* is `12 x (g - 1) + p` | observed for page 2; page 3 from the table size |
 | `0x25` entry of page *g* position *p* is `13 x (g - 1) + p`, with page markers at 12 and 25 | observed (`40-swarm-slots-pages-1`) |
 | Page 3 position 11 has no `0x29` entry | hypothesis, from the table size |
-| **Byte 1 of a `0x33` touch is the page**, 1–3: `33 02 06 03 00 59 01 01` is a tap on page 2 position 6 (a keypad key, `59`), `33 03 09 1e 00 00 01 01` one on page 3 position 9 | observed (`41-tap-page2-1`, `42-tap-page3-1`; page 1 is `01` in every earlier capture) |
+| **Byte 1 of a `0x33` touch is the page**, 1-3: `33 02 06 03 00 59 01 01` is a tap on page 2 position 6 (a keypad key, `59`), `33 03 09 1e 00 00 01 01` one on page 3 position 9 | observed (`41-tap-page2-1`, `42-tap-page3-1`; page 1 is `01` in every earlier capture) |
 
 ### The volume dial: a complete round trip
 
@@ -1302,35 +1302,35 @@ candidates, each in its own colour.
 | Index | LED | Index | LED |
 |---|---|---|---|
 | 0 | Esc | 56 | Left Shift |
-| 1–12 | F1–F12 | 57 | none (ISO `<>` position) |
-| 13 | none | 58–64 | Z X C V B N M |
-| 14 | `` ` `` | 65–67 | `,` `.` `/` |
-| 15–24 | 1 2 3 4 5 6 7 8 9 0 | 68 | none |
-| 25–27 | `-` `=` Backspace | 69 | Right Shift |
+| 1-12 | F1-F12 | 57 | none (ISO `<>` position) |
+| 13 | none | 58-64 | Z X C V B N M |
+| 14 | `` ` `` | 65-67 | `,` `.` `/` |
+| 15-24 | 1 2 3 4 5 6 7 8 9 0 | 68 | none |
+| 25-27 | `-` `=` Backspace | 69 | Right Shift |
 | 28 | Tab | 70 | Up arrow |
-| 29–38 | Q W E R T Y U I O P | 71–73 | Left Ctrl, Windows, Left Alt |
-| 39–41 | `[` `]` `\` | 74 | none |
+| 29-38 | Q W E R T Y U I O P | 71-73 | Left Ctrl, Windows, Left Alt |
+| 39-41 | `[` `]` `\` | 74 | none |
 | 42 | Caps Lock | 75 | Space |
-| 43–51 | A S D F G H J K L | 76–77 | none |
-| 52–53 | `;` `'` | 78–79 | Right Alt, Fn |
-| 54 | none (ISO `#` position) | 80–81 | menu key, Right Ctrl |
-| 55 | Enter | 82–84 | Left, Down, Right arrows |
-| | | 85–86 | Previous Track, Next Track |
-| | | 87–90 | the four triangular top buttons, left to right: Game Mode, Profile Cycle, Microphone Off, RGB on/off |
-| | | 91–95 | none |
-| | | 96–105 | wrist rest light strip, ten segments left to right |
-| | | 106–111 | none |
+| 43-51 | A S D F G H J K L | 76-77 | none |
+| 52-53 | `;` `'` | 78-79 | Right Alt, Fn |
+| 54 | none (ISO `#` position) | 80-81 | menu key, Right Ctrl |
+| 55 | Enter | 82-84 | Left, Down, Right arrows |
+| | | 85-86 | Previous Track, Next Track |
+| | | 87-90 | the four triangular top buttons, left to right: Game Mode, Profile Cycle, Microphone Off, RGB on/off |
+| | | 91-95 | none |
+| | | 96-105 | wrist rest light strip, ten segments left to right |
+| | | 106-111 | none |
 
 94 of the 112 slots drive something.
 
 | Finding | Status |
 |---|---|
-| The main block is laid out as rows of fourteen: 0–13, 14–27, 28–41, 42–55, 56–69, with the bottom row from 70 | **confirmed** |
+| The main block is laid out as rows of fourteen: 0-13, 14-27, 28-41, 42-55, 56-69, with the bottom row from 70 | **confirmed** |
 | The matrix is wired for an **ISO** layout: slots 54 and 57 sit exactly where the ISO-only `#` and `<>` keys would be, and are empty on this ANSI unit | **confirmed** for the empty slots; an ISO unit lighting them is a hypothesis |
 | The other empty main-block slots match the extra keys of the **Japanese** layout, which the KB7 is sold in: 68 where `ろ` sits between `/` and Right Shift, and 74, 76 and 77 where `無変換`, `変換` and `かな` flank the space bar. So the table is likely one superset of every layout variant | hypothesis, needs an ISO or JIS unit |
-| The up arrow sits at 70, at the start of the bottom row, apart from the other three arrows (82–84) | **confirmed** |
+| The up arrow sits at 70, at the start of the bottom row, apart from the other three arrows (82-84) | **confirmed** |
 | The volume dial and its play/pause button have no slot in this table | observed, they never lit in any pass |
-| The wrist rest strip is ten LEDs, 96–105, driven from the same table | **confirmed** |
+| The wrist rest strip is ten LEDs, 96-105, driven from the same table | **confirmed** |
 
 **Report `0x11` is what the keyboard shows on its own.** With Swarm II and its
 device service closed, nothing streams `a1` frames, and a written `0x11` table
@@ -1340,7 +1340,7 @@ stream is a live overlay that wins for as long as somebody keeps sending it.
 
 ### Default functions (from vendor documentation)
 
-Taken from Turtle Beach's support article *Command Series KB7 – Layout and
+Taken from Turtle Beach's support article *Command Series KB7 - Layout and
 Secondary Functions* (support.roccat.com). This is what the keyboard does for
 the user, not protocol; it is listed because it tells which functions the
 keyboard handles on its own and which ones are worth capturing.
@@ -1396,7 +1396,7 @@ data or leftover content, as in the `ALT\0K` button label, is unknown.
 | Finding | Status |
 |---|---|
 | Five profile slots, with their names in report `0x16` | observed (`02-swarm-start-1`) |
-| The lighting differs per slot. The screen button tables were the same in all five at first; each profile has its own, and they differ once one is changed (see "Slots 4–9, the top row, and a second profile") | observed |
+| The lighting differs per slot. The screen button tables were the same in all five at first; each profile has its own, and they differ once one is changed (see "Slots 4-9, the top row, and a second profile") | observed |
 | The keyboard switches profiles **itself**: tapping the profile name on the screen steps through the five slots in order and wraps around | observed (`08-profile-switch-desktop-sc-1`) |
 | **Renaming a profile is one write of the whole block**: `SET_REPORT` feature `0x16`, 104 bytes (`16 68`, then the five 20-byte name fields from offset 2, then a 16-bit little-endian sum of the first 102 bytes). Renaming `DEFAULT 03` to `TEST` and back changed only slot 2's field, which Swarm II wrote zero-filled after the name; the other fields went back with their bytes after the NUL unchanged. Nothing else was written for it; a `GET_REPORT` feature `0x05` (4 bytes) followed about 150 ms later | observed (`43-rename-profile-1`, `-2`) |
 | Each switch is announced with notification `03 00 01 <slot>`, followed by the `03 00 31 20 …` "profile loaded" event | observed |
@@ -1446,7 +1446,7 @@ each profile switch        03 00 31 20 <b4> <b5> <b6> 0f
 | The RGB on/off button is reported as key `83`, where it was `58` with Swarm II running, and the `11` "LEDs off/on" event is not sent. That this pair of events is the RGB button follows from the order of the actions only | observed (`16`) |
 | Fn + Left/Right do nothing visible without Swarm II either | observed (`16`) |
 | A profile switch changes the screen and the lighting to what the slot holds, and sends only the `31` event; the `01 <slot>` notification is missing | observed (`16`) |
-| Bytes 4–6 of the `31` event rose across the five switches (`af c5 cb` … `26 29 ce`) and byte 7 was `0f` each time | observed; meaning still unknown |
+| Bytes 4-6 of the `31` event rose across the five switches (`af c5 cb` … `26 29 ce`) and byte 7 was `0f` each time | observed; meaning still unknown |
 
 So the extra notifications are not sent by default.
 

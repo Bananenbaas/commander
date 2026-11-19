@@ -427,7 +427,7 @@ func TestPreviewRendersBeforeWriting(t *testing.T) {
 const lightPreviewLayout = `profile = 1
 
 [light]
-fps = 30                         # optional, 10–30
+fps = 30                         # optional, 10-30
 
 [[light.layer]]                  # bottom first
 effect = "wave"

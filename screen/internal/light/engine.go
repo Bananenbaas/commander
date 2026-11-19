@@ -251,7 +251,7 @@ func (e *Engine) Start(p byte) {
 	}
 }
 
-// SetBrightness sets the brightness in percent, clamped to 0–100.
+// SetBrightness sets the brightness in percent, clamped to 0-100.
 func (e *Engine) SetBrightness(pct int) {
 	e.brightness = min(max(pct, 0), 100)
 }

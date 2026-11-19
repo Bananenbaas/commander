@@ -66,7 +66,7 @@ report `0x11`", "LED map" and "Device notifications":
 
 | What | Fact |
 |---|---|
-| Live colours | `a1` frames on interface 1 (`0x0d` out, `0x85` acknowledgement in): six 64-byte frames `a1 <bank 1–6> <len>` + 60 bytes, length `68 01` (360) on bank 1 only. The 360-byte payload is seven 48-byte blocks of R[16] G[16] B[16] (112 LEDs) followed by 24 bytes; those were all zero in every Swarm II frame of `03-rgb-perkey-esc-1040c0-1` |
+| Live colours | `a1` frames on interface 1 (`0x0d` out, `0x85` acknowledgement in): six 64-byte frames `a1 <bank 1-6> <len>` + 60 bytes, length `68 01` (360) on bank 1 only. The 360-byte payload is seven 48-byte blocks of R[16] G[16] B[16] (112 LEDs) followed by 24 bytes; those were all zero in every Swarm II frame of `03-rgb-perkey-esc-1040c0-1` |
 | Rate | Swarm II sends 20 Hz; our own 30 Hz stream rendered without lost frames. The keyboard shows the most recent frame |
 | Stored colours | report `0x11`, 348 bytes, written as a feature report; with nobody streaming, a written table appears and stays. Header bytes 3 and 7 unknown, byte 6 brightness |
 | Brightness | the host scales the colours it streams. Fn + Up/Down: the keyboard reports the new level as `03 00 0c <percent>` (only after `0x0e`, which `run` writes) in steps of ten from 20 to 100. The exact curve Swarm II uses is unknown; nine points are known |
@@ -135,7 +135,7 @@ A `[light]` part in each profile's layout file. Example for the SC profile:
 
 ```toml
 [light]
-fps = 30                         # optional, 10–30
+fps = 30                         # optional, 10-30
 
 [[light.layer]]                  # bottom first
 effect = "wave"
@@ -173,7 +173,7 @@ color = "#FFFFFF"
 
 - Keys use the same names as button actions (`W`, `LShift`, `F1`, `Space`),
   plus names for the lights that are not keys: `PrevTrack`, `NextTrack`,
-  `GameMode`, `ProfileCycle`, `MicOff`, `RGBButton`, `Wrist1`–`Wrist10`, and
+  `GameMode`, `ProfileCycle`, `MicOff`, `RGBButton`, `Wrist1`-`Wrist10`, and
   the groups `all`, `keys`, `wrist`.
 - A layer may take `keys = [...]` to limit where it shows; the default is
   `all`. Unknown effects, unknown settings, wrong types and out-of-range

@@ -164,7 +164,7 @@ The first release: `kb7screen` and Commander as ready-built executables.
   its own picture: upload to an image slot, the slot in byte 3 of the `0x29`
   entry, and `0x35` type `05` / `06`. Positions can share a slot. Report `0x25`
   decoded as the page's whole type table, the same pairs as `0x35`.
-- Image slots 1–9 seen, numbered across profiles, with slot 4 written from our
+- Image slots 1-9 seen, numbered across profiles, with slot 4 written from our
   own code; the top row's buttons can be application buttons too; each profile
   has its own button tables; the host switches the active profile with report
   `0x06`. Swarm II and our own code conflict over slots and labels, so only

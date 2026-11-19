@@ -1,6 +1,6 @@
 # Pages 2 and 3, stored lighting, the volume mixer and profile names
 
-Design for four features unlocked by the captures of 2026-11-19 (`41`–`46`,
+Design for four features unlocked by the captures of 2026-11-19 (`41`-`46`,
 see `docs/PROTOCOL.md`). Status: approved 2026-11-19; implemented, desktop check pending. Builds on
 [`screen-app.md`](screen-app.md), [`lighting.md`](lighting.md) and
 [`commander-tray.md`](commander-tray.md).
@@ -18,7 +18,7 @@ mixer page to show and control the real programs (today it shows
 ### 1. Buttons on pages 2 and 3
 
 `page = 2` or `page = 3` on a `[[button]]` is accepted (today only 1). Positions
-stay 0–11 per page; page 3 position 11 is refused (it has no `0x29` entry).
+stay 0-11 per page; page 3 position 11 is refused (it has no `0x29` entry).
 `apply` writes `0x29` entry `12(page-1)+position` and `0x25` entry
 `13(page-1)+position`; `run` matches touches by page (byte 1 of `0x33`) and
 position. The 15 picture slots are shared by all pages and profiles. The
@@ -39,7 +39,7 @@ profile's stored `0x11` table. `apply` sets it per key:
 ```toml
 [stored_light]
 color = "#FFFFFF"     # every LED in one colour
-brightness = 80       # percent, 0–100; optional
+brightness = 80       # percent, 0-100; optional
 ```
 
   A layout file may consist of only `profile = N` and `[stored_light]`, to set

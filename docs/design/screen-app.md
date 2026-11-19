@@ -85,7 +85,7 @@ Further constraints:
   upload once its opener has been echoed. Leave 200 ms between `0x29` and the
   next report.
 - **An upload takes about 2.7 s** and its picture survives unplugging.
-- **Image slots** are numbered across all profiles. Slots 1–9 have been seen;
+- **Image slots** are numbered across all profiles. Slots 1-9 have been seen;
   the highest slot is **not measured**, and with several profiles of up to 36
   buttons it decides how many distinct pictures there can be.
 - **Pages.** Each profile has three pages of buttons and a media page, browsed
@@ -98,7 +98,7 @@ Further constraints:
   follows a `0x25` write.
 - **The active profile cannot be read**; it is only reported when it changes.
 - **Taps carry no profile**, only position and kind.
-- **The top row** (positions 0–2) can be application buttons. Its original
+- **The top row** (positions 0-2) can be application buttons. Its original
   types (`3b`, `3e`, `48`) have only been seen in `0x25`, never sent as `0x35`.
 - **Labels** are at most eleven ASCII characters, drawn in a thin firmware font
   inside the picture area near its bottom edge. The built-in style draws the
@@ -211,7 +211,7 @@ action = ["open https://example.org"]
   it is empty by default.
 - **Action steps**:
   - key chords (`LAlt+N`, `AltGr+Y`, `Period`, `VolumeUp`). Key names cover
-    letters, digits, F1–F24, punctuation by name, arrows, the numeric keypad,
+    letters, digits, F1-F24, punctuation by name, arrows, the numeric keypad,
     media keys and the modifiers `LCtrl RCtrl LShift RShift LAlt RAlt LWin
     RWin`. `AltGr` means `LCtrl+RAlt`, which is what Windows produces for it on
     keyboard layouts that have AltGr.
@@ -343,7 +343,7 @@ path has not been replayed yet and must be tested before it is relied on.
   down; coordinates in the 142 x 148 picture):
   - frame: box from (12, 3) to (130, 111), 4-px stroke in the button's colour,
     lower-right corner cut by 20 px, with two accent bands outside the cut at
-    5–9 and 13–17 px from it
+    5-9 and 13-17 px from it
   - inside of the frame: black at 82% opacity
   - symbol: inside the frame, in the button's colour
   - title: white, Barlow Condensed SemiBold, 23 px, centred in the band from
