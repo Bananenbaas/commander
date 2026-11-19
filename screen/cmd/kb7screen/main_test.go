@@ -331,6 +331,37 @@ func TestPreview(t *testing.T) {
 	}
 }
 
+// TestPreviewPages writes panel-<profile>.png for page 1 and
+// panel-<profile>-<page>.png for every other page with buttons.
+func TestPreviewPages(t *testing.T) {
+	for _, c := range []struct{ extra, want string }{
+		{"[[button]]\npage = 3\nposition = 2\naction = [\"A\"]\n",
+			"1-1-0.png,1-1-4.png,1-3-2.png,panel-1-3.png,panel-1.png"},
+		{"[[button]]\npage = 2\nposition = 0\naction = [\"A\"]\n[[button]]\npage = 3\nposition = 10\naction = [\"B\"]\n",
+			"1-1-0.png,1-1-4.png,1-2-0.png,1-3-10.png,panel-1-2.png,panel-1-3.png,panel-1.png"},
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "game.toml"), []byte(testLayout+c.extra), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var out, errOut bytes.Buffer
+		if code := realMain([]string{"preview", dir}, &out, &errOut); code != 0 {
+			t.Fatalf("exit %d: %s", code, errOut.String())
+		}
+		entries, err := os.ReadDir(filepath.Join(dir, "previews"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		if got := strings.Join(names, ","); got != c.want {
+			t.Errorf("files %s, want %s", got, c.want)
+		}
+	}
+}
+
 func TestPreviewOutFolderAndErrors(t *testing.T) {
 	dir := testConfig(t)
 	out := filepath.Join(t.TempDir(), "elsewhere")

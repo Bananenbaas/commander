@@ -157,9 +157,10 @@ kb7screen <command> [flags] [config-folder]
 error; the message goes to standard error, prefixed with `kb7screen:`.
 
 `preview` writes one PNG per button, named `<profile>-<page>-<position>.png`
-(with transparency), and per profile a `panel-<profile>.png` that shows the 12
-positions as a grid of 3 columns and 4 rows on a dark background, empty
-positions left dark. It is the quickest way to check titles and symbols before
+(with transparency), and per profile a `panel-<profile>.png` for page 1 that
+shows the 12 positions as a grid of 3 columns and 4 rows on a dark background,
+empty positions left dark; page 2 or 3 with buttons gets its own
+`panel-<profile>-<page>.png`. It is the quickest way to check titles and symbols before
 anything is sent to the keyboard.
 
 `apply` and `restore` report which pictures were uploaded and which were
@@ -195,8 +196,8 @@ profile = 1                          # which of the five profiles (0 to 4) this 
 switch_when_running = "game.exe"     # optional: switch to this profile while it runs
 
 [[button]]
-page = 1                             # only page 1 is supported
-position = 0                         # 0 to 11, row by row from the top left
+page = 1                             # 1 to 3, the pages of the button screen
+position = 0                         # 0 to 11, row by row from the top left (page 3: 0 to 10)
 title = "Power"
 color = "#00AAFF"                    # #RRGGBB, default #00AAFF
 symbol = "symbols/power.png"         # white-on-transparent symbol, drawn in the colour
@@ -208,6 +209,12 @@ position = 5
 picture = "pictures/boost.png"       # own picture instead of the built-in style
 action = ["LShift"]
 mode = "hold"                        # "tap" (default) or "hold"
+
+[[button]]
+page = 2                             # the second page of the button screen
+position = 0
+title = "Map"
+action = ["M"]
 ```
 
 Each file needs a `profile`. Each button needs `page`, `position` and at least
@@ -216,6 +223,8 @@ the title only.
 
 | Key | Meaning |
 |---|---|
+| `page` | the page of the button screen, 1 to 3 |
+| `position` | 0 to 11, row by row from the top left; page 3 has positions 0 to 10 only. Two buttons of one file cannot share a page and position |
 | `title` | drawn into the picture in a condensed font, 23 px, set smaller (down to 17 px) when it is long. A title that still does not fit is refused, never cut |
 | `color` | colour of the frame and the symbol |
 | `symbol` | PNG drawn inside the frame in the button's colour |

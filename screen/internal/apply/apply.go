@@ -67,9 +67,7 @@ type Report struct {
 }
 
 const (
-	maxProfile  = 4
-	page        = 1  // the only page that is measured
-	maxPosition = 11 // positions of page 1
+	maxProfile = 4
 
 	noProfile = -1               // the active profile is not known
 	eventWait = time.Millisecond // longest wait for one report of waiting input
@@ -284,8 +282,8 @@ func avoidForeign(kb Keyboard, l *ledger.Ledger, jobs map[byte][]job, read map[b
 				return fmt.Errorf("profile %d: %w", p, err)
 			}
 		}
-		for i := 0; i < entries29; i++ {
-			o := ledger.Owner{Profile: int(p), Page: i/entriesPerPg + 1, Position: i % entriesPerPg}
+		for _, o := range places(int(p)) {
+			i, _ := proto.Entry29Index(o.Page, o.Position)
 			e := t29.Entry(i)
 			if e.Kind != proto.KindApp || e.Slot < 1 || e.Slot > ledger.MaxSlot || taken[o] {
 				continue
@@ -438,11 +436,36 @@ func managed(cfg *layout.Config, l *ledger.Ledger) ([]byte, error) {
 
 func checkOwners(owners []ledger.Owner) error {
 	for _, o := range owners {
-		if o.Page != page || o.Position < 0 || o.Position > maxPosition {
+		if _, _, err := indexes(o); err != nil {
 			return fmt.Errorf("the ledger lists %s, which kb7screen does not manage", where(o))
 		}
 	}
 	return nil
+}
+
+// indexes returns the 0x29 and 0x25 entries of a position.
+func indexes(o ledger.Owner) (i29, i25 int, err error) {
+	if i29, err = proto.Entry29Index(o.Page, o.Position); err != nil {
+		return 0, 0, err
+	}
+	if i25, err = proto.TypeIndex(o.Page, o.Position); err != nil {
+		return 0, 0, err
+	}
+	return i29, i25, nil
+}
+
+// places lists every position of a profile that has a 0x29 entry, page by
+// page.
+func places(profile int) []ledger.Owner {
+	var out []ledger.Owner
+	for pg := 1; pg <= proto.Pages; pg++ {
+		for pos := 0; pos < proto.PagePositions; pos++ {
+			if _, err := proto.Entry29Index(pg, pos); err == nil {
+				out = append(out, ledger.Owner{Profile: profile, Page: pg, Position: pos})
+			}
+		}
+	}
+	return out
 }
 
 // showsSlot reports whether e is an application button showing slot n.
@@ -486,8 +509,12 @@ func prepare(s *session, l *ledger.Ledger, p byte, jobs []job, rep *Report) (tab
 	// by someone else, who may have reused the slot as well, or an earlier
 	// apply stopped before writing it: the slot's picture is not trusted.
 	for _, j := range jobs {
-		cur := t29.Entry(j.o.Position)
-		l.RecordOriginal(j.o, ledger.Original{Entry: cur, Type: t25.Type(j.o.Position)})
+		i29, i25, err := indexes(j.o)
+		if err != nil {
+			return tables{}, fmt.Errorf("%s: %w", where(j.o), err)
+		}
+		cur := t29.Entry(i29)
+		l.RecordOriginal(j.o, ledger.Original{Entry: cur, Type: t25.Type(i25)})
 		if n, ok := l.SlotOf(j.o); ok && !showsSlot(cur, n) {
 			l.ForgetSlot(n)
 			rep.Notes = append(rep.Notes, fmt.Sprintf("%s does not show slot %d; its picture is sent again", where(j.o), n))
@@ -560,7 +587,10 @@ func write(s *session, p byte, jobs []job, slots []byte, t tables, uploaded map[
 	changed := false
 	redraw := false
 	for i, j := range jobs {
-		pos := j.o.Position
+		pos, tpos, err := indexes(j.o)
+		if err != nil {
+			return fmt.Errorf("%s: %w", where(j.o), err)
+		}
 		want := proto.AppEntry(slots[i], j.b.Label)
 		entryChanged := t.t29.Entry(pos) != want
 		if entryChanged {
@@ -569,8 +599,8 @@ func write(s *session, p byte, jobs []job, slots []byte, t tables, uploaded map[
 			}
 			changed = true
 		}
-		if t.t25.Type(pos) != proto.AppType {
-			if err := t.t25.SetType(pos, proto.AppType); err != nil {
+		if t.t25.Type(tpos) != proto.AppType {
+			if err := t.t25.SetType(tpos, proto.AppType); err != nil {
 				return fmt.Errorf("%s: %w", where(j.o), err)
 			}
 			redraw = true
@@ -686,16 +716,20 @@ func restore(kb Keyboard, l *ledger.Ledger, t29 *proto.Table29, t25 *proto.Table
 		return nil
 	}
 	for _, o := range owners {
+		i29, i25, err := indexes(o)
+		if err != nil {
+			return fmt.Errorf("%s: %w", where(o), err)
+		}
 		orig, _ := l.Original(o) // without one: an all-zero entry and type 00/00
 		e := orig.Entry
-		if err := t29.SetEntry(o.Position, e); err != nil {
+		if err := t29.SetEntry(i29, e); err != nil {
 			e.Label = ""
-			if err2 := t29.SetEntry(o.Position, e); err2 != nil {
+			if err2 := t29.SetEntry(i29, e); err2 != nil {
 				return errors.Join(err, err2)
 			}
 			rep.Notes = append(rep.Notes, fmt.Sprintf("%s: the original label %q cannot be written back; it is left empty", where(o), orig.Entry.Label))
 		}
-		if err := t25.SetType(o.Position, orig.Type); err != nil {
+		if err := t25.SetType(i25, orig.Type); err != nil {
 			return err
 		}
 	}

@@ -36,6 +36,48 @@ const (
 	TypeApp = 0x05
 )
 
+// Pages and positions of the button screen. The 0x29 table holds pages 1 to 3
+// one after the other, 12 entries a page, without page 3 position 11 (35
+// entries); the 0x25 table holds 13 entries a page, the 13th a page marker,
+// 38 in all.
+const (
+	Pages         = 3
+	PagePositions = 12
+	typesPerPage  = PagePositions + 1
+)
+
+func checkPlace(page, position int) error {
+	if page < 1 || page > Pages {
+		return fmt.Errorf("page %d outside 1-%d", page, Pages)
+	}
+	if position < 0 || position >= PagePositions {
+		return fmt.Errorf("position %d outside 0-%d", position, PagePositions-1)
+	}
+	return nil
+}
+
+// Entry29Index returns the 0x29 entry of a page (1-3) and position (0-11):
+// 12*(page-1)+position. Page 3 position 11 has no 0x29 entry.
+func Entry29Index(page, position int) (int, error) {
+	if err := checkPlace(page, position); err != nil {
+		return 0, err
+	}
+	i := PagePositions*(page-1) + position
+	if i >= entries29 {
+		return 0, fmt.Errorf("page %d position %d has no button entry", page, position)
+	}
+	return i, nil
+}
+
+// TypeIndex returns the 0x25 entry of a page (1-3) and position (0-11):
+// 13*(page-1)+position.
+func TypeIndex(page, position int) (int, error) {
+	if err := checkPlace(page, position); err != nil {
+		return 0, err
+	}
+	return typesPerPage*(page-1) + position, nil
+}
+
 // Entry29 is one button position of the 0x29 table.
 type Entry29 struct {
 	Mod, Key, Kind, Slot byte

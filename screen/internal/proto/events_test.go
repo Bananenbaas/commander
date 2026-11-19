@@ -11,9 +11,9 @@ func TestParseReport(t *testing.T) {
 		want any
 		ok   bool
 	}{
-		{"touch down", []byte{0x33, 1, 7, 5, 0, 0, 1, 1}, Touch{7, 5, true}, true},
-		{"touch up", []byte{0x33, 1, 7, 5, 0, 0, 1, 0}, Touch{7, 5, false}, true},
-		{"touch 12 bytes", []byte{0x33, 1, 2, 3, 9, 9, 1, 1, 0, 0, 0, 0}, Touch{2, 3, true}, true},
+		{"touch down", []byte{0x33, 1, 7, 5, 0, 0, 1, 1}, Touch{Page: 1, Position: 7, Kind: 5, Down: true}, true},
+		{"touch up", []byte{0x33, 1, 7, 5, 0, 0, 1, 0}, Touch{Page: 1, Position: 7, Kind: 5, Down: false}, true},
+		{"touch 12 bytes", []byte{0x33, 1, 2, 3, 9, 9, 1, 1, 0, 0, 0, 0}, Touch{Page: 1, Position: 2, Kind: 3, Down: true}, true},
 		{"touch short", []byte{0x33, 1, 7, 5, 0, 0, 1}, nil, false},
 		{"profile", []byte{3, 0, 1, 1, 0, 0, 0, 0}, ProfileChanged{1}, true},
 		{"redraw widget", []byte{3, 0, 0x31, 1, 6, 0, 0, 0}, Redraw{1, 6}, true},
@@ -35,6 +35,23 @@ func TestParseReport(t *testing.T) {
 		got, ok := ParseReport(c.in)
 		if ok != c.ok || got != c.want {
 			t.Errorf("%s: got (%v, %v), want (%v, %v)", c.name, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+// TestTouchPage reads the page from byte 1 of a touch report.
+func TestTouchPage(t *testing.T) {
+	cases := []struct {
+		in   []byte
+		want Touch
+	}{
+		{[]byte{0x33, 0x02, 0x06, 0x03, 0x00, 0x59, 0x01, 0x01}, Touch{Page: 2, Position: 6, Kind: 3, Down: true}},
+		{[]byte{0x33, 0x03, 0x09, 0x1e, 0x00, 0x00, 0x01, 0x00}, Touch{Page: 3, Position: 9, Kind: 0x1e, Down: false}},
+	}
+	for _, c := range cases {
+		got, ok := ParseReport(c.in)
+		if !ok || got != c.want {
+			t.Errorf("% x: got (%+v, %v), want %+v", c.in, got, ok, c.want)
 		}
 	}
 }

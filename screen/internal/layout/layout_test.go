@@ -174,6 +174,23 @@ func btn(extra string) string {
 	return "profile = 0\n[[button]]\npage = 1\nposition = 2\naction = [\"A\"]\n" + extra
 }
 
+// TestLoadPages accepts buttons on pages 2 and 3, and the same position on
+// different pages.
+func TestLoadPages(t *testing.T) {
+	dir := folder(t, map[string]string{"a.toml": "profile = 0\n" +
+		"[[button]]\npage = 1\nposition = 4\naction = [\"A\"]\n" +
+		"[[button]]\npage = 2\nposition = 4\naction = [\"B\"]\n" +
+		"[[button]]\npage = 3\nposition = 10\naction = [\"C\"]\n"})
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bs := c.Profiles[0].Buttons
+	if len(bs) != 3 || bs[1].Page != 2 || bs[1].Position != 4 || bs[2].Page != 3 || bs[2].Position != 10 {
+		t.Fatalf("buttons: %+v", bs)
+	}
+}
+
 func TestLoadErrors(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -182,8 +199,12 @@ func TestLoadErrors(t *testing.T) {
 	}{
 		{"duplicate position", map[string]string{"a.toml": btn("") + "[[button]]\npage = 1\nposition = 2\naction = [\"B\"]\n"},
 			[]string{"a.toml", "page 1 position 2"}},
-		{"page 2", map[string]string{"a.toml": "profile = 0\n[[button]]\npage = 2\nposition = 4\naction = [\"A\"]\n"},
-			[]string{"a.toml", "page 2 position 4", "not measured"}},
+		{"page 4", map[string]string{"a.toml": "profile = 0\n[[button]]\npage = 4\nposition = 4\naction = [\"A\"]\n"},
+			[]string{"a.toml", "page 4 position 4", "page"}},
+		{"page 3 position 11", map[string]string{"a.toml": "profile = 0\n[[button]]\npage = 3\nposition = 11\naction = [\"A\"]\n"},
+			[]string{"a.toml", "page 3 position 11"}},
+		{"duplicate on page 2", map[string]string{"a.toml": "profile = 0\n[[button]]\npage = 2\nposition = 4\naction = [\"A\"]\n[[button]]\npage = 2\nposition = 4\naction = [\"B\"]\n"},
+			[]string{"a.toml", "page 2 position 4", "duplicate"}},
 		{"position 12", map[string]string{"a.toml": "profile = 0\n[[button]]\npage = 1\nposition = 12\naction = [\"A\"]\n"},
 			[]string{"a.toml", "page 1 position 12"}},
 		{"symbol and picture", map[string]string{"a.toml": btn("symbol = \"s.png\"\npicture = \"p.png\"\n"), "s.png": "x", "p.png": "x"},

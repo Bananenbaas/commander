@@ -88,7 +88,12 @@ func touch(pos byte, down bool) item { return widgetTouch(pos, proto.TypeApp, do
 // widgetTouch is the touch report of a widget of the given type: 0x03 for a
 // key, 0x48 for the speaker, proto.TypeApp for an application button.
 func widgetTouch(pos, kind byte, down bool) item {
-	return event(proto.Touch{Position: pos, Kind: kind, Down: down})
+	return event(proto.Touch{Page: 1, Position: pos, Kind: kind, Down: down})
+}
+
+// pageTouch is the touch report of an application button on a given page.
+func pageTouch(page, pos byte, down bool) item {
+	return event(proto.Touch{Page: page, Position: pos, Kind: proto.TypeApp, Down: down})
 }
 
 // tap is a touch and its release.
@@ -686,6 +691,22 @@ func TestTapRunsTheAction(t *testing.T) {
 	})
 }
 
+// TestTouchOnPageTwo: a touch of page 2 position 4 acts for the button
+// there, not for page 1 position 4, and the other way round.
+func TestTouchOnPageTwo(t *testing.T) {
+	test(t, func(h *harness) {
+		p2 := tapButton(4, chord(action.B))
+		p2.Page = 2
+		cfg := &layout.Config{Profiles: []layout.Profile{{Number: 0, Buttons: []layout.Button{
+			tapButton(4, chord(action.A)), p2,
+		}}}}
+		h.scripts = [][]item{{pageTouch(2, 4, true), pageTouch(2, 4, false), pageTouch(3, 4, true), pageTouch(3, 4, false), pageTouch(1, 4, true), pageTouch(1, 4, false)}}
+		h.onPoll[1] = h.cancel
+		h.run(cfg)
+		h.want("poll", "open", "notify", "fresh 0", "down B", "up B", "down A", "up A", "poll", "close")
+	})
+}
+
 func TestIgnoredInput(t *testing.T) {
 	test(t, func(h *harness) {
 		h.scripts = [][]item{script(
@@ -877,8 +898,8 @@ func TestResumeWarnsAboutChangedButtons(t *testing.T) {
 			"poll", "close",
 			"poll", "open", "notify", "fresh 0", "read 0", "read 2", "read 3",
 			"poll", "close")
-		h.wantLogged(1, "profile 0", "positions 3, 5", "kb7screen apply")
-		h.wantLogged(1, "profile 2", "position 3", "kb7screen apply")
+		h.wantLogged(1, "profile 0", "page 1 positions 3, 5", "kb7screen apply")
+		h.wantLogged(1, "profile 2", "page 1 position 3", "kb7screen apply")
 		h.wantLogged(2, "kb7screen apply")
 	})
 }
@@ -891,7 +912,13 @@ func TestStale(t *testing.T) {
 	setEntry(t, tb, 6, proto.AppEntry(0, ""))
 	setEntry(t, tb, 9, proto.AppEntry(3, "Gone"))
 	setEntry(t, tb, 10, proto.AppEntry(4, "Go"))
+	setEntry(t, tb, 16, proto.Entry29{Key: 0x47, Kind: 0x01})
+	setEntry(t, tb, 18, proto.AppEntry(5, ""))
+	setEntry(t, tb, 34, proto.AppEntry(0, ""))
 	buttons := []layout.Button{
+		{Page: 3, Position: 10},             // page 3 position 10 is entry 34: no picture
+		{Page: 2, Position: 4},              // entry 16: a key
+		{Page: 2, Position: 6},              // entry 18: as applied
 		{Page: 1, Position: 10},             // label set on the keyboard, not in the layout
 		{Page: 1, Position: 1},              // as applied
 		{Page: 1, Position: 2, Label: "Go"}, // as applied
@@ -899,7 +926,8 @@ func TestStale(t *testing.T) {
 		{Page: 1, Position: 6},              // no picture
 		{Page: 1, Position: 9, Label: "Go"}, // another label
 	}
-	if got, want := stale(tb, buttons), []int{4, 6, 9, 10}; !slices.Equal(got, want) {
+	want := []place{{1, 4}, {1, 6}, {1, 9}, {1, 10}, {2, 4}, {3, 10}}
+	if got := stale(tb, buttons); !slices.Equal(got, want) {
 		t.Errorf("stale = %v, want %v", got, want)
 	}
 }
@@ -1131,7 +1159,7 @@ func TestActionErrorsAreLogged(t *testing.T) {
 		h.onPoll[1] = h.cancel
 		h.run(testConfig())
 		h.want("poll", "open", "notify", "fresh 0", "launch tool", "down A", "up A", "poll", "close")
-		h.wantLogged(1, "profile 0 position 7", "no such program")
+		h.wantLogged(1, "profile 0 page 1 position 7", "no such program")
 	})
 }
 

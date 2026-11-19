@@ -2,10 +2,11 @@
 
 package proto
 
-// Touch is a touch or release on a widget, from input report 0x33.
+// Touch is a touch or release on a widget, from input report 0x33. Page is
+// byte 1 of the report (1 to 3).
 type Touch struct {
-	Position, Kind byte
-	Down           bool
+	Page, Position, Kind byte
+	Down                 bool
 }
 
 // ProfileChanged is the notification sent when the active profile changes.
@@ -32,7 +33,7 @@ func ParseReport(b []byte) (any, bool) {
 		if len(b) < 8 {
 			return nil, false
 		}
-		return Touch{Position: b[2], Kind: b[3], Down: b[7] == 1}, true
+		return Touch{Page: b[1], Position: b[2], Kind: b[3], Down: b[7] == 1}, true
 	case 0x03:
 		if len(b) < 4 || b[1] != 0x00 {
 			return nil, false

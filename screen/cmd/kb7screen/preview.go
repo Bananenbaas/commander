@@ -32,23 +32,32 @@ type preview struct {
 }
 
 // writePreviews renders every button exactly as apply would and writes one
-// PNG per button, <profile>-<page>-<position>.png, and one panel-<profile>.png
-// per profile, into out. Everything is rendered before anything is written,
-// so a button that cannot be rendered leaves out as it was. It touches
-// nothing else.
+// PNG per button, <profile>-<page>-<position>.png, and one panel per page
+// into out: panel-<profile>.png for page 1, always, and
+// panel-<profile>-<page>.png for page 2 or 3 when it has buttons. Everything
+// is rendered before anything is written, so a button that cannot be rendered
+// leaves out as it was. It touches nothing else.
 func writePreviews(cfg *layout.Config, out string, stdout io.Writer) error {
 	var files []preview
 	for _, p := range cfg.Profiles {
-		panel := newPanel()
+		panels := map[int]*image.NRGBA{1: newPanel()}
 		for _, b := range p.Buttons {
 			img, err := apply.RenderButton(b)
 			if err != nil {
 				return fmt.Errorf("%s: page %d position %d: %w", filepath.Base(p.File), b.Page, b.Position, err)
 			}
 			files = append(files, preview{fmt.Sprintf("%d-%d-%d.png", p.Number, b.Page, b.Position), img})
-			placeOnPanel(panel, b.Position, img)
+			if panels[b.Page] == nil {
+				panels[b.Page] = newPanel()
+			}
+			placeOnPanel(panels[b.Page], b.Position, img)
 		}
-		files = append(files, preview{fmt.Sprintf("panel-%d.png", p.Number), panel})
+		files = append(files, preview{fmt.Sprintf("panel-%d.png", p.Number), panels[1]})
+		for pg := 2; pg <= 3; pg++ {
+			if panels[pg] != nil {
+				files = append(files, preview{fmt.Sprintf("panel-%d-%d.png", p.Number, pg), panels[pg]})
+			}
+		}
 	}
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return err

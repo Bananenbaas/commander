@@ -151,13 +151,14 @@ const (
 	defaultPoll = 2 * time.Second
 	readTimeout = 100 * time.Millisecond // longest wait for one input event
 	stopTimeout = 5 * time.Second        // longest wait for a running action when stopping
-	page        = 1                      // the only page that is measured
 )
 
-// spot is a button's place: profile and position on page 1.
-type spot struct{ profile, position byte }
+// spot is a button's place: profile, page and position.
+type spot struct{ profile, page, position byte }
 
-func (s spot) String() string { return fmt.Sprintf("profile %d position %d", s.profile, s.position) }
+func (s spot) String() string {
+	return fmt.Sprintf("profile %d page %d position %d", s.profile, s.page, s.position)
+}
 
 // loop is the state of Run, used by its goroutine only.
 type loop struct {
@@ -327,11 +328,8 @@ func newLoop(cfg *layout.Config, d Deps) (*loop, error) {
 		}
 		found := false
 		for _, b := range p.Buttons {
-			if b.Page != page {
-				continue
-			}
 			found = true
-			s := spot{p.Number, byte(b.Position)}
+			s := spot{p.Number, byte(b.Page), byte(b.Position)}
 			l.buttons[s] = b
 			if name := flipsState(p.Light, b); name != "" {
 				l.flips[s] = name
@@ -343,7 +341,7 @@ func newLoop(cfg *layout.Config, d Deps) (*loop, error) {
 					c, ok = b.Action[0].(action.Chord)
 				}
 				if !ok {
-					return nil, fmt.Errorf("run: profile %d position %d: a hold button needs exactly one key chord", p.Number, b.Position)
+					return nil, fmt.Errorf("run: %s: a hold button needs exactly one key chord", s)
 				}
 				l.chords[s] = c
 			}
@@ -719,33 +717,51 @@ func (l *loop) check(ctx context.Context) {
 	l.recheck = false
 }
 
-// stale returns, in ascending order, the positions of the page-1 buttons
+// place is a page and position.
+type place struct{ page, position int }
+
+// stale returns, sorted by page and position, the places of the buttons
 // whose 0x29 entry does not show them as apply leaves them: an application
 // button with a picture slot and the button's label.
-func stale(t *proto.Table29, buttons []layout.Button) []int {
-	var bad []int
+func stale(t *proto.Table29, buttons []layout.Button) []place {
+	var bad []place
 	for _, b := range buttons {
-		if b.Page != page {
-			continue
+		i, err := proto.Entry29Index(b.Page, b.Position)
+		if err != nil {
+			continue // refused by layout
 		}
-		e := t.Entry(b.Position)
+		e := t.Entry(i)
 		if e.Kind != proto.KindApp || e.Slot == 0 || e.Label != b.Label {
-			bad = append(bad, b.Position)
+			bad = append(bad, place{b.Page, b.Position})
 		}
 	}
-	sort.Ints(bad)
+	sort.Slice(bad, func(i, j int) bool {
+		if bad[i].page != bad[j].page {
+			return bad[i].page < bad[j].page
+		}
+		return bad[i].position < bad[j].position
+	})
 	return bad
 }
 
-func positions(ps []int) string {
-	s := make([]string, len(ps))
-	for i, p := range ps {
-		s[i] = strconv.Itoa(p)
+// positions names sorted places page by page: "page 1 positions 3, 5;
+// page 2 position 4".
+func positions(ps []place) string {
+	var groups []string
+	for i := 0; i < len(ps); {
+		j := i
+		var nums []string
+		for ; j < len(ps) && ps[j].page == ps[i].page; j++ {
+			nums = append(nums, strconv.Itoa(ps[j].position))
+		}
+		word := "position "
+		if len(nums) > 1 {
+			word = "positions "
+		}
+		groups = append(groups, fmt.Sprintf("page %d %s%s", ps[i].page, word, strings.Join(nums, ", ")))
+		i = j
 	}
-	if len(ps) == 1 {
-		return "position " + s[0]
-	}
-	return "positions " + strings.Join(s, ", ")
+	return strings.Join(groups, "; ")
 }
 
 // read waits up to timeout for one input event and acts on it.
@@ -789,7 +805,7 @@ func (l *loop) read(ctx context.Context, timeout time.Duration) {
 // fire twice. The release of a pressed chord is not checked, so that it is
 // always released.
 func (l *loop) touch(ev proto.Touch) {
-	s := spot{l.active, ev.Position}
+	s := spot{l.active, ev.Page, ev.Position}
 	l.confirm = nil // a release, or a new touch, ends the one waiting
 	b, ok := l.buttons[s]
 	if !ok || (ev.Down && ev.Kind != proto.TypeApp) {

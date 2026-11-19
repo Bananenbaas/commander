@@ -198,3 +198,26 @@ func TestTable25RoundTrip(t *testing.T) {
 		t.Fatal("round trip differs")
 	}
 }
+
+func TestIndexes(t *testing.T) {
+	for _, c := range []struct{ page, pos, want int }{{1, 0, 0}, {2, 4, 16}, {3, 10, 34}, {1, 11, 11}} {
+		if got, err := Entry29Index(c.page, c.pos); err != nil || got != c.want {
+			t.Errorf("Entry29Index(%d, %d) = %d, %v; want %d", c.page, c.pos, got, err, c.want)
+		}
+	}
+	for _, c := range []struct{ page, pos int }{{3, 11}, {4, 0}, {0, 0}, {1, 12}, {1, -1}} {
+		if _, err := Entry29Index(c.page, c.pos); err == nil {
+			t.Errorf("Entry29Index(%d, %d): no error", c.page, c.pos)
+		}
+	}
+	for _, c := range []struct{ page, pos, want int }{{1, 11, 11}, {2, 0, 13}, {2, 4, 17}, {3, 11, 37}} {
+		if got, err := TypeIndex(c.page, c.pos); err != nil || got != c.want {
+			t.Errorf("TypeIndex(%d, %d) = %d, %v; want %d", c.page, c.pos, got, err, c.want)
+		}
+	}
+	for _, c := range []struct{ page, pos int }{{4, 0}, {0, 0}, {1, 12}, {2, -1}} {
+		if _, err := TypeIndex(c.page, c.pos); err == nil {
+			t.Errorf("TypeIndex(%d, %d): no error", c.page, c.pos)
+		}
+	}
+}

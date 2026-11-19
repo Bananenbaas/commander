@@ -1360,15 +1360,57 @@ func TestRestoreRefusesUnknownProfile(t *testing.T) {
 
 func TestRestoreRefusesForeignPosition(t *testing.T) {
 	f := newFake(t)
-	l := &ledger.Ledger{}
-	if _, _, err := l.Assign(ledger.Owner{Profile: 1, Page: 2, Position: 3}, "h"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Restore(context.Background(), f, l, 1, nil); err == nil {
-		t.Fatal("a page 2 position was restored")
+	for _, o := range []ledger.Owner{{Profile: 1, Page: 4, Position: 3}, {Profile: 1, Page: 3, Position: 11}} {
+		l := &ledger.Ledger{}
+		if _, _, err := l.Assign(o, "h"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Restore(context.Background(), f, l, 1, nil); err == nil {
+			t.Fatalf("%v was restored", o)
+		}
 	}
 	if len(f.calls) != 0 {
 		t.Fatalf("keyboard calls: %v", f.calls)
+	}
+}
+
+// TestPagesTwoAndThree: a button on page 2 position 4 is 0x29 entry 16 and
+// 0x25 entry 17, next to page 1 position 3 at entries 3 and 3; restore puts
+// them back.
+func TestPagesTwoAndThree(t *testing.T) {
+	f := newFake(t)
+	l := &ledger.Ledger{}
+	p2 := layout.Button{Page: 2, Position: 4, Title: "Two", Color: blue}
+	mustApply(t, f, cfgOf(prof(1, "sc.toml", "", btn(3, "One"), p2)), l, false)
+	o2 := ledger.Owner{Profile: 1, Page: 2, Position: 4}
+	shows(t, f, 1, 3, "One")
+	shows(t, f, 1, 16, "Two")
+	checkType(t, f, 1, 3, proto.AppType)
+	checkType(t, f, 1, 17, proto.AppType)
+	for i := 0; i < 35; i++ {
+		if i != 3 && i != 16 {
+			checkEntry(t, f, 1, i, keyEntry(i))
+		}
+	}
+	for i := 0; i < 38; i++ {
+		if i != 3 && i != 17 {
+			checkType(t, f, 1, i, keyType(i))
+		}
+	}
+	want := ledger.Original{Entry: keyEntry(16), Type: keyType(17)}
+	if got, ok := l.Original(o2); !ok || got != want {
+		t.Fatalf("Original = %+v, %v; want %+v", got, ok, want)
+	}
+	rep, err := Restore(context.Background(), f, l, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sameOwners(t, "Restored", rep.Restored, []ledger.Owner{own(1, 3), o2})
+	for i := 0; i < 35; i++ {
+		checkEntry(t, f, 1, i, keyEntry(i))
+	}
+	for i := 0; i < 38; i++ {
+		checkType(t, f, 1, i, keyType(i))
 	}
 }
 

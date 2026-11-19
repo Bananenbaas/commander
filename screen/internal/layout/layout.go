@@ -253,11 +253,14 @@ func checkState(st *light.Stack, name string) error {
 
 func buildButton(dir string, rb rawButton) (Button, error) {
 	b := Button{Page: *rb.Page, Position: *rb.Position, Title: rb.Title, Label: rb.Label, Color: defaultColor, State: rb.State}
-	if b.Page != 1 {
-		return b, fmt.Errorf("page must be 1; pages 2 and 3 are not measured yet")
+	if b.Page < 1 || b.Page > 3 {
+		return b, fmt.Errorf("page must be 1 to 3")
 	}
 	if b.Position < 0 || b.Position > 11 {
 		return b, fmt.Errorf("position must be 0 to 11")
+	}
+	if b.Page == 3 && b.Position == 11 {
+		return b, fmt.Errorf("page 3 has positions 0 to 10 only")
 	}
 	if len(b.Label) > 11 {
 		return b, fmt.Errorf("label must be at most 11 characters")

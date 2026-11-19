@@ -17,10 +17,6 @@ import (
 const (
 	typeThirdApp = 0x42
 	valueWebsite = 0x05
-	entriesPerPg = 12
-	typesPerPage = 13
-	entries29    = 35 // 0x29 entries: pages 1 to 3, the last without position 11
-	lastType     = 37 // 0x25 entry of page 3 position 11, which has no 0x29 entry
 )
 
 // launcherType reports whether a 0x25 type launches something.
@@ -34,10 +30,6 @@ func launcherType(te proto.TypeEntry) bool {
 func launcher(e proto.Entry29, te proto.TypeEntry) bool {
 	return e.Kind == proto.KindApp || launcherType(te)
 }
-
-// typeIndex is the 0x25 entry of 0x29 entry i: page g position p sits at
-// 12(g-1)+p in 0x29 and 13(g-1)+p in 0x25 (page markers at 12 and 25).
-func typeIndex(i int) int { return typesPerPage*(i/entriesPerPg) + i%entriesPerPg }
 
 // ClearLaunchers empties every application, website and third-party
 // application button of one profile, on all three pages, so their picture
@@ -72,9 +64,11 @@ func ClearLaunchers(ctx context.Context, kb Keyboard, l *ledger.Ledger, profile 
 		return nil, fmt.Errorf("profile %d: %w", profile, err)
 	}
 	var cleared []string
-	for i := 0; i < entries29; i++ {
-		ti := typeIndex(i)
-		o := ledger.Owner{Profile: int(profile), Page: i/entriesPerPg + 1, Position: i % entriesPerPg}
+	for _, o := range places(int(profile)) {
+		i, ti, err := indexes(o)
+		if err != nil {
+			return nil, err
+		}
 		if own[o] || !launcher(t29.Entry(i), t25.Type(ti)) {
 			continue
 		}
@@ -85,6 +79,11 @@ func ClearLaunchers(ctx context.Context, kb Keyboard, l *ledger.Ledger, profile 
 			return nil, err
 		}
 		cleared = append(cleared, fmt.Sprintf("page %d position %d", o.Page, o.Position))
+	}
+	// Page 3 position 11 has a 0x25 entry but no 0x29 entry.
+	lastType, err := proto.TypeIndex(proto.Pages, proto.PagePositions-1)
+	if err != nil {
+		return nil, err
 	}
 	if launcherType(t25.Type(lastType)) {
 		if err := t25.SetType(lastType, proto.TypeEntry{}); err != nil {

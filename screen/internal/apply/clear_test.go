@@ -20,7 +20,7 @@ func TestClearLaunchers(t *testing.T) {
 		if err := f.b29[2].SetEntry(i, e); err != nil {
 			t.Fatal(err)
 		}
-		if err := f.b25[2].SetType(typeIndex(i), te); err != nil {
+		if err := f.b25[2].SetType(typeAt(t, i), te); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -40,7 +40,7 @@ func TestClearLaunchers(t *testing.T) {
 	}
 	for _, i := range []int{0, 6, 16, 28} {
 		checkEntry(t, f, 2, i, proto.Entry29{})
-		checkType(t, f, 2, typeIndex(i), proto.TypeEntry{})
+		checkType(t, f, 2, typeAt(t, i), proto.TypeEntry{})
 	}
 	checkType(t, f, 2, 2, proto.TypeEntry{Type: 0x05, Value: 0x01})
 	checkEntry(t, f, 2, 1, keyEntry(1))
@@ -50,14 +50,28 @@ func TestClearLaunchers(t *testing.T) {
 func TestClearLaunchersSkipsManagedPositions(t *testing.T) {
 	f, l, _ := restoreSetup(t, "Home") // profile 1 positions 3 and 4 are managed
 	foreign(t, f, 1, 5, 12)
-	foreign(t, f, 1, 15, 13) // page 2 position 3: not managed, as only page 1 is
+	foreign(t, f, 1, 15, 13) // page 2 position 3: not managed
 	if err := f.b25[1].SetType(5, proto.AppType); err != nil {
+		t.Fatal(err)
+	}
+	// Page 2 position 6 (0x29 entry 18, 0x25 entry 19) is managed.
+	managed := ledger.Owner{Profile: 1, Page: 2, Position: 6}
+	slot, _, err := l.Assign(managed, "page2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.b29[1].SetEntry(18, proto.AppEntry(slot, "")); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.b25[1].SetType(19, proto.AppType); err != nil {
 		t.Fatal(err)
 	}
 	got, err := ClearLaunchers(context.Background(), f, l, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
+	checkEntry(t, f, 1, 18, proto.AppEntry(slot, ""))
+	checkType(t, f, 1, 19, proto.AppType)
 	want := []string{"page 1 position 5", "page 2 position 3"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("cleared %q, want %q", got, want)
@@ -110,10 +124,12 @@ func TestClearLaunchersNothingToDo(t *testing.T) {
 	}
 }
 
-func TestTypeIndex(t *testing.T) {
-	for i, want := range map[int]int{0: 0, 11: 11, 12: 13, 16: 17, 24: 26, 34: 36} {
-		if got := typeIndex(i); got != want {
-			t.Errorf("typeIndex(%d) = %d, want %d", i, got, want)
-		}
+// typeAt is the 0x25 entry of 0x29 entry i.
+func typeAt(t *testing.T, i int) int {
+	t.Helper()
+	ti, err := proto.TypeIndex(i/12+1, i%12)
+	if err != nil {
+		t.Fatal(err)
 	}
+	return ti
 }

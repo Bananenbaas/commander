@@ -6,6 +6,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Buttons on pages 2 and 3 of the button screen: `page` takes 1 to 3 (page 3
+  has positions 0 to 10). `apply`, `restore`, `clear-launchers` and `run`
+  handle every page, a touch acts only for the button on the touched page,
+  and `preview` writes a `panel-<profile>-<page>.png` for pages 2 and 3 with
+  buttons. Not yet checked on the keyboard.
+
 ## [0.1.0-beta.4] - 2026-11-18
 
 ### Changed
