@@ -18,7 +18,7 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 | `screen/` | `kb7screen`, the Go program that puts own buttons on the touchscreen; usage in `screen/README.md` |
 | `screen/cmd/kb7screen/` | Its command line: `check`, `read`, `preview`, `light-preview`, `apply`, `restore`, `run`, `keytest` |
 | `screen/internal/` | `proto` (frames), `device` (HID on Windows and Linux), `keyboard` (one frame at a time, no retries), `picture`, `layout`, `ledger`, `apply`, `action` (keystrokes, programs), `procs`, `run` |
-| `screen/internal/audio/` | The computer's sound for the volume mixer: the system volume and the programs that play sound, and a signal when they change (Windows audio session API through direct COM calls; other systems report an error); `run` shows it on the keyboard's mixer page |
+| `screen/internal/audio/` | The computer's sound for the volume mixer: the system volume and the programs with sound sessions (and which of them play), and a signal when they change (Windows audio session API through direct COM calls; other systems report an error); `run` shows it on the keyboard's mixer page |
 | `screen/internal/light/` | Lighting: the LED table (names, groups, positions), the effects (`fx_*.go`, each declaring its settings, listed by `light.Specs()`), the layer stack and the engine that `run` streams from |
 | `screen/internal/keys/` | The KB7's key presses, for the ripple and the states: Raw Input on Windows, `/dev/input/event*` on Linux; what `kb7screen keytest` prints |
 | `screen/internal/runlock/` | The lock file `.kb7screen-run.lock` that makes `apply` and `restore` refuse while `run` runs |

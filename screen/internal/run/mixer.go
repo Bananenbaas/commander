@@ -20,7 +20,8 @@ type Session = audio.Session
 
 // Audio is the computer's sound, shown on the keyboard's volume mixer page.
 type Audio interface {
-	// Sessions returns the system volume and the programs that play sound.
+	// Sessions returns the system volume and the programs with a sound
+	// session; Active tells those that play sound.
 	Sessions() (system Session, programs []Session, err error)
 	// SetSystemLevel sets the system volume, 0 to 100.
 	SetSystemLevel(level int) error
@@ -149,8 +150,12 @@ func (l *loop) mixStep(ctx context.Context) {
 	m.logged[mixWrite] = false
 }
 
-// pickPrograms returns at most maxPrograms of progs, in the order they were
-// first seen in this run, programs first seen together by ID.
+// pickPrograms returns at most maxPrograms of progs. A shown program that
+// still plays keeps its place; the other places go to the programs that play
+// first, then to those first seen earliest in this run, then by ID. The
+// programs picked are shown in the order they were first seen, those first
+// seen together by ID, so that a program pausing or playing again does not
+// move the rows.
 func (l *loop) pickPrograms(progs []Session) []Session {
 	m := &l.mix
 	if m.first == nil {
@@ -162,11 +167,29 @@ func (l *loop) pickPrograms(progs []Session) []Session {
 			m.first[p.ID] = m.reads
 		}
 	}
-	progs = slices.Clone(progs)
-	slices.SortStableFunc(progs, func(a, b Session) int {
+	seen := func(a, b Session) int {
 		return cmp.Or(cmp.Compare(m.first[a.ID], m.first[b.ID]), cmp.Compare(a.ID, b.ID))
+	}
+	var picked, rest []Session
+	for _, p := range progs {
+		if p.Active && slices.Contains(m.shown, p.ID) {
+			picked = append(picked, p)
+		} else {
+			rest = append(rest, p)
+		}
+	}
+	slices.SortStableFunc(rest, func(a, b Session) int {
+		if a.Active != b.Active {
+			if a.Active {
+				return -1
+			}
+			return 1
+		}
+		return seen(a, b)
 	})
-	return progs[:min(len(progs), maxPrograms)]
+	picked = append(picked, rest[:min(len(rest), max(maxPrograms-len(picked), 0))]...)
+	slices.SortStableFunc(picked, seen)
+	return picked
 }
 
 // sendMixer sends the list when its names changed, then the program frames

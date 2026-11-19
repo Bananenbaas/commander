@@ -202,6 +202,44 @@ func TestMixerShowsFourPrograms(t *testing.T) {
 	})
 }
 
+func playing(id, name string, level int) Session {
+	return Session{ID: id, Name: name, Level: level, Active: true}
+}
+
+// Idle sessions do not keep a player started later off the page: it takes
+// the row of an idle program.
+func TestMixerActiveNewcomerReplacesIdle(t *testing.T) {
+	test(t, func(h *harness) {
+		a := newAudio(h, 50, prog("a", "A", 1), prog("b", "B", 2), prog("c", "C", 3), prog("d", "D", 4))
+		h.onPoll[2] = func() { a.change(func(a *fakeAudio) { a.progs = append(a.progs, playing("z", "Z", 9)) }) }
+		h.onPoll[3] = h.cancel
+		h.run(testConfig())
+		h.want(logOf(startLog, []string{
+			"list SystemVolume 50|A 1|B 2|C 3|D 4", "programs 1-2: 1 2", "programs 3-4: 3 4", "system 50",
+			"poll", "list SystemVolume 50|A 1|B 2|C 3|Z 9", "programs 1-2: 1 2", "programs 3-4: 3 9", "system 50",
+			"poll", "close",
+		})...)
+	})
+}
+
+// Four playing programs keep their rows when a fifth starts to play; one
+// that goes idle may then make room for it.
+func TestMixerPlayingProgramsStay(t *testing.T) {
+	test(t, func(h *harness) {
+		a := newAudio(h, 50, playing("a", "A", 1), playing("b", "B", 2), playing("c", "C", 3), playing("d", "D", 4))
+		h.onPoll[2] = func() { a.change(func(a *fakeAudio) { a.progs = append(a.progs, playing("0", "Zero", 9)) }) }
+		h.onPoll[3] = func() { a.change(func(a *fakeAudio) { a.progs[1].Active = false }) }
+		h.onPoll[4] = h.cancel
+		h.run(testConfig())
+		h.want(logOf(startLog, []string{
+			"list SystemVolume 50|A 1|B 2|C 3|D 4", "programs 1-2: 1 2", "programs 3-4: 3 4", "system 50",
+			"poll",
+			"poll", "list SystemVolume 50|A 1|C 3|D 4|Zero 9", "programs 1-2: 1 3", "programs 3-4: 4 9", "system 50",
+			"poll", "close",
+		})...)
+	})
+}
+
 func TestMixerSlides(t *testing.T) {
 	test(t, func(h *harness) {
 		a := newAudio(h, 50, prog("a", "Steam", 42), prog("b", "Opera", 100))

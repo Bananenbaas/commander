@@ -43,16 +43,17 @@ func TestMergeSessions(t *testing.T) {
 	}
 	raw := []rawSession{
 		{PID: 100, Display: "", Level: 80},
-		{PID: 200, Display: "@%SystemRoot%\\x.dll,-1", Level: 30, Muted: true},
-		{PID: 100, Display: "Opera", Level: 20, Muted: true},
+		{PID: 200, Display: "@%SystemRoot%\\x.dll,-1", Level: 30, Muted: true, Active: true},
+		{PID: 100, Display: "Opera", Level: 20, Muted: true, Active: true},
 		{PID: 300, Display: "  ", Level: 5},
 	}
 	got := merge(raw, exe)
 	want := []Session{
 		// Two sessions of one process are one program: the first session's
-		// level and mute, the first usable display name.
-		{ID: "100", Name: "Opera", Level: 80},
-		{ID: "200", Name: "GroverPro", Level: 30, Muted: true},
+		// level and mute, the first usable display name, active when any of
+		// them is.
+		{ID: "100", Name: "Opera", Level: 80, Active: true},
+		{ID: "200", Name: "GroverPro", Level: 30, Muted: true, Active: true},
 		{ID: "300", Name: "Program 300", Level: 5},
 	}
 	if !reflect.DeepEqual(got, want) {

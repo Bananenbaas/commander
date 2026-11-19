@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 // Package audio describes the computer's sound for the keyboard's volume
-// mixer page: the system volume and the programs that play sound.
+// mixer page: the system volume and the programs with sound sessions.
 //
 // It imports nothing of kb7screen, so that both the run loop (as
 // run.Session) and the code that reads the volumes can use Session.
@@ -18,4 +18,8 @@ type Session struct {
 	Level int
 	// Muted is set while the sound is muted.
 	Muted bool
+	// Active is set while the program plays sound; a program that only
+	// holds a session, such as a paused player, is not active. It is unset
+	// for the system volume.
+	Active bool
 }

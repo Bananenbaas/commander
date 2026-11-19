@@ -30,8 +30,8 @@ type engine interface {
 // of times; it never blocks.
 type opener func(signal func(), logf func(string, ...any)) (engine, error)
 
-// Windows follows the system volume and the programs that play sound on the
-// default output device of Windows. Its methods may be called from any
+// Windows follows the system volume and the programs with sound sessions on
+// the default output device of Windows. Its methods may be called from any
 // goroutine; the audio calls themselves run on one goroutine of its own.
 type Windows struct {
 	reqs    chan request
@@ -114,8 +114,9 @@ func (w *Windows) do(fn func(engine) error) error {
 	}
 }
 
-// Sessions returns the system volume and the programs that play sound on the
-// default output device, one per process, in the order Windows lists them.
+// Sessions returns the system volume and the programs that have a sound
+// session on the default output device, one per process, in the order
+// Windows lists them; Active tells those that play sound.
 func (w *Windows) Sessions() (system Session, programs []Session, err error) {
 	err = w.do(func(e engine) error {
 		var err error
@@ -166,6 +167,7 @@ type rawSession struct {
 	Display string // the display name the program set; may be empty or an @-resource
 	Level   int
 	Muted   bool
+	Active  bool // the session plays sound
 }
 
 // usableName reports whether a display name can be shown as it is: not
@@ -188,7 +190,7 @@ func exeName(path string) string {
 
 // merge turns sessions into programs, one per process, in the order of each
 // process's first session. A program's level and mute are those of its
-// first session; its name is the first usable display name of its sessions,
+// first session, and it is active when any of its sessions is; its name is the first usable display name of its sessions,
 // else the executable name from exe, else "Program <pid>".
 func merge(raw []rawSession, exe func(pid uint32) string) []Session {
 	var out []Session
@@ -201,6 +203,7 @@ func merge(raw []rawSession, exe func(pid uint32) string) []Session {
 			at[r.PID] = i
 			out = append(out, Session{ID: strconv.FormatUint(uint64(r.PID), 10), Level: r.Level, Muted: r.Muted})
 		}
+		out[i].Active = out[i].Active || r.Active
 		if !named[r.PID] && usableName(r.Display) {
 			out[i].Name = strings.TrimSpace(r.Display)
 			named[r.PID] = true

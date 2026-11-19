@@ -8,9 +8,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 - Volume mixer (Windows): while `run` or Commander holds the keyboard, the
-  keyboard's mixer page shows the system volume and up to four programs that
-  play sound, by name, with their levels, and the sliders on the keyboard set
-  those volumes in Windows. The page follows Windows as programs start and
+  keyboard's mixer page shows the system volume and up to four programs with
+  sound sessions (ones playing sound come first), by name, with their levels,
+  and the sliders on the keyboard set those volumes in Windows. The page follows Windows as programs start and
   stop and as volumes change elsewhere. Not yet checked on the keyboard.
 - Profile names: a `name` key in a layout file (1 to 19 printable ASCII
   characters) makes `apply` rename that profile on the keyboard, in one write,

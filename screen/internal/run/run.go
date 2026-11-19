@@ -248,8 +248,10 @@ type loop struct {
 // error, a write the keyboard does not take included, closes the keyboard.
 //
 // With d.Audio, the keyboard's volume mixer page shows the system volume and
-// up to four programs, in the order they were first seen in this Run (those
-// first seen together by ID). From 2.5 s after notifications are enabled,
+// up to four programs: a shown program that plays sound keeps its place, the
+// other places go to programs that play sound first, then to those first
+// seen earliest in this Run (those first seen together by ID); they are
+// shown in the order they were first seen. From 2.5 s after notifications are enabled,
 // and again after every profile change and every change signal of d.Audio,
 // the volumes are read: the list (report 0x28) is written when the shown
 // names changed, and the a3 level frames that changed are sent, all of them

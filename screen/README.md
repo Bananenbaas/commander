@@ -625,11 +625,14 @@ keyboard keeps it after it is unplugged has not been tried.
 
 On Windows, `run` (and so Commander) keeps the keyboard's volume mixer page in
 step with the computer's sound: the first slider is the system volume, and the
-next ones are the programs that play sound at that moment, shown by their name
-(the program's own name when it gives one, otherwise the executable's name).
-At most four programs are shown; when more play, the four that `run` saw first keep their place and the rest are left out. Moving a slider on the
-keyboard sets that volume in Windows, and a change made in Windows moves the
-slider on the keyboard. Nothing needs to be configured.
+next ones are the programs with sound sessions, shown by their name (the
+program's own name when it gives one, otherwise the executable's name). At
+most four programs are shown; ones playing sound come first. A program that
+plays keeps its place; an idle one (a paused player, for example) gives its
+place to a program that starts to play. Among the rest, the ones `run` saw
+first come first. Moving a slider on the keyboard sets that volume in Windows,
+and a change made in Windows moves the slider on the keyboard. Nothing needs
+to be configured.
 
 The mixer is Windows only. When Windows audio cannot be used (no output
 device, for example), `run` logs one line and carries on with the buttons and

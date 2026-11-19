@@ -53,7 +53,8 @@ const (
 	eRender  = 0 // EDataFlow
 	eConsole = 0 // ERole
 
-	sessionExpired = 2 // AudioSessionState
+	sessionActive  = 1 // AudioSessionState
+	sessionExpired = 2
 )
 
 // Vtable slots (IUnknown's three come first in every interface).

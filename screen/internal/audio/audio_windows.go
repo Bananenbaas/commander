@@ -193,7 +193,8 @@ func (e *winEngine) system() (Session, error) {
 
 // read enumerates the device's sessions: it follows new ones, lets go of
 // those gone or expired, and returns the programs' sessions in the
-// enumerator's order. Inactive sessions stay: a paused player is listed.
+// enumerator's order. Inactive sessions stay, a paused player is listed, but
+// only active ones are marked Active.
 func (e *winEngine) read() ([]rawSession, error) {
 	var en *comPtr
 	if err := e.mgr.call(mGetSessionEnumerator, uintptr(unsafe.Pointer(&en))).err("GetSessionEnumerator"); err != nil {
@@ -232,7 +233,9 @@ func (e *winEngine) read() ([]rawSession, error) {
 		}
 		var muted int32
 		s.simple.call(mSimpleGetMute, uintptr(unsafe.Pointer(&muted)))
-		raw = append(raw, rawSession{PID: s.pid, Display: s.ctl.text(mGetDisplayName), Level: levelOf(f), Muted: muted != 0})
+		var state int32
+		active := !s.ctl.call(mGetState, uintptr(unsafe.Pointer(&state))).failed() && state == sessionActive
+		raw = append(raw, rawSession{PID: s.pid, Display: s.ctl.text(mGetDisplayName), Level: levelOf(f), Muted: muted != 0, Active: active})
 	}
 	return raw, nil
 }
