@@ -37,9 +37,10 @@ type winEngine struct {
 	volCB       *callback
 	volIsListed bool
 
-	devs   deviceSet // every active output device, for the sessions
-	sessCB *callback // shared by every device
-	evCB   *callback // shared by every session
+	devs   deviceSet         // every active output device, for the sessions
+	names  map[uint32]string // program names by process ID
+	sessCB *callback         // shared by every device
+	evCB   *callback         // shared by every session
 }
 
 // winDevice is one output device whose sessions the engine follows.
@@ -49,6 +50,7 @@ type winDevice struct {
 	sessCB       *callback
 	sessIsListed bool
 	evCB         *callback
+	names        map[uint32]string      // the engine's program names by process ID
 	followed     map[string]*winSession // by session instance identifier
 	order        []*winSession          // scratch: the sessions of one read
 }
@@ -79,6 +81,7 @@ func openEngine(signal func(), logf func(string, ...any)) (engine, error) {
 	h := &hub{signal: signal}
 	e := &winEngine{
 		hub:    h,
+		names:  map[uint32]string{},
 		logf:   logf,
 		enum:   enum,
 		client: newCallback(kindNotificationClient, h),
@@ -144,18 +147,31 @@ func (e *winEngine) updateDevices() error {
 		found[id] = dev
 		ids = append(ids, id)
 	}
-	err := e.devs.update(ids, func(id string) (endpoint, error) {
+	err := e.devs.update(ids, e.defaultID(), func(id string) (endpoint, error) {
 		dev := found[id]
 		found[id] = nil // openDevice owns it now
-		return openDevice(dev, e.sessCB, e.evCB)
+		return openDevice(dev, e.sessCB, e.evCB, e.names)
 	})
 	for _, dev := range found {
 		dev.release() // devices already followed: their own reference stays
 	}
 	if err != nil {
 		e.logf("audio: %v", err)
+		// Retry on the next read, without a signal: a signal would make the
+		// caller read at once and so loop.
+		e.hub.deviceChanged.Store(true)
 	}
 	return nil
+}
+
+// defaultID returns the ID of the default output device, or "" without one.
+func (e *winEngine) defaultID() string {
+	var dev *comPtr
+	if e.enum.call(mGetDefaultAudioEndpoint, eRender, eConsole, uintptr(unsafe.Pointer(&dev))).failed() {
+		return ""
+	}
+	defer dev.release()
+	return dev.text(mGetId)
 }
 
 // acquireDefault takes the current default output device for the system
@@ -206,8 +222,8 @@ func (e *winEngine) dropDefault() {
 
 // openDevice follows the sessions of the device dev and takes over its
 // reference: on an error dev is released.
-func openDevice(dev *comPtr, sessCB, evCB *callback) (endpoint, error) {
-	d := &winDevice{dev: dev, sessCB: sessCB, evCB: evCB, followed: map[string]*winSession{}}
+func openDevice(dev *comPtr, sessCB, evCB *callback, names map[uint32]string) (endpoint, error) {
+	d := &winDevice{dev: dev, sessCB: sessCB, evCB: evCB, names: names, followed: map[string]*winSession{}}
 	var mgr *comPtr
 	if err := dev.call(mActivate, uintptr(unsafe.Pointer(&iidIAudioSessionManager2)), clsctxAll, 0, uintptr(unsafe.Pointer(&mgr))).err("activating the session manager"); err != nil {
 		d.close()
@@ -236,6 +252,10 @@ func (d *winDevice) close() {
 		d.untrack(s)
 		delete(d.followed, id)
 	}
+	// Windows may keep a reference to the shared callback objects after a
+	// device was invalidated, and call them once more. That is bounded (the
+	// callbacks live as long as the engine) and harmless (they only set a
+	// flag and signal).
 	if d.sessIsListed {
 		d.mgr.call(mUnregisterSessionNotification, d.sessCB.ptr())
 		d.sessIsListed = false
@@ -257,10 +277,21 @@ func (e *winEngine) sessions() (Session, []Session, error) {
 		return Session{}, nil, err
 	}
 	raw, lost := e.devs.read(e.logf)
+	e.pruneNames(raw)
 	if lost {
 		e.hub.deviceChanged.Store(true)
 	}
 	return system, merge(raw), nil
+}
+
+// pruneNames forgets the names of processes with no session left, so that a
+// reused process ID is looked up again.
+func (e *winEngine) pruneNames(raw []rawSession) {
+	for pid := range e.names {
+		if !slices.ContainsFunc(raw, func(r rawSession) bool { return r.PID == pid }) {
+			delete(e.names, pid)
+		}
+	}
 }
 
 func (e *winEngine) devices() int { return e.devs.len() }
@@ -364,10 +395,21 @@ func (d *winDevice) track(c *comPtr) *winSession {
 	if ctl.call(mGetProcessID, uintptr(unsafe.Pointer(&s.pid))).failed() {
 		s.pid = 0
 	}
-	s.exe = processName(s.pid)
+	s.exe = d.programName(s.pid)
 	s.listed = !ctl.call(mRegisterAudioSessionNotification, d.evCB.ptr()).failed()
 	d.followed[id] = s
 	return s
+}
+
+// programName returns the name of a process's program, looked up once per
+// process: the lookup reads the executable's version information.
+func (d *winDevice) programName(pid uint32) string {
+	if name, ok := d.names[pid]; ok {
+		return name
+	}
+	name := processName(pid)
+	d.names[pid] = name
+	return name
 }
 
 // untrack unregisters from a session and releases it.
@@ -380,19 +422,29 @@ func (d *winDevice) untrack(s *winSession) {
 	s.ctl.release()
 }
 
-// setProgram sets every followed session of the process on the device.
+// setProgram sets every followed session of the process on the device. It
+// goes on after a failure and returns the first error; a device that reports
+// itself invalidated gives an error wrapping errDeviceLost.
 func (d *winDevice) setProgram(pid uint32, level int) (bool, error) {
 	found := false
+	var first error
 	for _, s := range d.followed {
 		if s.pid != pid {
 			continue
 		}
 		found = true
-		if err := s.simple.call(mSetMasterVolume, scalar(level), 0).err("ISimpleAudioVolume.SetMasterVolume"); err != nil {
-			return true, err
+		hr := s.simple.call(mSetMasterVolume, scalar(level), 0)
+		err := hr.err("ISimpleAudioVolume.SetMasterVolume")
+		if err != nil && hr == audclntEDeviceInvalidated {
+			err = fmt.Errorf("%w: %w", errDeviceLost, err)
+		}
+		if first == nil {
+			first = err
+		} else if err != nil && errors.Is(err, errDeviceLost) && !errors.Is(first, errDeviceLost) {
+			first = err
 		}
 	}
-	return found, nil
+	return found, first
 }
 
 func (e *winEngine) setSystem(level int) error {
@@ -411,17 +463,27 @@ func (e *winEngine) setProgram(id string, level int) error {
 		return err
 	}
 	found, err := e.devs.setProgram(uint32(pid), level)
+	e.noteLost()
 	if !found && err == nil {
 		// The devices were listed again since the last read: read once more.
 		if _, _, err := e.sessions(); err != nil {
 			return err
 		}
 		found, err = e.devs.setProgram(uint32(pid), level)
+		e.noteLost()
 	}
 	if err == nil && !found {
 		err = fmt.Errorf("no program with ID %q", id)
 	}
 	return err
+}
+
+// noteLost has the devices listed again when setProgram dropped one.
+func (e *winEngine) noteLost() {
+	if e.devs.lost {
+		e.devs.lost = false
+		e.hub.deviceChanged.Store(true)
+	}
 }
 
 // scalar turns a level 0 to 100 into a float argument: its bits in the

@@ -38,8 +38,9 @@ type engine interface {
 type opener func(signal func(), logf func(string, ...any)) (engine, error)
 
 // Windows follows the system volume of the default output device of Windows
-// and the programs with sound sessions on any active output device. Its methods may be called from any
-// goroutine; the audio calls themselves run on one goroutine of its own.
+// and the programs with sound sessions on any active output device. Its
+// methods may be called from any goroutine; the audio calls themselves run
+// on one goroutine of its own.
 type Windows struct {
 	reqs    chan request
 	changes chan struct{}

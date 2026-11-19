@@ -11,6 +11,7 @@ import (
 // fakeDevice stands in for one output device of Windows.
 type fakeDevice struct {
 	raw    []rawSession
+	setErr error          // returned by setProgram
 	levels map[uint32]int // set by setProgram
 	fail   bool           // read fails, as for an unplugged device
 	closed bool
@@ -34,7 +35,7 @@ func (d *fakeDevice) setProgram(pid uint32, level int) (bool, error) {
 			d.levels[pid] = level
 		}
 	}
-	return found, nil
+	return found, d.setErr
 }
 
 func (d *fakeDevice) close() { d.closed = true }
@@ -69,7 +70,7 @@ func TestDeviceSetMergesByPID(t *testing.T) {
 	}}
 	f := newFakeDevices(map[string]*fakeDevice{"speakers": speakers, "headset": headset})
 	var s deviceSet
-	if err := s.update([]string{"speakers", "headset"}, f.open); err != nil {
+	if err := s.update([]string{"speakers", "headset"}, "", f.open); err != nil {
 		t.Fatal(err)
 	}
 	if s.len() != 2 {
@@ -96,10 +97,10 @@ func TestDeviceSetRemovedDevice(t *testing.T) {
 	headset := &fakeDevice{raw: []rawSession{{PID: 3, Exe: "Discord", Level: 70}}}
 	f := newFakeDevices(map[string]*fakeDevice{"speakers": speakers, "headset": headset})
 	var s deviceSet
-	if err := s.update([]string{"speakers", "headset"}, f.open); err != nil {
+	if err := s.update([]string{"speakers", "headset"}, "", f.open); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.update([]string{"speakers"}, f.open); err != nil {
+	if err := s.update([]string{"speakers"}, "", f.open); err != nil {
 		t.Fatal(err)
 	}
 	if !headset.closed || speakers.closed {
@@ -122,10 +123,10 @@ func TestDeviceSetAddedDevice(t *testing.T) {
 	headset := &fakeDevice{raw: []rawSession{{PID: 3, Exe: "Discord", Level: 70}}}
 	f := newFakeDevices(map[string]*fakeDevice{"speakers": speakers, "headset": headset})
 	var s deviceSet
-	if err := s.update([]string{"speakers"}, f.open); err != nil {
+	if err := s.update([]string{"speakers"}, "", f.open); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.update([]string{"speakers", "headset"}, f.open); err != nil {
+	if err := s.update([]string{"speakers", "headset"}, "", f.open); err != nil {
 		t.Fatal(err)
 	}
 	if f.opens["speakers"] != 1 || f.opens["headset"] != 1 || speakers.closed {
@@ -142,7 +143,7 @@ func TestDeviceSetOpenFails(t *testing.T) {
 	speakers := &fakeDevice{raw: []rawSession{{PID: 1, Exe: "Steam", Level: 42}}}
 	f := newFakeDevices(map[string]*fakeDevice{"speakers": speakers})
 	var s deviceSet
-	if err := s.update([]string{"broken", "speakers"}, f.open); err == nil {
+	if err := s.update([]string{"broken", "speakers"}, "", f.open); err == nil {
 		t.Error("no error for a device that cannot be opened")
 	}
 	if s.len() != 1 {
@@ -155,7 +156,7 @@ func TestDeviceSetLostDevice(t *testing.T) {
 	headset := &fakeDevice{raw: []rawSession{{PID: 3, Exe: "Discord", Level: 70}}, fail: true}
 	f := newFakeDevices(map[string]*fakeDevice{"speakers": speakers, "headset": headset})
 	var s deviceSet
-	if err := s.update([]string{"speakers", "headset"}, f.open); err != nil {
+	if err := s.update([]string{"speakers", "headset"}, "", f.open); err != nil {
 		t.Fatal(err)
 	}
 	raw, lost := s.read(t.Logf)
@@ -167,7 +168,7 @@ func TestDeviceSetLostDevice(t *testing.T) {
 	}
 	// The headset comes back: it is opened again.
 	headset.fail, headset.closed = false, false
-	if err := s.update([]string{"speakers", "headset"}, f.open); err != nil {
+	if err := s.update([]string{"speakers", "headset"}, "", f.open); err != nil {
 		t.Fatal(err)
 	}
 	if f.opens["headset"] != 2 || s.len() != 2 {
@@ -180,7 +181,7 @@ func TestDeviceSetSetProgram(t *testing.T) {
 	headset := &fakeDevice{raw: []rawSession{{PID: 1, Exe: "Steam", Level: 10}}}
 	f := newFakeDevices(map[string]*fakeDevice{"speakers": speakers, "headset": headset})
 	var s deviceSet
-	if err := s.update([]string{"speakers", "headset"}, f.open); err != nil {
+	if err := s.update([]string{"speakers", "headset"}, "", f.open); err != nil {
 		t.Fatal(err)
 	}
 	found, err := s.setProgram(1, 30)
@@ -196,5 +197,62 @@ func TestDeviceSetSetProgram(t *testing.T) {
 	s.closeAll()
 	if !speakers.closed || !headset.closed || s.len() != 0 {
 		t.Error("closeAll left a device open")
+	}
+}
+
+func TestDeviceSetDefaultFirst(t *testing.T) {
+	speakers := &fakeDevice{raw: []rawSession{{PID: 1, Exe: "Steam", Level: 42}}}
+	headset := &fakeDevice{raw: []rawSession{{PID: 1, Exe: "Steam", Level: 10}}}
+	f := newFakeDevices(map[string]*fakeDevice{"speakers": speakers, "headset": headset})
+	var s deviceSet
+	level := func() int {
+		raw, _ := s.read(t.Logf)
+		return merge(raw)[0].Level
+	}
+	// The enumerator lists the headset last, but it is the default.
+	if err := s.update([]string{"speakers", "headset"}, "headset", f.open); err != nil {
+		t.Fatal(err)
+	}
+	if got := level(); got != 10 {
+		t.Errorf("level = %d, want the default device's 10", got)
+	}
+	// The default changes: the level follows it.
+	if err := s.update([]string{"speakers", "headset"}, "speakers", f.open); err != nil {
+		t.Fatal(err)
+	}
+	if got := level(); got != 42 {
+		t.Errorf("level = %d, want the new default's 42", got)
+	}
+	// A default that is not listed changes nothing.
+	if err := s.update([]string{"speakers", "headset"}, "gone", f.open); err != nil {
+		t.Fatal(err)
+	}
+	if s.len() != 2 {
+		t.Errorf("len = %d, want 2", s.len())
+	}
+}
+
+func TestDeviceSetSetProgramContinues(t *testing.T) {
+	errA := errors.New("first")
+	a := &fakeDevice{raw: []rawSession{{PID: 1}}, setErr: errA}
+	b := &fakeDevice{raw: []rawSession{{PID: 1}}, setErr: errDeviceLost}
+	c := &fakeDevice{raw: []rawSession{{PID: 1}}}
+	f := newFakeDevices(map[string]*fakeDevice{"a": a, "b": b, "c": c})
+	var s deviceSet
+	if err := s.update([]string{"a", "b", "c"}, "", f.open); err != nil {
+		t.Fatal(err)
+	}
+	found, err := s.setProgram(1, 30)
+	if !found || !errors.Is(err, errA) {
+		t.Errorf("setProgram = %v, %v; want found and the first error", found, err)
+	}
+	if c.levels[1] != 30 {
+		t.Error("the device after a failing one was not set")
+	}
+	if !b.closed || s.len() != 2 {
+		t.Errorf("b closed %v, len %d; want the lost device dropped", b.closed, s.len())
+	}
+	if !s.lost {
+		t.Error("the set did not note the lost device")
 	}
 }

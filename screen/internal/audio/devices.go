@@ -20,18 +20,30 @@ type endpoint interface {
 	close()
 }
 
-// deviceSet is the output devices followed, by device ID, in the order
-// Windows lists them. The zero value is an empty set.
+// errDeviceLost is wrapped by the errors of a device that is gone, such as
+// one unplugged or disabled while followed.
+var errDeviceLost = errors.New("the output device is gone")
+
+// deviceSet is the output devices followed, by device ID, the default one
+// first and the others in the order Windows lists them. The zero value is an
+// empty set.
 type deviceSet struct {
 	ids  []string
 	devs map[string]endpoint
+	lost bool // a device was dropped by setProgram; the set is to be updated
 }
 
 // update makes the set follow the devices ids: it closes those no longer
 // listed and opens the new ones, and keeps those that stayed as they are, so
-// their sessions are not lost. A device that cannot be opened is left out
-// and its error returned; the others are followed all the same.
-func (s *deviceSet) update(ids []string, open func(id string) (endpoint, error)) error {
+// their sessions are not lost. The default device, when listed, comes first:
+// a program that plays on several devices shows the level it has there, and
+// Windows does not promise a stable order of the devices. A device that
+// cannot be opened is left out and its error returned; the others are
+// followed all the same.
+func (s *deviceSet) update(ids []string, defaultID string, open func(id string) (endpoint, error)) error {
+	if i := slices.Index(ids, defaultID); i > 0 {
+		ids = append([]string{defaultID}, slices.Delete(slices.Clone(ids), i, i+1)...)
+	}
 	if s.devs == nil {
 		s.devs = map[string]endpoint{}
 	}
@@ -78,13 +90,18 @@ func (s *deviceSet) read(logf func(string, ...any)) (raw []rawSession, lost bool
 
 // setProgram sets the volume of every session of the process on every
 // device; found tells whether any device has one. The first error is
-// returned, after the other devices were set.
+// returned, after the other devices were set. A device that is gone is
+// closed and left out, and lost is set.
 func (s *deviceSet) setProgram(pid uint32, level int) (found bool, err error) {
-	for _, id := range s.ids {
+	for _, id := range slices.Clone(s.ids) {
 		f, e := s.devs[id].setProgram(pid, level)
 		found = found || f
 		if err == nil {
 			err = e
+		}
+		if errors.Is(e, errDeviceLost) {
+			s.remove(id)
+			s.lost = true
 		}
 	}
 	return found, err

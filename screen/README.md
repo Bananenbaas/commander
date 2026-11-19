@@ -632,8 +632,10 @@ most four programs are shown; ones playing sound come first. A program that
 plays keeps its place; an idle one (a paused player, for example) gives its
 place to a program that starts to play. Among the rest, the ones `run` saw
 first come first. Moving a slider on the keyboard sets that volume in Windows,
-and a change made in Windows moves the slider on the keyboard. Nothing needs
-to be configured.
+and a change made in Windows moves the slider on the keyboard. A program's
+slider sets that program's volume on every output device it plays on; the
+level it shows is the one on the default device when the program plays there.
+Nothing needs to be configured.
 
 The mixer is Windows only. When Windows audio cannot be used (no output
 device, for example), `run` logs one line and carries on with the buttons and

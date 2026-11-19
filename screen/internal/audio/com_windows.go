@@ -48,6 +48,8 @@ const (
 	eNoInterface hresult = 0x80004002
 	eNotFound    hresult = 0x80070490 // HRESULT_FROM_WIN32(ERROR_NOT_FOUND): no default device
 
+	audclntEDeviceInvalidated hresult = 0x88890004 // AUDCLNT_E_DEVICE_INVALIDATED
+
 	clsctxAll = 0x17
 
 	eRender  = 0 // EDataFlow
