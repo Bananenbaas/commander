@@ -26,6 +26,44 @@ func TestExeName(t *testing.T) {
 	}
 }
 
+func TestProgramName(t *testing.T) {
+	const path = `C:\Program Files (x86)\Steam\steam.exe`
+	for _, c := range []struct {
+		name string
+		info map[string]string
+		want string
+	}{
+		{"the description wins over the executable", map[string]string{"FileDescription": "Steam", "ProductName": "Steam Client"}, "Steam"},
+		{"spaces trimmed", map[string]string{"FileDescription": "  Steam \t"}, "Steam"},
+		{"an empty description falls back to the product", map[string]string{"FileDescription": "  ", "ProductName": "Steam Client"}, "Steam Client"},
+		{"no version information", nil, "steam"},
+		{"empty strings", map[string]string{"FileDescription": "", "ProductName": " "}, "steam"},
+	} {
+		if got := programName(path, func(key string) string { return c.info[key] }); got != c.want {
+			t.Errorf("%s: programName = %q, want %q", c.name, got, c.want)
+		}
+	}
+	if got := programName("", func(string) string { return "Steam" }); got != "" {
+		t.Errorf("programName of no path = %q, want \"\"", got)
+	}
+}
+
+func TestStringBlocks(t *testing.T) {
+	for _, c := range []struct {
+		trans []uint16
+		want  []string
+	}{
+		{nil, []string{`\StringFileInfo\040904b0\`}},
+		{[]uint16{0x0413, 0x04b0}, []string{`\StringFileInfo\041304b0\`, `\StringFileInfo\040904b0\`}},
+		{[]uint16{0x0409, 0x04e4, 0x0409, 0x04b0}, []string{`\StringFileInfo\040904e4\`, `\StringFileInfo\040904b0\`}},
+		{[]uint16{0x0000, 0x04b0, 0x0409}, []string{`\StringFileInfo\000004b0\`, `\StringFileInfo\040904b0\`}},
+	} {
+		if got := stringBlocks(c.trans); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("stringBlocks(%04x) = %q, want %q", c.trans, got, c.want)
+		}
+	}
+}
+
 func TestLevelOf(t *testing.T) {
 	for _, c := range []struct {
 		in   float32

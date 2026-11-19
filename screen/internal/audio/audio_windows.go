@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -44,7 +46,7 @@ type winSession struct {
 	ctl    *comPtr // IAudioSessionControl2
 	simple *comPtr // ISimpleAudioVolume
 	pid    uint32
-	exe    string // the executable name, read once when the session is followed
+	exe    string // the program's name from its executable, read once when the session is followed
 	listed bool   // evCB is registered with ctl
 	seen   bool   // listed by the latest enumeration
 }
@@ -356,9 +358,16 @@ func (e *winEngine) close() {
 	windows.CoUninitialize()
 }
 
-// processName returns the executable name of a process without ".exe", or
-// "" when it cannot be read.
+// processName names a process after its executable (see programName), or
+// "" when its executable cannot be read.
 func processName(pid uint32) string {
+	path := processPath(pid)
+	return programName(path, versionInfo(path))
+}
+
+// processPath returns the full path of a process's executable, or "" when it
+// cannot be read.
+func processPath(pid uint32) string {
 	if pid == 0 {
 		return ""
 	}
@@ -372,5 +381,45 @@ func processName(pid uint32) string {
 	if err := windows.QueryFullProcessImageName(h, 0, &buf[0], &size); err != nil {
 		return ""
 	}
-	return exeName(windows.UTF16ToString(buf[:size]))
+	return windows.UTF16ToString(buf[:size])
+}
+
+// versionInfo reads the version information of an executable once and
+// returns a lookup of its strings, such as "FileDescription", in the first
+// string block that has the string (see stringBlocks); "" when it has none.
+func versionInfo(path string) func(key string) string {
+	none := func(string) string { return "" }
+	if path == "" {
+		return none
+	}
+	size, err := windows.GetFileVersionInfoSize(path, nil)
+	if err != nil || size == 0 {
+		return none
+	}
+	buf := make([]byte, size)
+	block := unsafe.Pointer(&buf[0])
+	if err := windows.GetFileVersionInfo(path, 0, size, block); err != nil {
+		return none
+	}
+	var trans []uint16
+	var p unsafe.Pointer
+	var n uint32 // bytes
+	if windows.VerQueryValue(block, `\VarFileInfo\Translation`, unsafe.Pointer(&p), &n) == nil && p != nil && n >= 4 {
+		trans = slices.Clone(unsafe.Slice((*uint16)(p), n/2))
+	}
+	blocks := stringBlocks(trans)
+	return func(key string) string {
+		for _, b := range blocks {
+			var p unsafe.Pointer
+			var n uint32 // characters, with the terminating NUL
+			if windows.VerQueryValue(block, b+key, unsafe.Pointer(&p), &n) != nil || p == nil || n == 0 {
+				continue
+			}
+			s := windows.UTF16ToString(unsafe.Slice((*uint16)(p), n))
+			if s = strings.TrimSpace(s); s != "" {
+				return s
+			}
+		}
+		return ""
+	}
 }

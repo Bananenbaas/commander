@@ -4,8 +4,10 @@ package audio
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -170,7 +172,7 @@ func levelOf(f float32) int {
 type rawSession struct {
 	PID     uint32
 	Display string // the display name the program set; may be empty or an @-resource
-	Exe     string // the executable name without ".exe"; "" when unknown
+	Exe     string // the program named after its executable (see programName); "" when unknown
 	Level   int
 	Muted   bool
 	Active  bool // the session plays sound
@@ -194,11 +196,46 @@ func exeName(path string) string {
 	return path
 }
 
+// programName names a program after its executable: the FileDescription of
+// its version information, else the ProductName, else the executable's base
+// name without ".exe"; "" without a path. info returns a string of the
+// executable's version information, "" when it has none.
+func programName(path string, info func(key string) string) string {
+	if path == "" {
+		return ""
+	}
+	for _, key := range []string{"FileDescription", "ProductName"} {
+		if s := strings.TrimSpace(info(key)); s != "" {
+			return s
+		}
+	}
+	return exeName(path)
+}
+
+// stringBlocks returns the version-information string blocks to look in,
+// given the language and code page pairs of \VarFileInfo\Translation: each
+// translation in the order listed (the first is the main one), then US
+// English in Unicode, 040904b0. An odd last value is ignored.
+func stringBlocks(trans []uint16) []string {
+	var out []string
+	add := func(lang, cp uint16) {
+		b := fmt.Sprintf(`\StringFileInfo\%04x%04x\`, lang, cp)
+		if !slices.Contains(out, b) {
+			out = append(out, b)
+		}
+	}
+	for i := 0; i+1 < len(trans); i += 2 {
+		add(trans[i], trans[i+1])
+	}
+	add(0x0409, 0x04b0)
+	return out
+}
+
 // merge turns sessions into programs, one per process, in the order of each
 // process's first session. A program's level and mute are those of its
 // first session, and it is active when any of its sessions is. Its name is
-// the first usable display name of its sessions, else the executable name of
-// its first session that has one, else "Program <pid>".
+// the first usable display name of its sessions, else the name from the
+// executable of its first session that has one, else "Program <pid>".
 func merge(raw []rawSession) []Session {
 	var out []Session
 	at := map[uint32]int{}
