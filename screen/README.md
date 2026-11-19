@@ -160,8 +160,8 @@ error; the message goes to standard error, prefixed with `kb7screen:`.
 (with transparency), and per profile a `panel-<profile>.png` for page 1 that
 shows the 12 positions as a grid of 3 columns and 4 rows on a dark background,
 empty positions left dark; page 2 or 3 with buttons gets its own
-`panel-<profile>-<page>.png`. It is the quickest way to check titles and symbols before
-anything is sent to the keyboard.
+`panel-<profile>-<page>.png`. It is the quickest way to check titles and
+symbols before anything is sent to the keyboard.
 
 `apply` and `restore` report which pictures were uploaded and which were
 already in place, which positions were restored (as `profile P page G position
@@ -671,8 +671,11 @@ the keyboard. The GIF does not follow the keyboard's brightness.
 - Only frames that are documented in `docs/PROTOCOL.md` are sent. Nothing that
   could touch firmware updates, the bootloader or a factory reset is
   implemented.
-- `kb7screen` writes only to the buttons you configured and to its own ledger.
-  `restore` gives positions back what they held before.
+- `kb7screen` writes to the buttons you configured and to its own ledger. When
+  a layout asks for it, `apply` also writes that profile's stored lighting
+  and name, and while `run` holds the keyboard it fills the keyboard's volume
+  mixer page. `restore` gives positions back what they held before; it does
+  not give back stored lighting or profile names.
 - `Ctrl+C` stops `run` and releases every key still held.
 
 ## Linux
