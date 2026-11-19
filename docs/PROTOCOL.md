@@ -314,6 +314,20 @@ The flicker is useful evidence rather than a nuisance: it shows the write does
 reach the LEDs, so `0x11` is not ignored. It is stored configuration that the
 device applies once, and the stream is what the LEDs obey from then on.
 
+**How Swarm II stores a profile's lighting** (`46-light-save-static-blue-1`):
+setting `DEFAULT 04` to a static colour (red 28, green 54, blue 255) and then
+moving the brightness slider produced nothing but `SET_REPORT` feature `0x11`
+writes, each followed about 150 ms later by a `GET_REPORT` feature `0x05` that
+read `05 01 00 00`. There is no separate save step: every change in Swarm II's
+lighting page is one complete `0x11` block.
+
+| Finding | Status |
+|---|---|
+| Storing a profile's lighting is a write of the whole `0x11` block for that profile (byte 3 the slot, `03` for `DEFAULT 04`), with the colours in the usual layout (`1c`, `36`, `ff` for 28, 54, 255) | observed (`46-light-save-static-blue-1`) |
+| **Byte 6 is the profile's brightness in percent**: the brightness slider wrote `63`, `46`, `2a`, `1b`, `63` (99, 70, 42, 27, 99), nothing else changing | observed (`46-light-save-static-blue-1`) |
+| Bytes 4–5 `01 06` and 7–9 `0b 01 00` stayed the same through every write | observed; meaning unknown |
+| The stored table survives unplugging the keyboard | not yet checked |
+
 #### Streaming our own LED frames works, and contends with Swarm II
 
 Driving the lighting means writing `a1` frames to `0x0d` — the same endpoint and
