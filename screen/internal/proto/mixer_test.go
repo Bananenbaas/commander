@@ -51,7 +51,7 @@ func TestMixerListCapture(t *testing.T) {
 
 func TestMixerListNames(t *testing.T) {
 	long := strings.Repeat("abcdefghij", 5)
-	got, err := MixerList([]MixerRow{{"SystemVolume", 100}, {long, 7}, {"Spotify — Premium", 101}, {"Café\x01", -3}})
+	got, err := MixerList([]MixerRow{{"SystemVolume", 100}, {long, 7}, {"Spotify · Premium", 101}, {"Café\x01", -3}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,7 +13,7 @@
 - [ ] New or changed parsing behaviour is covered by a test
 - [ ] Tests use the fake VID:PID 1234:5678 and encode no guesses about the real protocol
 - [ ] New source files carry `# SPDX-License-Identifier: GPL-2.0-or-later`
-- [ ] Standard library only — no new dependencies
+- [ ] Standard library only: no new dependencies
 - [ ] Everything added is written in English
 
 ### If this touches `docs/PROTOCOL.md`

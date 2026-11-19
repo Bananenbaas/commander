@@ -21,7 +21,7 @@ exist yet, so for now it lives in the tray menu.
   result in a balloon ("Commander v… is up to date", or the update found, or
   why the check failed).
 - **Ask, never act alone.** When a newer release is found, a balloon says so
-  ("Commander v0.1.0-beta.2 is available — click to update") and a menu item
+  ("Commander v0.1.0-beta.2 is available: click to update") and a menu item
   **Update to v0.1.0-beta.2** appears. Clicking either asks for confirmation in
   a message box that names both versions and links the release page; only Yes
   installs.

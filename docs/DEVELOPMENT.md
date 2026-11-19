@@ -39,7 +39,7 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 
 ## Conventions
 
-- **Language**: everything in the repository is English — code, comments,
+- **Language**: everything in the repository is English: code, comments,
   documentation, commit messages.
 - **License**: GPL-2.0-or-later, for compatibility with OpenRGB. Every source
   file starts with `# SPDX-License-Identifier: GPL-2.0-or-later`; in Go files
@@ -58,7 +58,7 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 
 - **Hardware safety**: only commands that have been observed in a capture are
   ever replayed. Firmware-update, bootloader and factory-reset commands are
-  never implemented — they belong on the do-not-send list in `PROTOCOL.md`. No
+  never implemented; they belong on the do-not-send list in `PROTOCOL.md`. No
   fuzzing of write commands.
 - **Privacy**: raw captures are never committed. `PROTOCOL.md` contains only
   short, reviewed hex excerpts. Keystroke reports stay hidden by default in the
@@ -114,7 +114,7 @@ updates for installed Commanders.
 
 ## Known gaps and pitfalls
 
-- **USBPcap control-transfer layout — checked, and it bit us once.** USBPcap
+- **USBPcap control-transfer layout: checked, and it bit us once.** USBPcap
   1.5.4 emits no DATA-stage packet for a control transfer: the payload is
   attached to the **COMPLETE** stage. The parser originally closed the transfer
   on COMPLETE without reading that payload, so every control transfer in a real
@@ -124,8 +124,8 @@ updates for installed Commanders.
   "only if no earlier stage supplied data" guard, or a capture containing both
   layouts will count the same bytes twice.
 - **Transfers are timestamped when they complete.** Interrupt IN requests are
-  queued long before the device has data — Windows keeps several outstanding per
-  endpoint and resubmits one the moment another completes — so a request's
+  queued long before the device has data (Windows keeps several outstanding per
+  endpoint and resubmits one the moment another completes), so a request's
   submission time says nothing about when its data arrived. An earlier version
   timestamped and ordered by submission, which put each report next to the
   previous one: two screen taps three seconds apart came out as an adjacent
@@ -136,7 +136,7 @@ updates for installed Commanders.
   report descriptors and string descriptors appear solely in a real enumeration,
   so `01-plug-in` cannot be skipped.
 - **Keystroke hiding fails closed.** A report counts as typing when its
-  descriptor draws on the keyboard usage page (`0x07`) anywhere — the summariser
+  descriptor draws on the keyboard usage page (`0x07`) anywhere; the summariser
   records every page a report's main items use, including pages carried in the
   high half of four-byte Usage / Usage Minimum / Usage Maximum items. Recording
   only the page in effect at a report's first item, as an earlier version did,
@@ -153,7 +153,7 @@ updates for installed Commanders.
 - **Injected descriptors can carry the wrong device address.** After a reboot
   of the PC, `--inject-descriptors` labelled the KB7 as device `3.5` while all
   of its traffic came from `3.4`. `summary` then shows `3.5` with descriptors
-  and no traffic, and `3.4` with traffic but "(no device descriptor)" — and,
+  and no traffic, and `3.4` with traffic but "(no device descriptor)", and,
   per the previous point, `3.4` is then not filtered for keystrokes at all.
   Check which address actually carries the `0x8c` reports before trusting a
   `dump` of such a capture.

@@ -223,7 +223,7 @@ func TestMixerNewProgramSendsNewList(t *testing.T) {
 	test(t, func(h *harness) {
 		a := newAudio(h, 50, prog("a", "Steam", 42))
 		h.onPoll[2] = func() {
-			a.change(func(a *fakeAudio) { a.progs = append(a.progs, prog("c", "Spotify — Premium", 80)) })
+			a.change(func(a *fakeAudio) { a.progs = append(a.progs, prog("c", "Spotify · Premium", 80)) })
 		}
 		h.onPoll[3] = h.cancel
 		h.run(testConfig())

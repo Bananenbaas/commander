@@ -8,7 +8,7 @@ body:
         Findings end up in [`docs/PROTOCOL.md`](https://github.com/Bananenbaas/kb7-commander/blob/main/docs/PROTOCOL.md),
         where every claim carries a status tag and names its capture.
 
-        **Do not attach a raw `.pcap` / `.pcapng`** — paste short, reviewed hex
+        **Do not attach a raw `.pcap` / `.pcapng`**: paste short, reviewed hex
         excerpts only.
   - type: dropdown
     id: area

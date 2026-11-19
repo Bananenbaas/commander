@@ -1,4 +1,4 @@
-# kb7screen — own buttons on the KB7 touchscreen
+# kb7screen: own buttons on the KB7 touchscreen
 
 Design for a program that puts my own buttons on the KB7's screen, per
 profile, and carries out what they do without Swarm II. Status: draft for
@@ -18,7 +18,7 @@ an action on the PC when it is tapped. Each of the keyboard's five profiles can
 get its own set of buttons: desktop functions on the desktop profile, and a
 game profile that is switched to automatically when the game starts. The first
 game is Star Citizen: buttons for multi-key commands that are awkward to type
-in flight — a key combination, a sequence of keys, or a sequence with a pause
+in flight: a key combination, a sequence of keys, or a sequence with a pause
 in it (power on, wait for it to boot, then engines on).
 
 Swarm II stays installed for what only it does, such as firmware updates. It
@@ -292,7 +292,7 @@ is done whenever the active profile is not known.
 
 ### Restore
 
-Writes the recorded original `0x29` entries, then — 200 ms later — the
+Writes the recorded original `0x29` entries, then, 200 ms later, the
 profile's `0x25` with the recorded original types and values, the way Swarm II
 writes it, and waits for the full redraw as apply does. Positions without a recorded original are emptied (type `00`). This
 path has not been replayed yet and must be tested before it is relied on.
@@ -391,7 +391,7 @@ In this order:
 2. Writing `0x29` and `0x25` right after switching profile with `0x06`. (A
    `0x35` written before a switch lands on the profile switched to.)
 3. Restoring a position with `0x25`, top row included.
-4. How pages 2 and 3 are addressed — one capture of Swarm II putting a button
+4. How pages 2 and 3 are addressed: one capture of Swarm II putting a button
    on each.
 5. Reading the touch and notification reports from our own code. Every tap so
    far was seen in a capture, not read by a program of ours.

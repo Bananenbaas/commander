@@ -32,7 +32,7 @@ const (
 	// usageText says how to give Commander its folder.
 	usageText = "Start Commander once with your configuration folder: commander.exe <folder>"
 	// tipPrefix starts every tooltip.
-	tipPrefix = "Commander — KB7: "
+	tipPrefix = "Commander: "
 	// maxTip is the tooltip limit of the notification area, in UTF-16
 	// units without the terminating zero.
 	maxTip = 127
@@ -45,7 +45,7 @@ const (
 	replugTitle = "Keyboard not answering"
 	replugText  = "Unplug the keyboard and plug it back in."
 	// replugTip is the tooltip while the keyboard does not answer.
-	replugTip = "the keyboard does not answer — unplug and replug it"
+	replugTip = "the keyboard does not answer, unplug and replug it"
 )
 
 // errNoFolder means Commander was not told which folder to use.

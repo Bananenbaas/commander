@@ -34,7 +34,7 @@ capture.
 [`docs/PROTOCOL.md`](docs/PROTOCOL.md) is the knowledge base, and it is kept
 deliberately strict:
 
-- every claim carries a status tag — `confirmed`, `observed`, `hypothesis` or
+- every claim carries a status tag: `confirmed`, `observed`, `hypothesis` or
   `unknown`;
 - every claim names the capture(s) it is based on;
 - hex excerpts are short and reviewed, never whole captures;
@@ -42,7 +42,7 @@ deliberately strict:
   from this project's own code. Anything else is at most `observed`.
 
 Promoting a claim to a higher status in the same pull request that adds the
-evidence is fine — just say which capture did it.
+evidence is fine, just say which capture did it.
 
 ## Contributing code
 
@@ -74,7 +74,7 @@ someone's privacy:
   `docs/PROTOCOL.md` and leave it there.
 - **Clean room.** The protocol is derived solely from observing USB traffic of
   hardware we own (EU Directive 2009/24/EC art. 5(3)). Swarm II binaries,
-  firmware images and assets are not analysed, decompiled or included — not in
+  firmware images and assets are not analysed, decompiled or included, not in
   the repository, not in issues and not in pull requests.
 - **No raw captures in public**, ever.
 

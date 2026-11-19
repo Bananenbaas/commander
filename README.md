@@ -76,11 +76,11 @@ Or install it as a command: `pip install -e .`, then `kb7cap …`.
 Keyboard reports are hidden by default, because they show what was typed during
 the capture (`--show-keystrokes` to override). That covers boot-keyboard
 interfaces and, per report ID, any report whose descriptor draws on the
-keyboard usage page — including ones on an otherwise vendor-defined interface,
+keyboard usage page, including ones on an otherwise vendor-defined interface,
 which the KB7 has.
 
-When a capture lacks a HID interface's report descriptor — because it started
-with the device already plugged in — nothing rules out typing on that
+When a capture lacks a HID interface's report descriptor (because it started
+with the device already plugged in), nothing rules out typing on that
 interface, so **all** of its reports are hidden and the output says why. A
 device whose configuration descriptor is not in the capture at all is not
 recognised as HID and is not filtered. Review any output before you share it.
@@ -104,7 +104,7 @@ Captures are the bottleneck in Phase 0, so a good capture is the most useful
 thing you can contribute. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and
 [`docs/CAPTURE-GUIDE.md`](docs/CAPTURE-GUIDE.md) first. In short: one action per
 capture, every scenario twice, no typing while recording, and **never publish
-raw captures** — share reviewed `kb7cap` output instead.
+raw captures**, share reviewed `kb7cap` output instead.
 
 Working on the code? [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) has the
 layout, conventions and known pitfalls. Privacy or hardware-safety problems go

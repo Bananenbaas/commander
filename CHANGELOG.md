@@ -225,7 +225,7 @@ The first release: `kb7screen` and Commander as ready-built executables.
   open questions, plus a pull request template. All of them refuse raw
   captures.
 - First real protocol notes: KB7 device identity (`10f5:5038`, bcdDevice
-  `0x0139`, integrated hub `10f5:503d`) and the full interface/endpoint map —
+  `0x0139`, integrated hub `10f5:503d`) and the full interface/endpoint map:
   four HID interfaces, three of them with an OUT endpoint.
 - Capture guide: the `00-descriptors` shortcut for pulling device and
   configuration descriptors without a full plug-in capture.
@@ -260,9 +260,9 @@ The first release: `kb7screen` and Commander as ready-built executables.
 - Profile switching: the keyboard steps through its five slots itself when the
   profile name on the screen is tapped, announces each switch with notification
   `03 00 01 <slot>`, and Swarm II only follows by resuming its streams.
-- Screen buttons and profiles: report `0x29` is the page's button table —
-  binding and label per position, with the same checksum as the lighting
-  block — and configuration blocks carry one of five profile slots in byte
+- Screen buttons and profiles: report `0x29` is the page's button table
+  (binding and label per position, with the same checksum as the lighting
+  block), and configuration blocks carry one of five profile slots in byte
   3, with all five profile names in report `0x16`. A button bound to a
   modifier on its own reports through notification `0x03`, not as a key.
 - The complete LED map: 94 of the 112 slots identified, including the arrow

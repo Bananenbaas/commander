@@ -1,4 +1,4 @@
-# Commander — a tray program around `kb7screen run`
+# Commander: a tray program around `kb7screen run`
 
 Design for stopping, reloading and starting `run` without a terminal or Task
 Manager. Status: approved; implemented, desktop check done (see Desktop check). Builds
@@ -27,7 +27,7 @@ starting with Windows on and off. `kb7screen` stays the command-line tool.
     restarts the loop with it, cleanly; if it is not, keeps running the old
     one and shows the error.
   - **Apply buttons**: stops the loop cleanly, runs `apply` on the folder,
-    starts the loop again — for changes to pictures, titles or positions,
+    starts the loop again, for changes to pictures, titles or positions,
     which `apply` refuses while `run` runs.
   - **Start with Windows**: a tick mark; on and off.
   - **Open configuration folder**, **Open log**.
@@ -74,7 +74,7 @@ folder. `kb7screen stop` and `reload` write a request file next to it,
 `.kb7screen-request`, containing one word, `stop` or `reload`. The loop looks
 for it at every poll (every 2 s), removes it and acts:
 
-- `stop`: the same path as Ctrl+C — release held keys, send the stored
+- `stop`: the same path as Ctrl+C: release held keys, send the stored
   lighting, close the keyboard, end.
 - `reload`: load the folder; if that fails, log the error and keep running;
   otherwise stop cleanly as above and start again with the new configuration,
@@ -87,7 +87,7 @@ it was. A request file found when the lock is first taken is stale (left by a
 crash) and is deleted unread.
 
 A reload tears down and rebuilds everything that depends on the
-configuration — the light engine, the key reader, the loop — and keeps only
+configuration (the light engine, the key reader, the loop) and keeps only
 the lock, the process and the keystroke and program launchers.
 
 Commander uses the same two actions in-process, without the file. A `stop`
@@ -144,8 +144,7 @@ Commander runs them itself.
 ### The icon
 
 Drawn in code like the button symbols, so it can be regenerated: a dark
-rounded square with a retro space helmet in the project's blue (`#00AAFF`) —
-dome, visor, a white stripe and an antenna — readable at 16 × 16. An own
+rounded square with a retro space helmet in the project's blue (`#00AAFF`), with a dome, visor, a white stripe and an antenna, readable at 16 × 16. An own
 design in a general retro style, not a copy of any existing character. Rendered at 16, 20, 24, 32, 48 and 256 pixels into a
 `.ico`, embedded in `commander.exe` as its resource and used for the tray.
 
@@ -177,7 +176,7 @@ All on the owner's PC with the owner's Star Citizen configuration folder.
 
 Seen during the check, not changed here:
 
-- Every (re)start of the loop — Reload and Apply buttons included — switches
+- Every (re)start of the loop (Reload and Apply buttons included) switches
   the keyboard to the profile `run` expects (the desktop profile when no
   listed program runs), also when the owner had tapped to another profile.
 

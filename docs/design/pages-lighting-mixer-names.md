@@ -26,8 +26,8 @@ preview draws one panel per page.
 
 ### 2. Stored lighting
 
-What the keyboard shows when nothing streams — when Commander is not running,
-on a profile without `[light]`, and for a moment during a reload — is the
+What the keyboard shows when nothing streams (when Commander is not running,
+on a profile without `[light]`, and for a moment during a reload) is the
 profile's stored `0x11` table. `apply` sets it per key:
 
 - **A profile with `[light]`** gets a still picture of its own layers: the

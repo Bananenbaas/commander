@@ -9,7 +9,7 @@ body:
 
         **Do not attach a raw `.pcap` / `.pcapng`.** A keyboard capture contains
         everything that was typed while it was recording. Paste a short hex
-        excerpt or the `kb7cap` output instead — and read it before posting.
+        excerpt or the `kb7cap` output instead, and read it before posting.
   - type: textarea
     id: what-happened
     attributes:

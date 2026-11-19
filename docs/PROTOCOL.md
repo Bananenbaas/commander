@@ -22,15 +22,15 @@ Every entry names the capture(s) it is based on.
 |---|---|---|
 | VID:PID | `10f5:5038` (Turtle Beach) | observed (`00-descriptors`) |
 | bcdDevice | `0x0139` | observed (`00-descriptors`) |
-| bcdUSB | `0x0200` — full/high speed, not SuperSpeed | observed (`00-descriptors`) |
-| Device class | `0x00` — composite, class per interface | observed (`00-descriptors`) |
+| bcdUSB | `0x0200`, full/high speed, not SuperSpeed | observed (`00-descriptors`) |
+| Device class | `0x00`, composite, class per interface | observed (`00-descriptors`) |
 | bMaxPacketSize0 | 64 | observed (`00-descriptors`) |
 | USB interfaces | 4, all HID (class `0x03`) | observed (`00-descriptors`) |
 | Configurations | 1; `bMaxPower` 250 → 500 mA, `bmAttributes` `0xa0` (bus powered, remote wakeup) | observed (`00-descriptors`) |
-| Integrated hub | `10f5:503d`, bcdDevice `0x1720`, class `0x09` — the passthrough port, a sibling device on the same bus | observed (`00-descriptors`) |
-| Firmware version | 1.39 — `bcdDevice` `0x0139` matches the version Swarm II reports | observed (`00-descriptors`) |
+| Integrated hub | `10f5:503d`, bcdDevice `0x1720`, class `0x09`, the passthrough port, a sibling device on the same bus | observed (`00-descriptors`) |
+| Firmware version | 1.39, `bcdDevice` `0x0139` matches the version Swarm II reports | observed (`00-descriptors`) |
 | String descriptors | indices present (`iManufacturer` 1, `iProduct` 2, `iSerialNumber` 3, `iConfiguration` 4, `iInterface` 5). Windows fetches only index 5 (22 bytes, language 0x0409) during enumeration; 1, 2 and 3 were never requested, so the manufacturer, product and serial strings are still unseen | partly observed (`01-plug-in-1`) |
-| Swarm II version used | — | unknown |
+| Swarm II version used | none | unknown |
 | Physical connection | the supplied **USB-A** connectors, on an AMD xHCI root hub, behind the keyboard's own hub. The keyboard also has a single **USB-C** port, so far untested | observed (`00-descriptors`, `01-plug-in-1`, `-2`, `00-idle-1`) |
 
 ### Hints from the Swarm II installation
@@ -43,7 +43,7 @@ derive protocol.
 
 | Hint | Source | Status |
 |---|---|---|
-| Swarm II keeps the KB7 firmware in a folder named after the VID:PID and version, `Firmware\COMMAND_KB7\10F5_5038\139\` — the same `10f5:5038` and `0x0139` the device reports | folder name | consistent with `00-descriptors` |
+| Swarm II keeps the KB7 firmware in a folder named after the VID:PID and version, `Firmware\COMMAND_KB7\10F5_5038\139\`, the same `10f5:5038` and `0x0139` the device reports | folder name | consistent with `00-descriptors` |
 | The main controller is probably a **Sonix** part: Swarm II ships a `Turtle Beach Sonix Updater` and a `SonixUSBClassSwitchTool` in `Thirdparty\Sonix\` | file and folder names | hypothesis |
 | The main firmware image is about 23.6 MB, large for keyboard firmware alone, which fits the screen drawing its own pages from stored graphics | file size | hypothesis |
 | A **second microcontroller** exists, with its own firmware file `MCU2\AP_AT423_V1.15.bin` (17 KB); the name suggests an Artery AT32F423. Which part of the keyboard it drives is unknown | file name and size | hypothesis |
@@ -59,16 +59,16 @@ endpoint, so there are three separate write channels to the device.
 
 | IF | Subclass / protocol | IN ep | OUT ep | bInterval IN/OUT | Report descriptor | Status |
 |---|---|---|---|---|---|---|
-| 0 | `0x00` / `0x00` — vendor-defined | `0x81` | `0x06` | 4 / 4 | 31 bytes | observed (`00-descriptors`) |
-| 1 | `0x00` / `0x00` — vendor-defined | `0x85` | `0x0d` | 4 / 4 | 34 bytes | observed (`00-descriptors`) |
-| 2 | `0x00` / `0x00` — vendor-defined | `0x8c` | `0x0f` | 1 / 4 | 457 bytes | observed (`00-descriptors`) |
-| 3 | `0x01` / `0x01` — HID boot keyboard | `0x8e` | — | 1 / — | 68 bytes | observed (`00-descriptors`) |
+| 0 | `0x00` / `0x00`, vendor-defined | `0x81` | `0x06` | 4 / 4 | 31 bytes | observed (`00-descriptors`) |
+| 1 | `0x00` / `0x00`, vendor-defined | `0x85` | `0x0d` | 4 / 4 | 34 bytes | observed (`00-descriptors`) |
+| 2 | `0x00` / `0x00`, vendor-defined | `0x8c` | `0x0f` | 1 / 4 | 457 bytes | observed (`00-descriptors`) |
+| 3 | `0x01` / `0x01`, HID boot keyboard | `0x8e` | none | 1 / none | 68 bytes | observed (`00-descriptors`) |
 
 `bcdHID` is `0x0111` on all four. Interface 3 is the boot keyboard: keystrokes
 travel on `0x8e`, which is why `kb7cap` hides that endpoint by default.
 
 Interface 2 has by far the largest report descriptor (457 bytes) and Windows
-splits it into six HID collections — consumer control, a system controller, a
+splits it into six HID collections: consumer control, a system controller, a
 keyboard and three vendor-defined ones. That makes it the likely home of the
 media keys and the extra key rows rather than of the touchscreen. Interfaces 0
 and 1 are small and purely vendor-defined, which makes them the candidates for
@@ -100,7 +100,7 @@ Interface 2 carries 42 reports in total. The ordinary input ones are the media
 keys (`0x01`), a system control (`0x02`) and a 20-byte keyboard report (`0x04`,
 wide enough for NKRO) alongside the 8-byte boot keyboard on interface 3.
 
-The remaining 37 IDs on usage page `0xff03` are **feature** reports — not output
+The remaining 37 IDs on usage page `0xff03` are **feature** reports, not output
 reports. A feature report is read and written with `GET_REPORT` / `SET_REPORT`
 over the control endpoint, which matches the traffic mix in `01-plug-in-1`
 (74 control IN and 11 control OUT transfers against a handful of interrupts).
@@ -163,15 +163,15 @@ takes.
 
 | Step | Direction | Transfer | Payload | Status |
 |---|---|---|---|---|
-| 1 | host → device | `SET_IDLE` on interfaces 0, 1, 2 and 3 | — | observed (`01-plug-in-1`, `-2`) |
-| 2 | host → device | `SET_REPORT` output, report `0x00`, interface 3 | `01` — boot-keyboard LED report (NumLock) | observed (`01-plug-in-1`, `-2`) |
+| 1 | host → device | `SET_IDLE` on interfaces 0, 1, 2 and 3 | none | observed (`01-plug-in-1`, `-2`) |
+| 2 | host → device | `SET_REPORT` output, report `0x00`, interface 3 | `01`, boot-keyboard LED report (NumLock) | observed (`01-plug-in-1`, `-2`) |
 | 3 | **device → host**, **4.9 s later** | report `0x03` on `0x8c` (interrupt IN, interface 2) | 8 bytes, see below | observed (`01-plug-in-1`, `-2`) |
 
 An earlier version of this table put the `0x03` report *between* the `SET_IDLE`
 requests. That was an artefact of the parser timestamping interrupt IN transfers
 when the request was queued instead of when the data arrived (see
 `DEVELOPMENT.md`). With that fixed, the report arrives **4.90 s** after the LED
-report in take 1 and **4.89 s** in take 2 — the same delay twice. After
+report in take 1 and **4.89 s** in take 2, the same delay twice. After
 plugging in, the screen stays dark and then shows a boot screen with the
 firmware version for several seconds, so this report is very likely the keyboard
 announcing that it has finished booting. Status: **hypothesis**.
@@ -189,7 +189,7 @@ take 2   03 00 31 20 c9 da 00 00
 |---|---|---|
 | Byte 0 | report ID `0x03` | observed |
 | Bytes 1–3 | `00 31 20`, identical in both takes | observed |
-| Byte 4 | **varies between otherwise identical runs** (`0xd1` / `0xc9`) — treat as noise, not payload | observed |
+| Byte 4 | **varies between otherwise identical runs** (`0xd1` / `0xc9`), treat as noise, not payload | observed |
 | Byte 5 | `0xda`, identical in both takes | observed |
 | Bytes 6–7 | `00 00` in both takes | observed |
 | What byte 4 means | unclear. With byte 5 as a little-endian pair it reads `0xdad1` / `0xdac9`, eight apart. The same event appears after profile switches and screen changes with bytes 4–6 different every time, but not as a steadily rising counter (see "Device notifications") | unknown |
@@ -206,13 +206,13 @@ devices on the same root hub, not to the KB7.
 
 With Swarm II open and **nothing being touched**, interface 1 carries a
 continuous request/response stream. This is where Swarm II actually talks to the
-device — not the `0xff03` feature reports on interface 2.
+device, not the `0xff03` feature reports on interface 2.
 
 From `00-idle-1`: 40 seconds of deliberate idling produced 1.4 MB, against 12 kB
 for a whole enumeration. Traffic on the KB7 was 4926 transfers out on `0x0d` and
 4926 in on `0x85`, and nothing at all on `0x81`, `0x06`, `0x8c`, `0x0f` or `0x8e`.
 
-**Frame format** — 64 bytes, fixed:
+**Frame format**: 64 bytes, fixed:
 
 | Offset | OUT on `0x0d` | IN on `0x85` | Status |
 |---|---|---|---|
@@ -225,7 +225,7 @@ for a whole enumeration. Traffic on the KB7 was 4926 transfers out on `0x0d` and
 payload length of the cycle. The device's reply carries no data at all: it is a
 pure acknowledgement, one per frame.
 
-**Timing**: 821 complete cycles in 41.5 s — **19.8 Hz**, with a bank-1 interval
+**Timing**: 821 complete cycles in 41.5 s, **19.8 Hz**, with a bank-1 interval
 of 50.6 ms median (47.5 ms min, 53.5 ms max). Six frames per cycle is ~123
 frames per second in each direction.
 
@@ -247,7 +247,7 @@ offset 16:  32 -> 3f        block 0, G plane, index 0
 offset 32:  32 -> bf        block 0, B plane, index 0
 ```
 
-Same LED index, same three planes, same sixteen-byte stride as report `0x11` —
+Same LED index, same three planes, same sixteen-byte stride as report `0x11`,
 and the same block-of-48 layout, just without the 10-byte header:
 
 ```
@@ -291,7 +291,7 @@ are LEDs that are off, and the seven `0x7f` are LEDs sitting at 128.
 |---|---|
 | The `a1` stream carries the live 112-LED colour table, in the same layout as report `0x11` | **confirmed** (`03-rgb-perkey-esc-1040c0-1`) |
 | The host applies the brightness itself, by scaling the colours it streams | observed (`04-rgb-fn-keys-and-mic-1`) |
-| The exact brightness curve | unknown — nine points observed for a value of 255 |
+| The exact brightness curve | unknown, nine points observed for a value of 255 |
 | What the trailing 24 bytes hold | unknown |
 | Why the table is resent 20 times a second rather than on change | unknown |
 
@@ -300,7 +300,7 @@ are LEDs that are off, and the seven `0x7f` are LEDs sitting at 128.
 This settles something that writing the table taught the hard way. Report `0x11`
 can be written successfully from our own code: `HidD_SetFeature` with the
 348-byte frame returns success and the device's status register, report `0x05`,
-reads back `05 01 00 00` — byte for byte what Swarm II sees after its own writes.
+reads back `05 01 00 00`, byte for byte what Swarm II sees after its own writes.
 `12-replay-led-block0-1` records our frame on the wire, identical in shape to
 Swarm II's.
 
@@ -330,7 +330,7 @@ lighting page is one complete `0x11` block.
 
 #### Streaming our own LED frames works, and contends with Swarm II
 
-Driving the lighting means writing `a1` frames to `0x0d` — the same endpoint and
+Driving the lighting means writing `a1` frames to `0x0d`, the same endpoint and
 mechanism as the `a3` volume frame. `13-replay-led-stream-green-1` does exactly
 that: the 360-byte payload from a real capture with all 112 LEDs set to green,
 split into the usual six banks, written at 30 Hz for eight seconds. 1188 frames
@@ -338,7 +338,7 @@ went out, none failed.
 
 The keyboard strobed violently between our green and Swarm II's red. The capture
 explains why precisely: in the eight-second window 356 bank-1 frames reached the
-device, **198 ours and 158 Swarm II's** — a 56% share. The LEDs were following
+device, **198 ours and 158 Swarm II's**, a 56% share. The LEDs were following
 whichever frame arrived last, roughly twenty-eight times a second.
 
 | Finding | Status |
@@ -348,13 +348,13 @@ whichever frame arrived last, roughly twenty-eight times a second.
 | Writing goes to the interface 1 collection as a 65-byte `WriteFile`, exactly like the `a3` volume frame | **confirmed** |
 | The device renders the most recent frame; there is no arbitration between writers | observed |
 | A frame streamed after a profile switch stays on the LEDs: switching from the profile `kb7screen run` streamed (SC) to one it does not (DESKTOP), the keyboard first showed DESKTOP's stored `0x11` lighting, then the one frame `run` sent after the switch replaced it and stayed (seen on WASD) | observed (`kb7screen run`, owner's observation, no capture) |
-| The LEDs also keep the last frame when the stream stops without a switch (the streaming program ends or crashes) | hypothesis — expected from the row above, not observed |
-| A set cut short after bank 1 left the LEDs frozen until the keyboard was unplugged; later sets were not acknowledged | observed (owner, `kb7screen run`, no capture); cause: hypothesis — the keyboard waits for banks 2–6 of the started set |
+| The LEDs also keep the last frame when the stream stops without a switch (the streaming program ends or crashes) | hypothesis, expected from the row above, not observed |
+| A set cut short after bank 1 left the LEDs frozen until the keyboard was unplugged; later sets were not acknowledged | observed (owner, `kb7screen run`, no capture); cause: hypothesis, the keyboard waits for banks 2–6 of the started set |
 | Neither writer loses frames under contention: all 1188 of ours and all 3734 of Swarm II's appear in the capture | observed (`13-replay-led-stream-green-1`) |
 
 **The architectural consequence.** Lighting cannot be shared. Whoever streams
 last owns the LEDs, so taking over the keyboard means Swarm II has to stop
-streaming first — which is the whole point of the project, but it also means a
+streaming first, which is the whole point of the project, but it also means a
 replacement must *keep* streaming at 20 Hz or better for as long as it wants the
 lighting to hold. There is no fire-and-forget equivalent for colour, unlike the
 volume frame.
@@ -395,7 +395,7 @@ as `05 00 <selector> 00`, `05 01 <selector> 00` … `05 04 <selector> 00`.
 
 Report `0x05` is a 3-byte feature report, which matches the 4 bytes on the wire
 including the report ID. The reply block's own report ID and length match the
-report map exactly — **all nineteen observed reads, without exception**, which is
+report map exactly, **all nineteen observed reads, without exception**, which is
 what ties the report map to real behaviour.
 
 | Selector (byte 2) | Report | Payload | Selector − report |
@@ -422,13 +422,13 @@ what ties the report map to real behaviour.
 
 | Reading | Status |
 |---|---|
-| The selector is a **lookup table, not a formula** — the difference ranges from +123 to +164 | observed (`02-swarm-start-1`) |
+| The selector is a **lookup table, not a formula**, the difference ranges from +123 to +164 | observed (`02-swarm-start-1`) |
 | `b4` and `b5` both return report `0x31`, `b6` and `b7` both return `0x32`: two selectors, one block shape. Likely separate slots of the same kind of block, for instance per profile or per layer | hypothesis |
 | Each selector was read five times in this capture, once per profile, except `ba` once | observed (`02-swarm-start-1`) |
 | Report `0x16` (103 B, selector `ba`) holds the names of all five profiles, see "Profiles". Not a host name, as first assumed | observed (`02-swarm-start-1`) |
 | **Byte 1 of the selector write chooses the profile slot, 0–4, and the block names it again** (byte 3 of `0x29`, byte 2 of `0x25`). At startup every selector read five times is written with byte 1 `00`…`04`, and the five blocks returned count `00`…`04` in their profile byte. The lighting block `0x11` differs between slots; the screen block `0x29` is identical in all five apart from that byte | observed (`02-swarm-start-1`, `02-swarm-start-2`, reports `0x11`, `0x21`, `0x29`) |
 | Reading one profile on its own: `05 01 b9 00` returns the `0x29` block of profile 1 (byte 3 `01`), and `05 01 b8 00` its `0x25` block (byte 2 `01`) | observed (`34-read-profile-1`) |
-| Report `0x0e` is written as `0e 05 00 00 00` and `0e 05 01 00 00`, a register taking 0 and 1 — looks like enabling something before the reads | hypothesis |
+| Report `0x0e` is written as `0e 05 00 00 00` and `0e 05 01 00 00`, a register taking 0 and 1, looks like enabling something before the reads | hypothesis |
 | From a cold start (`02-swarm-start-2`, the keyboard silent since the PC booted), `0e 05 01 00 00` is Swarm II's **first write**, before any selector read, and the screen redraws (`31` event) two seconds later. Replayed on its own, it switches on the notifications described under "Without Swarm II" | **confirmed** (`19-replay-0e-1`) |
 
 Writing configuration does not go through the selector: Swarm II writes a
@@ -439,7 +439,7 @@ block directly with `SET_REPORT`, with byte 3 set to the slot it is writing
 ### `a3` frames on interface 1: the PC pushes values, the device renders
 
 Besides the `a1` state stream, `0x0d` carries 64-byte `a3` frames. Unlike the
-`a1` stream these are sent **only when something changes** — `00-idle-1` contains
+`a1` stream these are sent **only when something changes**, `00-idle-1` contains
 none at all.
 
 **System volume frame**, verified by prediction in `09-volume-50-1`:
@@ -462,14 +462,14 @@ exactly:
 | 4, 5 | `0x32` | 50 |
 | 6 | `0x33` | 51 |
 | 7, 8 | `0x32` | 50 |
-| 9 | `0x33` | **51** — the value left on screen |
+| 9 | `0x33` | **51**, the value left on screen |
 
 | Finding | Status |
 |---|---|
 | `a3 00 01 00 00 0d` introduces a system-volume frame; the level sits at offsets 6 **and** 10 | **confirmed** (`09-volume-50-1`, replayed in `11-replay-volume-07-1`) |
 | The level is a plain percentage, 0–100 decimal, not a 0–255 scale | **confirmed** (`09-volume-50-1`, replayed in `11-replay-volume-07-1`) |
 | `a3` frames are change-driven, not periodic | observed (`00-idle-1` has none, `09-volume-50-1` has nine) |
-| Why the level is repeated at two offsets — two channels, or current and target | unknown |
+| Why the level is repeated at two offsets, two channels, or current and target | unknown |
 
 Bytes 4–5 distinguish frame types. Seen so far:
 
@@ -484,7 +484,7 @@ Bytes 4–5 distinguish frame types. Seen so far:
 
 Read with the last two rows, bytes 4–5 of the `01 …` frames look like
 `<position> <kind>`: the speaker sits at position 2, which carries the mute
-state (`02`) — and, after the CPU temperature widget was dropped there, the
+state (`02`), and, after the CPU temperature widget was dropped there, the
 temperature (`0b`). A hypothesis with two data points.
 
 **The volume mixer page** (`44-mixer-slider-1`): the screen listed the system
@@ -499,19 +499,19 @@ to 100 produced the system-volume `a3 … 00 0d` frames above, one per step.
 |---|---|
 | A mixer slider moved on the keyboard reports `33 00 03 07 00 01 03 <level>`, level 0–100 | observed (`44-mixer-slider-1`) |
 | **The system slider** reports `33 00 00 06 00 00 03 <level>`: type `06`, byte 5 `00` | observed (`47-mixer-system-and-second-1`) |
-| **A program slider** reports `33 00 03 07 00 <row> 03 <level>`: type `07`, **byte 5 the program's row, 1-based** — `01` for the first program, `02` for the second; bytes 2 and 6 stayed `03` for both | observed (`44-mixer-slider-1`, `47-mixer-system-and-second-1`) |
+| **A program slider** reports `33 00 03 07 00 <row> 03 <level>`: type `07`, **byte 5 the program's row, 1-based**: `01` for the first program, `02` for the second; bytes 2 and 6 stayed `03` for both | observed (`44-mixer-slider-1`, `47-mixer-system-and-second-1`) |
 | Moving the system slider on the keyboard is answered by Swarm II with the system-volume `a3 … 00 0d` frame once Windows has the new level | observed (`47-mixer-system-and-second-1`) |
 | The application list is **one write**: `SET_REPORT` feature `0x28`, 308 bytes, sent when a program with sound appears | observed (`45-mixer-new-app-1`) |
 | Layout of `0x28`: `28 34 01` (id, length 0x134 little-endian), byte 3 the number of rows (5 here: the system volume and four programs), byte 4 `00`; then one 43-byte row per entry from offset 5: row number (`00`…), the name as ASCII in a 41-byte zero-padded field (`SystemVolume`, `GroverPro`, `Steam`, `Opera GX Internet Browser` twice), and a level byte (`64` for all five); the rest zero, then a 16-bit little-endian sum of the first 306 bytes. Room for seven rows | observed (`45-mixer-new-app-1`) |
-| The live levels follow as `a3` frames right after the list: `a3 00 01 00 03 0e 00 64 64 00 2a 2a` — the first two programs, GroverPro at 100 and Steam at 42 (as set in `44-mixer-slider-1`), each level twice — then `a3 00 01 00 06 0e 00 64 64 00 64 64` for programs three and four, then the system volume `00 0d` and the mute frame `01 02 02` | observed (`45-mixer-new-app-1`) |
-| A program's slider keeps its row: GroverPro, now the first program, reported `33 00 03 07 00 01 03 <level>` when dragged to 67 — the same bytes as Steam when it was first. The report names the row, not the program | observed (`44-mixer-slider-1`, `45-mixer-new-app-1`) |
-| The level byte in the `0x28` rows (100 for Steam although it stood at 42) | unknown — perhaps a default the `a3` frames override |
+| The live levels follow as `a3` frames right after the list: `a3 00 01 00 03 0e 00 64 64 00 2a 2a`, the first two programs, GroverPro at 100 and Steam at 42 (as set in `44-mixer-slider-1`), each level twice, then `a3 00 01 00 06 0e 00 64 64 00 64 64` for programs three and four, then the system volume `00 0d` and the mute frame `01 02 02` | observed (`45-mixer-new-app-1`) |
+| A program's slider keeps its row: GroverPro, now the first program, reported `33 00 03 07 00 01 03 <level>` when dragged to 67, the same bytes as Steam when it was first. The report names the row, not the program | observed (`44-mixer-slider-1`, `45-mixer-new-app-1`) |
+| The level byte in the `0x28` rows (100 for Steam although it stood at 42) | unknown, perhaps a default the `a3` frames override |
 
 **This answers open question 2.** Live PC data is pushed as **numbers**, not as
 rendered images: the host sends a percentage and the device draws the volume page
 itself. The `Turtle Beach Global System Media Control` process that runs
 alongside Swarm II is what feeds these values. For anything dashboard-like this
-is the good outcome — a value per metric rather than a framebuffer.
+is the good outcome, a value per metric rather than a framebuffer.
 
 #### Replayed: the first command sent from this project
 
@@ -532,7 +532,7 @@ interface 1, which Windows exposes at a path containing `mi_01` with usage page
 `0xff00`. `HidP_GetCaps` reports an output report length of **65**: one report-ID
 byte plus the 64-byte frame. Since the report descriptor declares no report ID,
 that leading byte is `0x00`, and the 64 bytes on the wire are the frame itself.
-A plain `WriteFile` of those 65 bytes is enough — no feature report, no control
+A plain `WriteFile` of those 65 bytes is enough, no feature report, no control
 transfer.
 
 Windows' own enumeration independently confirms the report map derived from the
@@ -590,7 +590,7 @@ running and sent nothing to the keyboard but its lighting stream throughout.
 
 - **Brightness**: the keyboard computes the new level from Fn + Up/Down and
   reports it (`0c`); Swarm II applies it by scaling the colours it streams.
-- **RGB on/off**: the keyboard switches its LEDs off and on by itself — the
+- **RGB on/off**: the keyboard switches its LEDs off and on by itself, the
   stream carried on unchanged throughout.
 - **Microphone Off**: the keyboard only reports the press; the host mutes the
   microphone, and nothing comes back to the keyboard.
@@ -611,7 +611,7 @@ the stable ones the way they were for `01-plug-in`.
 ### RGB lighting: report `0x11`
 
 Setting a static colour writes **report `0x11`** as a feature report over the
-control endpoint — the same report the startup sequence *reads* with selector
+control endpoint, the same report the startup sequence *reads* with selector
 `b0`. It is read/write, 347 bytes of payload, and the device acknowledges each
 write with `05 01 00 00` on `0x80`.
 
@@ -628,7 +628,7 @@ stream stays unchanged, so lighting is configuration, not a per-frame stream.
 | 3 | `00` / `04` | varies between the read and the write | unknown |
 | 4–5 | `01 06` | constant | observed |
 | 6 | `63` / `64` | brightness in percent: Swarm II wrote 99 while the brightness was at 99 %, which the Fn-key capture confirms independently through the stream values | observed, by agreement with `04-rgb-fn-keys-and-mic-1` |
-| 7 | `0b` / `03` | differs between the written and the read frame — effect or mode | hypothesis |
+| 7 | `0b` / `03` | differs between the written and the read frame, effect or mode | hypothesis |
 | 8–9 | `01 00` | constant | observed |
 | 10–345 | 336 bytes | the LED table, see below | observed |
 | 346–347 | checksum | 16-bit sum, see below | **confirmed by arithmetic** |
@@ -643,7 +643,7 @@ block n:  R[0..15]  G[0..15]  B[0..15]
 ```
 
 The run lengths prove it. A single colour of (255, 51, 51) produces repeating
-`ff` × 16 followed by `33` × 32 — the 1:2 ratio of one channel at 255 against
+`ff` × 16 followed by `33` × 32, the 1:2 ratio of one channel at 255 against
 two at 51, with the boundary falling every 48 bytes. The plane order is
 therefore **R, G, B**.
 
@@ -676,10 +676,10 @@ def offsets(led):           # led = 0 .. 111
 | Finding | Status |
 |---|---|
 | An LED's three bytes sit sixteen apart inside its own 48-byte block | **confirmed** (`03-rgb-perkey-esc-1040c0-1`) |
-| The plane order is R, G, B | **confirmed** — a colour with three distinct channel values landed in that order |
+| The plane order is R, G, B | **confirmed**: a colour with three distinct channel values landed in that order |
 | **Escape is LED index 0** | **confirmed** (`03-rgb-perkey-esc-1040c0-1`) |
 | The checksum covers the colour bytes: changing three data bytes changed the trailer | **confirmed** |
-| Which key each of the 112 slots drives | **confirmed** — see the LED map below |
+| Which key each of the 112 slots drives | **confirmed**: see the LED map below |
 
 While the colour picker is dragged, Swarm II writes the **whole table** each
 time, and it sends partial colours on the way: of the seven frames in that
@@ -687,8 +687,8 @@ capture the first carries only the new red, the fourth red and green, and the
 last all three channels. Writing the table is evidently cheap enough to do on
 every mouse move. The checksum held for all seven.
 
-**The checksum is a plain 16-bit sum.** Add bytes 0 through 345 — the report ID
-included, the trailer excluded — keep the low 16 bits and store them
+**The checksum is a plain 16-bit sum.** Add bytes 0 through 345 (the report ID
+included, the trailer excluded), keep the low 16 bits and store them
 little-endian:
 
 ```python
@@ -705,7 +705,7 @@ Verified against all seven distinct `0x11` frames across `02-swarm-start-1` and
 | Bytes 3, 6 and 7 of the header | brightness and effect are guesses; a brightness capture (`04-rgb-brightness`) would settle byte 6 |
 | Whether a write needs the preceding read | Swarm II read `0x11` at startup before writing it |
 
-### Touchscreen: button layout and pages — report `0x29`
+### Touchscreen: button layout and pages: report `0x29`
 
 `15-screen-assign-break-1`: in Swarm II I changed one screen button, BREAK, to
 the Left Alt key. Swarm II wrote two feature reports and nothing else:
@@ -746,7 +746,7 @@ given eleven, so the cut is Swarm II's.
 The `DESKTOP` page as stored:
 
 ```
-pos  0-2   all zero — the three icon buttons; their actions are not in this table
+pos  0-2   all zero, the three icon buttons; their actions are not in this table
 pos  3     00 46 0c 00  PRINT
 pos  4     00 47 0c 00  SCR LK
 pos  5     00 48 0c 00  BREAK   ->   e2 00 06 00  ALT
@@ -792,7 +792,7 @@ so the three icon buttons of the top row take a type like any other position.
 
 **Report `0x25` is the page's whole type table.** 164 bytes: a 10-byte header
 `25 a4 00 00 00 00 01 00 00 00`, then four bytes per position from offset 10,
-`<type> 00 <value> 00` — bytes 6 and 8 of a `0x35` frame — and the same 16-bit
+`<type> 00 <value> 00`, bytes 6 and 8 of a `0x35` frame, and the same 16-bit
 sum at bytes 162–163. As stored after three applications had been set:
 
 ```
@@ -823,8 +823,8 @@ tile, no label, the background image shows through.
 | Byte 6 is the widget type, with the same values as byte 3 of touch report `0x33`: `03` a key, `05` a modifier on its own, and `00` an **empty slot** | observed |
 | An empty slot is not drawn; the background shows through. The slot's label stays in `0x29` | observed (`15-screen-remove-print-1`, and on the screen) |
 | Bytes 10–11 are the 16-bit sum of bytes 0–9, little-endian, as in `0x11` and `0x29` | confirmed by arithmetic on three frames |
-| Byte 8 is `0b` for the restored PRINT key and `01` for Left Alt — not a HID usage. It is the value that goes with the type: a key's internal number, or the subtype of type `05` (see the type table under report `0x25`) | observed |
-| Bytes 2 and 4 (`01` in every frame) | unknown — byte 2 may be the page |
+| Byte 8 is `0b` for the restored PRINT key and `01` for Left Alt, not a HID usage. It is the value that goes with the type: a key's internal number, or the subtype of type `05` (see the type table under report `0x25`) | observed |
+| Bytes 2 and 4 (`01` in every frame) | unknown, byte 2 may be the page |
 
 So a custom layout can leave key positions empty and show its own artwork from
 the background image in their place. Whether the three icon buttons
@@ -852,10 +852,10 @@ tap on PRINT                          ->  33 01 03 03 00 46 01 01 …, and the k
 by the firmware in its own style, and an empty slot shows the background but
 (probably) ignores touch. The way to a custom screen is the **application
 button**: its picture is uploaded from the host, its label can be set or left
-empty, and its touch is reported — see "Application buttons" below.
+empty, and its touch is reported, see "Application buttons" below.
 
 **A modifier button does not send a keyboard report.** Tapping the reassigned
-button produced touch report `33 01 05 05 00 00 01 01` — byte 3 now `05` — and
+button produced touch report `33 01 05 05 00 00 01 01`, byte 3 now `05`, and
 nothing at all on the boot keyboard. The Alt arrives instead in the vendor
 notification report:
 
@@ -873,11 +873,11 @@ While the binding was being changed, the keyboard also sent a burst of 23
 notifications of another kind within a tenth of a second. Their purpose is
 unknown.
 
-### Touchscreen: image upload — `a5` frames
+### Touchscreen: image upload: `a5` frames
 
 Swarm II only lets a custom image file be used as the **background**, and the
 keyboard holds **one** such image. (It also uploads a picture for every
-application button, taken from the program's icon — see "Application
+application button, taken from the program's icon, see "Application
 buttons".) Setting it is two steps:
 the image is uploaded from Swarm II, and then chosen on the keyboard's own
 screen.
@@ -909,7 +909,7 @@ a5 ff                                           end of the image
 
 **Throughput is about 23 KiB/s**: the full-screen image took 32 seconds. Live
 full-screen video over this channel is out of the question, which is consistent
-with how the volume page works — the host sends values and the device draws.
+with how the volume page works, the host sends values and the device draws.
 
 **The framing in full** (`06-screen-background-quadrants-1`): a block holds up
 to 4096 bytes, split into data frames of 62 bytes and one shorter frame for the
@@ -956,7 +956,7 @@ Swarm II offers no animated formats: its file picker allows only `.png`,
 Choosing the image on the screen afterwards sends no image data. It produces
 only notification events, after each of which Swarm II re-sends the live values.
 
-### Touchscreen: application buttons — an image per button
+### Touchscreen: application buttons: an image per button
 
 `15-screen-assign-app-1`: in Swarm II I set the PRINT position of the `DESKTOP`
 page to "start application", with a program of my choice. The keyboard then showed the
@@ -1105,7 +1105,7 @@ redraw covers both.
 
 `33-convert-home-slot4-1`, from our own code: HOME became an application button
 with a new picture in slot 4 (`a5 44`), shown with its label, and its taps
-reported as `33 01 07 05 …` with `f1 01 63 12 …` — the id `0x125c` + 7, as
+reported as `33 01 07 05 …` with `f1 01 63 12 …`, the id `0x125c` + 7, as
 predicted.
 
 `15-screen-assign-apps-toprow-profile-1`, from Swarm II: applications on PGUP,
@@ -1134,8 +1134,8 @@ SET_REPORT 0x06   06 04 00 05             -> 03 00 01 00, 03 00 31 20 …   prof
 | Swarm II cuts labels to ten characters (`app7`'s longer name) | observed |
 
 **Swarm II and our own code must not both manage the buttons.** Swarm II hands
-out slots from its own count, so it gave slot 4 — already in use by our HOME
-button — to `app4`. It also reads the button table at startup and, on writing
+out slots from its own count, so it gave slot 4 (already in use by our HOME
+button) to `app4`. It also reads the button table at startup and, on writing
 it back, turned the two positions it did not know (INS and HOME) into
 application buttons with slot `00` and an empty label. Whoever writes last
 wins.
@@ -1167,7 +1167,7 @@ Application widgets on the display".
 | Finding | Status |
 |---|---|
 | Image slots 9–15 exist and take uploads | observed (`40-swarm-slots-pages-1`) |
-| 15 is the highest slot | hypothesis — Swarm II's own limit of 15 application widgets |
+| 15 is the highest slot | hypothesis, Swarm II's own limit of 15 application widgets |
 | Byte 2 of `0x35` is the page, 1–3 | observed (`40-swarm-slots-pages-1`) |
 | `0x29` entry of page *g* position *p* is `12 x (g - 1) + p` | observed for page 2; page 3 from the table size |
 | `0x25` entry of page *g* position *p* is `13 x (g - 1) + p`, with page markers at 12 and 25 | observed (`40-swarm-slots-pages-1`) |
@@ -1190,7 +1190,7 @@ on the screen.
 
 Report `0x01` is the 3-byte Consumer report from the report map (usage page
 `0x000c`). The value is a **bitmap**, not a usage code: one bit goes up and comes
-back down like an ordinary key press and release — **`0x40` turns the volume
+back down like an ordinary key press and release, **`0x40` turns the volume
 up, `0x20` turns it down**. The notification comes *last*; an earlier version of
 this section put it first, which was the parser's timestamp artefact.
 
@@ -1202,7 +1202,7 @@ ep 0x0d   a3 00 01 00 00 0d <level> 00 01 00 <level> 00
 
 | Finding | Status |
 |---|---|
-| Each click produces exactly one report `0x03` and one press/release pair of report `0x01` — 56 clicks gave 56 and 112 | observed (`10-dial-volume-up-1`) |
+| Each click produces exactly one report `0x03` and one press/release pair of report `0x01`, 56 clicks gave 56 and 112 | observed (`10-dial-volume-up-1`) |
 | The dial is **relative**: it reports a step, nothing more. Windows decides the level and the host pushes the absolute value back for display | observed (`10-dial-volume-up-1`) |
 | One click moves Windows volume by **2 percentage points**, and the level saturates at 100 | observed (`10-dial-volume-up-1`) |
 | The host sends each level **twice**, roughly 50 ms apart | observed (`09-volume-50-1`, `10-dial-volume-up-1`) |
@@ -1218,28 +1218,28 @@ byte 3; usages on page `0x0c`):
 | Bit | Usage | Function | Seen from |
 |---|---|---|---|
 | `01 00 00` | `0xcd` | Play/Pause | dial press, screen button |
-| `02 00 00` | `0xb7` | Stop | — |
+| `02 00 00` | `0xb7` | Stop | none |
 | `04 00 00` | `0xb6` | Scan Previous Track | button left of the dial, screen button |
 | `08 00 00` | `0xb5` | Scan Next Track | button right of the dial, screen button |
 | `10 00 00` | `0xe2` | Mute | screen speaker button |
 | `20 00 00` | `0xea` | Volume Decrement | dial, screen button |
 | `40 00 00` | `0xe9` | Volume Increment | dial, screen button |
-| `80 00 00` | `0x183` | AL Consumer Control Configuration (media player) | — |
-| `00 01 00` | `0x18a` | AL Email Reader | — |
-| `00 02 00` | `0x192` | AL Calculator | — |
-| `00 04 00` | `0x194` | AL Local Machine Browser | — |
-| `00 08 00` | `0x221` | AC Search | — |
-| `00 10 00` | `0x223` | AC Home | — |
-| `00 20 00` | `0x224` | AC Back | — |
-| `00 40 00` | `0x225` | AC Forward | — |
-| `00 80 00` | `0x226` | AC Stop | — |
-| `00 00 01` | `0x227` | AC Refresh | — |
-| `00 00 02` | `0x22a` | AC Bookmarks | — |
+| `80 00 00` | `0x183` | AL Consumer Control Configuration (media player) | none |
+| `00 01 00` | `0x18a` | AL Email Reader | none |
+| `00 02 00` | `0x192` | AL Calculator | none |
+| `00 04 00` | `0x194` | AL Local Machine Browser | none |
+| `00 08 00` | `0x221` | AC Search | none |
+| `00 10 00` | `0x223` | AC Home | none |
+| `00 20 00` | `0x224` | AC Back | none |
+| `00 40 00` | `0x225` | AC Forward | none |
+| `00 80 00` | `0x226` | AC Stop | none |
+| `00 00 01` | `0x227` | AC Refresh | none |
+| `00 00 02` | `0x22a` | AC Bookmarks | none |
 
 **What this means for the project.** The screen is a slave display for host-side
 state: the keyboard does not know its own volume. Any replacement for Swarm II
-therefore has to take over both halves — read the device's input reports *and*
-push values back — or the screen will simply stop updating. It also means the
+therefore has to take over both halves, read the device's input reports *and*
+push values back, or the screen will simply stop updating. It also means the
 hardware does not need to be taught anything to show a value; it only needs to
 be sent one.
 
@@ -1265,9 +1265,9 @@ The second tap was the same apart from the LED value and a 94 ms hold.
 | Byte 7 is the touch state: `01` touched, `00` released | observed |
 | Byte 5 is the button's assigned key, as a HID keyboard usage: `0x47` is Scroll Lock | observed |
 | **The keyboard sends the keystroke itself**, on the boot-keyboard interface, within a millisecond of the touch. Windows sees an ordinary Scroll Lock key press; Swarm II does not translate the touch | observed |
-| Byte 2 is the button's **position** on the page, counted row by row from 0 in the 3-column grid | observed — predicted before tapping BREAK (`05`) and the speaker button (`02`), and right both times |
+| Byte 2 is the button's **position** on the page, counted row by row from 0 in the 3-column grid | observed, predicted before tapping BREAK (`05`) and the speaker button (`02`), and right both times |
 | Byte 3 is the kind of action: `03` for a button bound to a keyboard key, `05` for a modifier on its own and for an application button, `48` for the speaker button, which mutes | observed; the full list of values is unknown |
-| Bytes 1, 4 and 6 (`01`, `00`, `01` in every tap so far) | unknown — byte 1 may be the page, byte 4 the modifier keys of a shortcut |
+| Bytes 1, 4 and 6 (`01`, `00`, `01` in every tap so far) | unknown, byte 1 may be the page, byte 4 the modifier keys of a shortcut |
 
 Three buttons on the `DESKTOP` page, side by side:
 
@@ -1282,12 +1282,12 @@ the Mute media key itself (Consumer report `01 10 00 00`), Windows mutes, and th
 host then pushes the new state back: the system-volume `a3` frame with its mute
 byte set to `00`, followed by a mute-state frame `a3 00 01 01 02 02 01`. A second
 tap reverses all three. That identifies two parts of the `a3` frames that were
-unknown before — the mute byte and the mute-state frame.
+unknown before, the mute byte and the mute-state frame.
 
 Note for capture hygiene: a screen button bound to a key produces a real
 keystroke on `0x8e`, which `kb7cap` always hides. Report `0x33` carries the key
 code as well, but it is on a vendor page, so it is shown whenever the capture
-contains the report descriptor — and hidden, like everything on a HID interface,
+contains the report descriptor, and hidden, like everything on a HID interface,
 when it does not.
 
 ### LED map
@@ -1302,24 +1302,24 @@ candidates, each in its own colour.
 | Index | LED | Index | LED |
 |---|---|---|---|
 | 0 | Esc | 56 | Left Shift |
-| 1–12 | F1–F12 | 57 | — (ISO `<>` position) |
-| 13 | — | 58–64 | Z X C V B N M |
+| 1–12 | F1–F12 | 57 | none (ISO `<>` position) |
+| 13 | none | 58–64 | Z X C V B N M |
 | 14 | `` ` `` | 65–67 | `,` `.` `/` |
-| 15–24 | 1 2 3 4 5 6 7 8 9 0 | 68 | — |
+| 15–24 | 1 2 3 4 5 6 7 8 9 0 | 68 | none |
 | 25–27 | `-` `=` Backspace | 69 | Right Shift |
 | 28 | Tab | 70 | Up arrow |
 | 29–38 | Q W E R T Y U I O P | 71–73 | Left Ctrl, Windows, Left Alt |
-| 39–41 | `[` `]` `\` | 74 | — |
+| 39–41 | `[` `]` `\` | 74 | none |
 | 42 | Caps Lock | 75 | Space |
-| 43–51 | A S D F G H J K L | 76–77 | — |
+| 43–51 | A S D F G H J K L | 76–77 | none |
 | 52–53 | `;` `'` | 78–79 | Right Alt, Fn |
-| 54 | — (ISO `#` position) | 80–81 | menu key, Right Ctrl |
+| 54 | none (ISO `#` position) | 80–81 | menu key, Right Ctrl |
 | 55 | Enter | 82–84 | Left, Down, Right arrows |
 | | | 85–86 | Previous Track, Next Track |
 | | | 87–90 | the four triangular top buttons, left to right: Game Mode, Profile Cycle, Microphone Off, RGB on/off |
-| | | 91–95 | — |
+| | | 91–95 | none |
 | | | 96–105 | wrist rest light strip, ten segments left to right |
-| | | 106–111 | — |
+| | | 106–111 | none |
 
 94 of the 112 slots drive something.
 
@@ -1327,9 +1327,9 @@ candidates, each in its own colour.
 |---|---|
 | The main block is laid out as rows of fourteen: 0–13, 14–27, 28–41, 42–55, 56–69, with the bottom row from 70 | **confirmed** |
 | The matrix is wired for an **ISO** layout: slots 54 and 57 sit exactly where the ISO-only `#` and `<>` keys would be, and are empty on this ANSI unit | **confirmed** for the empty slots; an ISO unit lighting them is a hypothesis |
-| The other empty main-block slots match the extra keys of the **Japanese** layout, which the KB7 is sold in: 68 where `ろ` sits between `/` and Right Shift, and 74, 76 and 77 where `無変換`, `変換` and `かな` flank the space bar. So the table is likely one superset of every layout variant | hypothesis — needs an ISO or JIS unit |
+| The other empty main-block slots match the extra keys of the **Japanese** layout, which the KB7 is sold in: 68 where `ろ` sits between `/` and Right Shift, and 74, 76 and 77 where `無変換`, `変換` and `かな` flank the space bar. So the table is likely one superset of every layout variant | hypothesis, needs an ISO or JIS unit |
 | The up arrow sits at 70, at the start of the bottom row, apart from the other three arrows (82–84) | **confirmed** |
-| The volume dial and its play/pause button have no slot in this table | observed — they never lit in any pass |
+| The volume dial and its play/pause button have no slot in this table | observed, they never lit in any pass |
 | The wrist rest strip is ten LEDs, 96–105, driven from the same table | **confirmed** |
 
 **Report `0x11` is what the keyboard shows on its own.** With Swarm II and its
@@ -1368,8 +1368,8 @@ Two of these connect to what the captures show:
   software, which makes them the natural way to pin down header bytes 6 and 7 of
   report `0x11`.
 
-Swarm II lets keys be reassigned on three layers — Fn, Game Mode and Easy Shift
-(Fn + Caps Lock) — according to the PC Games Hardware review of the KB7. There
+Swarm II lets keys be reassigned on three layers: Fn, Game Mode and Easy Shift
+(Fn + Caps Lock), according to the PC Games Hardware review of the KB7. There
 are exactly three 347-byte blocks of unknown purpose, `0x21`, `0x22` and `0x23`,
 which makes one key table per layer a reasonable **hypothesis**.
 
@@ -1385,7 +1385,7 @@ twenty-byte fields from offset 2:
 | Slot | Name |
 |---|---|
 | 0 | `DESKTOP` |
-| 1 | `SC` — the complete name, kept short to fit the profile label on the screen |
+| 1 | `SC`, the complete name, kept short to fit the profile label on the screen |
 | 2 | `DEFAULT 03` |
 | 3 | `DEFAULT 04` |
 | 4 | `DEFAULT 05` |
@@ -1507,13 +1507,13 @@ update running: a failed or interrupted flash can leave the keyboard unusable.
 2. ~~Are live PC stats pushed as rendered images, as numbers, or not at all?~~
    **Answered for volume**: as numbers. An `a3` frame carries a plain percentage
    and the device renders the page itself (`09-volume-50-1`). Whether the
-   PC-performance view works the same way is still open — scenario 07.
+   PC-performance view works the same way is still open, scenario 07.
 3. Is there a checksum or sequence counter in write commands?
 4. Which interface carries keystrokes besides the boot keyboard (NKRO)?
    Interface 2 exposes a keyboard collection next to its vendor-defined ones, so
    it is the first candidate. Its Consumer report `0x01` and notification report
    `0x03` have now both been seen carrying real input from the volume dial, which
-   makes interface 2 the input channel — but no actual keystroke has been
+   makes interface 2 the input channel, but no actual keystroke has been
    observed on it yet.
 5. The device presents three OUT endpoints (`0x06`, `0x0d`, `0x0f`). Swarm II
    uses `0x0d` for its state stream; `0x06` and `0x0f` have not been seen in use.

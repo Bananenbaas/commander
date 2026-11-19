@@ -23,22 +23,22 @@ func TestTipFor(t *testing.T) {
 		st   supervisor.State
 		want string
 	}{
-		{supervisor.State{Phase: supervisor.Starting, Run: none}, "Commander — KB7: starting"},
-		{supervisor.State{Phase: supervisor.Running, Run: none}, "Commander — KB7: starting"},
-		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 3}}, "Commander — KB7: profile 3"},
-		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 0}}, "Commander — KB7: profile 0"},
-		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 1, Name: "SC"}}, "Commander — KB7: SC"},
-		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "keyboard"}}, "Commander — KB7: waiting for the keyboard"},
-		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "Swarm II"}}, "Commander — KB7: waiting for Swarm II to close"},
-		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "lunch"}}, "Commander — KB7: waiting for lunch"},
-		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: run.WaitReplug}}, "Commander — KB7: the keyboard does not answer — unplug and replug it"},
+		{supervisor.State{Phase: supervisor.Starting, Run: none}, "Commander: starting"},
+		{supervisor.State{Phase: supervisor.Running, Run: none}, "Commander: starting"},
+		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 3}}, "Commander: profile 3"},
+		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 0}}, "Commander: profile 0"},
+		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 1, Name: "SC"}}, "Commander: SC"},
+		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "keyboard"}}, "Commander: waiting for the keyboard"},
+		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "Swarm II"}}, "Commander: waiting for Swarm II to close"},
+		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "lunch"}}, "Commander: waiting for lunch"},
+		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: run.WaitReplug}}, "Commander: the keyboard does not answer, unplug and replug it"},
 		// A reload that failed keeps the old configuration running; the
 		// balloon says so, the tip keeps showing the loop.
-		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 2}, Err: "not reloaded"}, "Commander — KB7: profile 2"},
-		{supervisor.State{Phase: supervisor.Applying, Run: none}, "Commander — KB7: applying buttons…"},
-		{supervisor.State{Phase: supervisor.Failed, Run: none, Err: "layout.toml: line 3: bad key"}, "Commander — KB7: error: layout.toml: line 3: bad key"},
-		{supervisor.State{Phase: supervisor.Failed, Run: none}, "Commander — KB7: error"},
-		{supervisor.State{Phase: supervisor.Stopped, Run: none}, "Commander — KB7: stopped"},
+		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 2}, Err: "not reloaded"}, "Commander: profile 2"},
+		{supervisor.State{Phase: supervisor.Applying, Run: none}, "Commander: applying buttons…"},
+		{supervisor.State{Phase: supervisor.Failed, Run: none, Err: "layout.toml: line 3: bad key"}, "Commander: error: layout.toml: line 3: bad key"},
+		{supervisor.State{Phase: supervisor.Failed, Run: none}, "Commander: error"},
+		{supervisor.State{Phase: supervisor.Stopped, Run: none}, "Commander: stopped"},
 	}
 	for _, c := range cases {
 		if got := tipFor(c.st); got != c.want {
@@ -55,7 +55,7 @@ func TestTipForLongError(t *testing.T) {
 	if n := units(got); n != 127 {
 		t.Errorf("tip of %d UTF-16 units, want 127: %q", n, got)
 	}
-	if !strings.HasPrefix(got, "Commander — KB7: error: the configuration cannot be loaded") || !strings.HasSuffix(got, "…") {
+	if !strings.HasPrefix(got, "Commander: error: the configuration cannot be loaded") || !strings.HasSuffix(got, "…") {
 		t.Errorf("tip %q not the start of the error with an ellipsis", got)
 	}
 
@@ -70,7 +70,7 @@ func TestTipForLongError(t *testing.T) {
 	}
 
 	// Exactly 127 units is kept whole.
-	prefix := "Commander — KB7: error: "
+	prefix := "Commander: error: "
 	exact := strings.Repeat("x", 127-units(prefix))
 	if got := tipFor(supervisor.State{Phase: supervisor.Failed, Run: none, Err: exact}); got != prefix+exact {
 		t.Errorf("a tip of exactly 127 units was cut: %q", got)

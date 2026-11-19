@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""kb7cap — inspect and compare USB captures of the KB7."""
+"""kb7cap: inspect and compare USB captures of the KB7."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ from . import __version__
 from .analysis import Capture, diff_lines, format_transfer, hexdump, summary_lines
 from .pcap import CaptureFormatError
 
-REDACTED = "      [keystroke report hidden — use --show-keystrokes to display]"
+REDACTED = "      [keystroke report hidden; use --show-keystrokes to display]"
 REDACTED_NO_DESCRIPTOR = ("      [hidden: no HID report descriptor in this capture, so typing cannot be "
-                          "ruled out — use --show-keystrokes to display]")
+                          "ruled out; use --show-keystrokes to display]")
 
 
 def _endpoint(value: str) -> int:
