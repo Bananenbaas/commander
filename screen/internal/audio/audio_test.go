@@ -105,7 +105,14 @@ type fakeEngine struct {
 	mu      sync.Mutex
 	level   int
 	program map[string]int
+	devs    int
 	closed  bool
+}
+
+func (f *fakeEngine) devices() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.devs
 }
 
 func (f *fakeEngine) sessions() (Session, []Session, error) {
@@ -214,6 +221,21 @@ func TestSetLevelClamps(t *testing.T) {
 	}
 	if fe.level != 100 || fe.program["7"] != 0 {
 		t.Errorf("levels %d %d, want 100 0", fe.level, fe.program["7"])
+	}
+}
+
+func TestDevices(t *testing.T) {
+	fe := &fakeEngine{program: map[string]int{}, devs: 2}
+	w, err := start(nil, func(func(), func(string, ...any)) (engine, error) { return fe, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := w.Devices(); n != 2 {
+		t.Errorf("Devices = %d, want 2", n)
+	}
+	w.Close()
+	if n := w.Devices(); n != 0 {
+		t.Errorf("Devices after Close = %d, want 0", n)
 	}
 }
 

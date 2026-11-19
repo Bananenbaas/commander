@@ -101,6 +101,28 @@ func TestCallbackRefsAndQuery(t *testing.T) {
 	if !h.deviceChanged.Load() || signals != 1 {
 		t.Error("a render device change was not noted")
 	}
+
+	// A device added, removed or changing state marks the devices stale.
+	for i, cb := range []func(){
+		func() { cbDeviceStateChanged(d, 0, 1) },
+		func() { cbDeviceAddedOrRemoved(d, 0) },
+	} {
+		h.deviceChanged.Store(false)
+		before := signals
+		cb()
+		if !h.deviceChanged.Load() || signals != before+1 {
+			t.Errorf("device callback %d was not noted", i)
+		}
+	}
+}
+
+func TestDeviceSlots(t *testing.T) {
+	// mmdeviceapi.h: IMMDeviceEnumerator::EnumAudioEndpoints is its first
+	// method, IMMDeviceCollection has GetCount then Item, IMMDevice has
+	// Activate, OpenPropertyStore, GetId.
+	if mEnumAudioEndpoints != 3 || mCollectionGetCount != 3 || mCollectionItem != 4 || mGetId != 5 || deviceStateActive != 1 {
+		t.Error("device vtable slots or state")
+	}
 }
 
 // TestLive reads the real audio once; it changes no volume.

@@ -53,6 +53,8 @@ const (
 	eRender  = 0 // EDataFlow
 	eConsole = 0 // ERole
 
+	deviceStateActive = 1 // DEVICE_STATE_ACTIVE
+
 	sessionActive  = 1 // AudioSessionState
 	sessionExpired = 2
 )
@@ -63,11 +65,16 @@ const (
 	mRelease        = 2
 
 	// IMMDeviceEnumerator
+	mEnumAudioEndpoints       = 3
 	mGetDefaultAudioEndpoint  = 4
 	mRegisterEndpointNotify   = 6
 	mUnregisterEndpointNotify = 7
+	// IMMDeviceCollection
+	mCollectionGetCount = 3
+	mCollectionItem     = 4
 	// IMMDevice
 	mActivate = 3
+	mGetId    = 5
 	// IAudioEndpointVolume
 	mRegisterControlChangeNotify   = 3
 	mUnregisterControlChangeNotify = 4
@@ -171,7 +178,7 @@ func coCreateInstance(clsid, iid *windows.GUID) (*comPtr, error) {
 // own threads, so they touch nothing else.
 type hub struct {
 	signal        func()      // non-blocking
-	deviceChanged atomic.Bool // the default output device changed
+	deviceChanged atomic.Bool // the output devices or the default one changed
 }
 
 // callback is a COM object implemented in Go. Windows holds its address
@@ -224,7 +231,6 @@ func makeVtables() {
 		syscall.NewCallback(cbAddRef),
 		syscall.NewCallback(cbRelease),
 	}
-	ignore2 := syscall.NewCallback(func(this *callback, a uintptr) uintptr { return 0 })
 	ignore3 := syscall.NewCallback(func(this *callback, a, b uintptr) uintptr { return 0 })
 	ignore5 := syscall.NewCallback(func(this *callback, a, b, c, d uintptr) uintptr { return 0 })
 	signal2 := syscall.NewCallback(func(this *callback, a uintptr) uintptr { this.hub.signal(); return 0 })
@@ -232,9 +238,9 @@ func makeVtables() {
 	signal4 := syscall.NewCallback(func(this *callback, a, b, c uintptr) uintptr { this.hub.signal(); return 0 })
 
 	vtables[kindNotificationClient] = append(slices.Clone(unknown),
-		ignore3, // OnDeviceStateChanged(id, state)
-		ignore2, // OnDeviceAdded(id)
-		ignore2, // OnDeviceRemoved(id)
+		syscall.NewCallback(cbDeviceStateChanged),   // OnDeviceStateChanged(id, state)
+		syscall.NewCallback(cbDeviceAddedOrRemoved), // OnDeviceAdded(id)
+		syscall.NewCallback(cbDeviceAddedOrRemoved), // OnDeviceRemoved(id)
 		syscall.NewCallback(cbDefaultDeviceChanged), // OnDefaultDeviceChanged(flow, role, id)
 		ignore3, // OnPropertyValueChanged(id, key): PROPERTYKEY is passed by reference on x64
 	)
@@ -298,6 +304,23 @@ func cbRelease(this *callback) uintptr {
 		live.Delete(this)
 	}
 	return uintptr(n)
+}
+
+// cbDeviceStateChanged notes a device that was enabled, disabled, plugged in
+// or unplugged, for the engine to list the devices again on its own
+// goroutine.
+func cbDeviceStateChanged(this *callback, id, state uintptr) uintptr {
+	this.hub.deviceChanged.Store(true)
+	this.hub.signal()
+	return 0
+}
+
+// cbDeviceAddedOrRemoved notes a device added or removed, like
+// cbDeviceStateChanged.
+func cbDeviceAddedOrRemoved(this *callback, id uintptr) uintptr {
+	this.hub.deviceChanged.Store(true)
+	this.hub.signal()
+	return 0
 }
 
 // cbDefaultDeviceChanged notes a new default output device for the engine

@@ -14,9 +14,10 @@ import (
 const audioSeconds = 20
 
 // doAudio is a developer check of the volume mixer's audio side: it prints
-// the system volume and the programs that play sound, then again after every
-// change Windows reports, for audioSeconds. It does not touch the keyboard
-// and changes no volume.
+// the system volume, the number of output devices followed and the programs
+// with sound sessions on any of them, then again after every change Windows
+// reports, for audioSeconds. It does not touch the keyboard and changes no
+// volume.
 func doAudio(stdout, stderr io.Writer) error {
 	a, err := audio.New(func(format string, args ...any) {
 		fmt.Fprintf(stderr, format+"\n", args...)
@@ -50,7 +51,7 @@ func printSessions(w io.Writer, a *audio.Windows, at time.Duration) {
 		fmt.Fprintf(w, "[%5.1fs] %v\n", at.Seconds(), err)
 		return
 	}
-	fmt.Fprintf(w, "[%5.1fs] system %3d%s\n", at.Seconds(), sys.Level, muted(sys.Muted))
+	fmt.Fprintf(w, "[%5.1fs] system %3d%s, devices %d\n", at.Seconds(), sys.Level, muted(sys.Muted), a.Devices())
 	for _, p := range progs {
 		fmt.Fprintf(w, "         %-8s %3d%s  %s\n", p.ID, p.Level, muted(p.Muted), p.Name)
 	}

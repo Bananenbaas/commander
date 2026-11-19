@@ -17,7 +17,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// winEngine follows the default output device through the Core Audio API.
+// winEngine follows the active output devices through the Core Audio API.
 // It is used by the audio goroutine only; the callbacks it registers touch
 // its hub alone.
 type winEngine struct {
@@ -27,16 +27,28 @@ type winEngine struct {
 	enum           *comPtr // IMMDeviceEnumerator
 	client         *callback
 	clientIsListed bool // client is registered with enum
+	built          bool // the devices were listed at least once
 
-	// The default device, nil until acquired or after a failure.
+	// The default device, for the system volume; nil until acquired or
+	// after a failure.
+	defID       string
+	def         *comPtr // IMMDevice
+	vol         *comPtr // IAudioEndpointVolume
+	volCB       *callback
+	volIsListed bool
+
+	devs   deviceSet // every active output device, for the sessions
+	sessCB *callback // shared by every device
+	evCB   *callback // shared by every session
+}
+
+// winDevice is one output device whose sessions the engine follows.
+type winDevice struct {
 	dev          *comPtr // IMMDevice
-	vol          *comPtr // IAudioEndpointVolume
-	volCB        *callback
-	volIsListed  bool
 	mgr          *comPtr // IAudioSessionManager2
 	sessCB       *callback
 	sessIsListed bool
-	evCB         *callback              // shared by every session
+	evCB         *callback
 	followed     map[string]*winSession // by session instance identifier
 	order        []*winSession          // scratch: the sessions of one read
 }
@@ -52,9 +64,9 @@ type winSession struct {
 }
 
 // openEngine initialises COM (multithreaded) on the calling thread, which
-// the caller keeps for the engine, and starts listening for a new default
-// device. A missing device is not an error here: it is ErrNoDevice from the
-// calls until one appears.
+// the caller keeps for the engine, and starts listening for changes of the
+// output devices. A missing device is not an error here: it is ErrNoDevice
+// from the calls until one appears.
 func openEngine(signal func(), logf func(string, ...any)) (engine, error) {
 	if err := windows.CoInitializeEx(0, windows.COINIT_MULTITHREADED); err != nil && !errors.Is(err, syscall.Errno(1)) {
 		return nil, fmt.Errorf("COM: %w", err)
@@ -66,103 +78,172 @@ func openEngine(signal func(), logf func(string, ...any)) (engine, error) {
 	}
 	h := &hub{signal: signal}
 	e := &winEngine{
-		hub:      h,
-		logf:     logf,
-		enum:     enum,
-		client:   newCallback(kindNotificationClient, h),
-		volCB:    newCallback(kindVolumeCallback, h),
-		sessCB:   newCallback(kindSessionNotification, h),
-		evCB:     newCallback(kindSessionEvents, h),
-		followed: map[string]*winSession{},
+		hub:    h,
+		logf:   logf,
+		enum:   enum,
+		client: newCallback(kindNotificationClient, h),
+		volCB:  newCallback(kindVolumeCallback, h),
+		sessCB: newCallback(kindSessionNotification, h),
+		evCB:   newCallback(kindSessionEvents, h),
 	}
 	if err := enum.call(mRegisterEndpointNotify, e.client.ptr()).err("RegisterEndpointNotificationCallback"); err != nil {
 		e.close()
 		return nil, err
 	}
 	e.clientIsListed = true
-	if err := e.acquire(); err != nil && !errors.Is(err, ErrNoDevice) {
+	if err := e.ready(); err != nil && !errors.Is(err, ErrNoDevice) {
 		logf("audio: %v", err)
 	}
 	return e, nil
 }
 
-// acquire takes the current default output device and registers for its
-// volume and new sessions.
-func (e *winEngine) acquire() error {
-	e.drop()
+// ready makes sure the engine follows the current default device and every
+// active output device. It lists them again after Windows reported a change
+// of the devices, and while there is no default device.
+func (e *winEngine) ready() error {
+	stale := e.hub.deviceChanged.Swap(false)
+	if !stale && e.built && e.vol != nil {
+		return nil
+	}
+	if stale && e.built {
+		e.logf("audio: the output devices changed")
+	}
+	if err := e.updateDevices(); err != nil {
+		e.hub.deviceChanged.Store(true) // try again on the next call
+		return err
+	}
+	e.built = true
+	return e.acquireDefault()
+}
+
+// updateDevices lists the active output devices and follows exactly those,
+// keeping the ones already followed. A device that cannot be followed is
+// logged and left out.
+func (e *winEngine) updateDevices() error {
+	var coll *comPtr
+	if err := e.enum.call(mEnumAudioEndpoints, eRender, deviceStateActive, uintptr(unsafe.Pointer(&coll))).err("EnumAudioEndpoints"); err != nil {
+		return err
+	}
+	defer coll.release()
+	var n uint32
+	if err := coll.call(mCollectionGetCount, uintptr(unsafe.Pointer(&n))).err("IMMDeviceCollection.GetCount"); err != nil {
+		return err
+	}
+	found := map[string]*comPtr{}
+	var ids []string
+	for i := range n {
+		var dev *comPtr
+		if coll.call(mCollectionItem, uintptr(i), uintptr(unsafe.Pointer(&dev))).failed() {
+			continue
+		}
+		id := dev.text(mGetId)
+		if id == "" || found[id] != nil {
+			dev.release()
+			continue
+		}
+		found[id] = dev
+		ids = append(ids, id)
+	}
+	err := e.devs.update(ids, func(id string) (endpoint, error) {
+		dev := found[id]
+		found[id] = nil // openDevice owns it now
+		return openDevice(dev, e.sessCB, e.evCB)
+	})
+	for _, dev := range found {
+		dev.release() // devices already followed: their own reference stays
+	}
+	if err != nil {
+		e.logf("audio: %v", err)
+	}
+	return nil
+}
+
+// acquireDefault takes the current default output device for the system
+// volume, unless it is the one already held.
+func (e *winEngine) acquireDefault() error {
 	var dev *comPtr
 	hr := e.enum.call(mGetDefaultAudioEndpoint, eRender, eConsole, uintptr(unsafe.Pointer(&dev)))
 	if hr == eNotFound {
+		e.dropDefault()
 		return ErrNoDevice
 	}
 	if err := hr.err("GetDefaultAudioEndpoint"); err != nil {
+		e.dropDefault()
 		return err
 	}
-	e.dev = dev
-	var vol, mgr *comPtr
+	id := dev.text(mGetId)
+	if e.vol != nil && id != "" && id == e.defID {
+		dev.release()
+		return nil
+	}
+	e.dropDefault()
+	e.def, e.defID = dev, id
+	var vol *comPtr
 	if err := dev.call(mActivate, uintptr(unsafe.Pointer(&iidIAudioEndpointVolume)), clsctxAll, 0, uintptr(unsafe.Pointer(&vol))).err("activating the endpoint volume"); err != nil {
-		e.drop()
+		e.dropDefault()
 		return err
 	}
 	e.vol = vol
 	if err := vol.call(mRegisterControlChangeNotify, e.volCB.ptr()).err("RegisterControlChangeNotify"); err != nil {
-		e.drop()
+		e.dropDefault()
 		return err
 	}
 	e.volIsListed = true
-	if err := dev.call(mActivate, uintptr(unsafe.Pointer(&iidIAudioSessionManager2)), clsctxAll, 0, uintptr(unsafe.Pointer(&mgr))).err("activating the session manager"); err != nil {
-		e.drop()
-		return err
-	}
-	e.mgr = mgr
-	// Windows delivers new-session notifications only after the session
-	// enumerator was asked for once.
-	var en *comPtr
-	if err := mgr.call(mGetSessionEnumerator, uintptr(unsafe.Pointer(&en))).err("GetSessionEnumerator"); err != nil {
-		e.drop()
-		return err
-	}
-	en.release()
-	if err := mgr.call(mRegisterSessionNotification, e.sessCB.ptr()).err("RegisterSessionNotification"); err != nil {
-		e.drop()
-		return err
-	}
-	e.sessIsListed = true
 	return nil
 }
 
-// drop unregisters from the device and releases it and its sessions.
-func (e *winEngine) drop() {
-	for id, s := range e.followed {
-		e.untrack(s)
-		delete(e.followed, id)
-	}
-	if e.sessIsListed {
-		e.mgr.call(mUnregisterSessionNotification, e.sessCB.ptr())
-		e.sessIsListed = false
-	}
-	e.mgr.release()
-	e.mgr = nil
+// dropDefault unregisters from the default device's volume and releases it.
+func (e *winEngine) dropDefault() {
 	if e.volIsListed {
 		e.vol.call(mUnregisterControlChangeNotify, e.volCB.ptr())
 		e.volIsListed = false
 	}
 	e.vol.release()
 	e.vol = nil
-	e.dev.release()
-	e.dev = nil
+	e.def.release()
+	e.def, e.defID = nil, ""
 }
 
-// ready makes sure the engine holds the current default device.
-func (e *winEngine) ready() error {
-	if e.hub.deviceChanged.Swap(false) {
-		e.logf("audio: the default output device changed")
-		return e.acquire()
+// openDevice follows the sessions of the device dev and takes over its
+// reference: on an error dev is released.
+func openDevice(dev *comPtr, sessCB, evCB *callback) (endpoint, error) {
+	d := &winDevice{dev: dev, sessCB: sessCB, evCB: evCB, followed: map[string]*winSession{}}
+	var mgr *comPtr
+	if err := dev.call(mActivate, uintptr(unsafe.Pointer(&iidIAudioSessionManager2)), clsctxAll, 0, uintptr(unsafe.Pointer(&mgr))).err("activating the session manager"); err != nil {
+		d.close()
+		return nil, err
 	}
-	if e.dev == nil {
-		return e.acquire()
+	d.mgr = mgr
+	// Windows delivers new-session notifications only after the session
+	// enumerator was asked for once.
+	var en *comPtr
+	if err := mgr.call(mGetSessionEnumerator, uintptr(unsafe.Pointer(&en))).err("GetSessionEnumerator"); err != nil {
+		d.close()
+		return nil, err
 	}
-	return nil
+	en.release()
+	if err := mgr.call(mRegisterSessionNotification, sessCB.ptr()).err("RegisterSessionNotification"); err != nil {
+		d.close()
+		return nil, err
+	}
+	d.sessIsListed = true
+	return d, nil
+}
+
+// close unregisters from the device and releases it and its sessions.
+func (d *winDevice) close() {
+	for id, s := range d.followed {
+		d.untrack(s)
+		delete(d.followed, id)
+	}
+	if d.sessIsListed {
+		d.mgr.call(mUnregisterSessionNotification, d.sessCB.ptr())
+		d.sessIsListed = false
+	}
+	d.mgr.release()
+	d.mgr = nil
+	d.dev.release()
+	d.dev = nil
 }
 
 func (e *winEngine) sessions() (Session, []Session, error) {
@@ -170,18 +251,21 @@ func (e *winEngine) sessions() (Session, []Session, error) {
 		return Session{}, nil, err
 	}
 	system, err := e.system()
-	if err == nil {
-		var raw []rawSession
-		if raw, err = e.read(); err == nil {
-			return system, merge(raw), nil
-		}
+	if err != nil {
+		// The device may be gone (unplugged, disabled): take it again next time.
+		e.dropDefault()
+		return Session{}, nil, err
 	}
-	// The device may be gone (unplugged, disabled): take it again next time.
-	e.drop()
-	return Session{}, nil, err
+	raw, lost := e.devs.read(e.logf)
+	if lost {
+		e.hub.deviceChanged.Store(true)
+	}
+	return system, merge(raw), nil
 }
 
-// system reads the device's volume and mute.
+func (e *winEngine) devices() int { return e.devs.len() }
+
+// system reads the default device's volume and mute.
 func (e *winEngine) system() (Session, error) {
 	var f float32
 	if err := e.vol.call(mGetMasterVolumeLevelScalar, uintptr(unsafe.Pointer(&f))).err("GetMasterVolumeLevelScalar"); err != nil {
@@ -198,9 +282,9 @@ func (e *winEngine) system() (Session, error) {
 // those gone or expired, and returns the programs' sessions in the
 // enumerator's order. Inactive sessions stay, a paused player is listed, but
 // only active ones are marked Active.
-func (e *winEngine) read() ([]rawSession, error) {
+func (d *winDevice) read() ([]rawSession, error) {
 	var en *comPtr
-	if err := e.mgr.call(mGetSessionEnumerator, uintptr(unsafe.Pointer(&en))).err("GetSessionEnumerator"); err != nil {
+	if err := d.mgr.call(mGetSessionEnumerator, uintptr(unsafe.Pointer(&en))).err("GetSessionEnumerator"); err != nil {
 		return nil, err
 	}
 	defer en.release()
@@ -208,28 +292,28 @@ func (e *winEngine) read() ([]rawSession, error) {
 	if err := en.call(mGetCount, uintptr(unsafe.Pointer(&n))).err("IAudioSessionEnumerator.GetCount"); err != nil {
 		return nil, err
 	}
-	for _, s := range e.followed {
+	for _, s := range d.followed {
 		s.seen = false
 	}
-	e.order = e.order[:0]
+	d.order = d.order[:0]
 	for i := range n {
 		var c *comPtr
 		if !en.call(mGetSession, uintptr(i), uintptr(unsafe.Pointer(&c))).failed() {
-			if s := e.track(c); s != nil && !s.seen {
+			if s := d.track(c); s != nil && !s.seen {
 				s.seen = true
-				e.order = append(e.order, s)
+				d.order = append(d.order, s)
 			}
 			c.release()
 		}
 	}
-	for id, s := range e.followed {
+	for id, s := range d.followed {
 		if !s.seen {
-			e.untrack(s)
-			delete(e.followed, id)
+			d.untrack(s)
+			delete(d.followed, id)
 		}
 	}
-	raw := make([]rawSession, 0, len(e.order))
-	for _, s := range e.order {
+	raw := make([]rawSession, 0, len(d.order))
+	for _, s := range d.order {
 		var f float32
 		if s.simple.call(mGetMasterVolume, uintptr(unsafe.Pointer(&f))).failed() {
 			continue
@@ -246,7 +330,7 @@ func (e *winEngine) read() ([]rawSession, error) {
 // track returns the followed session for the control c, following it from
 // now on if it is new; nil for the system sounds, expired sessions and
 // sessions that cannot be read.
-func (e *winEngine) track(c *comPtr) *winSession {
+func (d *winDevice) track(c *comPtr) *winSession {
 	ctl, err := c.query(&iidIAudioSessionControl2)
 	if err != nil {
 		return nil
@@ -265,7 +349,7 @@ func (e *winEngine) track(c *comPtr) *winSession {
 		ctl.release()
 		return nil
 	}
-	if s, ok := e.followed[id]; ok {
+	if s, ok := d.followed[id]; ok {
 		ctl.release()
 		return s
 	}
@@ -281,19 +365,34 @@ func (e *winEngine) track(c *comPtr) *winSession {
 		s.pid = 0
 	}
 	s.exe = processName(s.pid)
-	s.listed = !ctl.call(mRegisterAudioSessionNotification, e.evCB.ptr()).failed()
-	e.followed[id] = s
+	s.listed = !ctl.call(mRegisterAudioSessionNotification, d.evCB.ptr()).failed()
+	d.followed[id] = s
 	return s
 }
 
 // untrack unregisters from a session and releases it.
-func (e *winEngine) untrack(s *winSession) {
+func (d *winDevice) untrack(s *winSession) {
 	if s.listed {
-		s.ctl.call(mUnregisterAudioSessionNotification, e.evCB.ptr())
+		s.ctl.call(mUnregisterAudioSessionNotification, d.evCB.ptr())
 		s.listed = false
 	}
 	s.simple.release()
 	s.ctl.release()
+}
+
+// setProgram sets every followed session of the process on the device.
+func (d *winDevice) setProgram(pid uint32, level int) (bool, error) {
+	found := false
+	for _, s := range d.followed {
+		if s.pid != pid {
+			continue
+		}
+		found = true
+		if err := s.simple.call(mSetMasterVolume, scalar(level), 0).err("ISimpleAudioVolume.SetMasterVolume"); err != nil {
+			return true, err
+		}
+	}
+	return found, nil
 }
 
 func (e *winEngine) setSystem(level int) error {
@@ -311,26 +410,13 @@ func (e *winEngine) setProgram(id string, level int) error {
 	if err := e.ready(); err != nil {
 		return err
 	}
-	set := func() (bool, error) {
-		found := false
-		for _, s := range e.followed {
-			if s.pid != uint32(pid) {
-				continue
-			}
-			found = true
-			if err := s.simple.call(mSetMasterVolume, scalar(level), 0).err("ISimpleAudioVolume.SetMasterVolume"); err != nil {
-				return true, err
-			}
-		}
-		return found, nil
-	}
-	found, err := set()
+	found, err := e.devs.setProgram(uint32(pid), level)
 	if !found && err == nil {
-		// The device was taken again since the last read: read once more.
+		// The devices were listed again since the last read: read once more.
 		if _, _, err := e.sessions(); err != nil {
 			return err
 		}
-		found, err = set()
+		found, err = e.devs.setProgram(uint32(pid), level)
 	}
 	if err == nil && !found {
 		err = fmt.Errorf("no program with ID %q", id)
@@ -345,7 +431,8 @@ func scalar(level int) uintptr {
 }
 
 func (e *winEngine) close() {
-	e.drop()
+	e.devs.closeAll()
+	e.dropDefault()
 	if e.clientIsListed {
 		e.enum.call(mUnregisterEndpointNotify, e.client.ptr())
 		e.clientIsListed = false

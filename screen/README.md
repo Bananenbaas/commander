@@ -624,8 +624,9 @@ keyboard keeps it after it is unplugged has not been tried.
 ### Volume mixer
 
 On Windows, `run` (and so Commander) keeps the keyboard's volume mixer page in
-step with the computer's sound: the first slider is the system volume, and the
-next ones are the programs with sound sessions, shown by their name (the
+step with the computer's sound: the first slider is the system volume (of the
+default output device), and the next ones are the programs on any output
+device (a headset and speakers alike) with sound sessions, shown by their name (the
 program's own name when it gives one, otherwise the executable's name). At
 most four programs are shown; ones playing sound come first. A program that
 plays keeps its place; an idle one (a paused player, for example) gives its

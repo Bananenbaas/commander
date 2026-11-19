@@ -54,13 +54,17 @@ brightness = 80       # percent, 0-100; optional
 While `run` (and so Commander) holds the keyboard, it keeps the mixer page in
 step with Windows:
 
-- It follows the playback sessions of the default output device through the
-  Windows audio session API (COM, called directly; no new dependency), and is
-  told by Windows when something changes: a session appears or ends
+- It follows the playback sessions of every active output device (programs
+  on any output device: a headset and speakers side by side) through the
+  Windows audio session API (COM, called directly; no new dependency); the
+  system volume is the default output device's. A program with sessions on
+  two devices is one program, and its slider sets all of them. It is told by
+  Windows when something changes: a session appears or ends
   (`IAudioSessionNotification`), a program's volume changes
   (`IAudioSessionEvents`), the system volume changes
-  (`IAudioEndpointVolumeCallback`), or the default device changes
-  (`IMMNotificationClient`). On a change it writes report `0x28`: the system
+  (`IAudioEndpointVolumeCallback`), or a device is added, removed, enabled,
+  disabled or becomes the default (`IMMNotificationClient`); devices that
+  stay keep their sessions. On a change it writes report `0x28`: the system
   volume first, then up to four programs (only the level frames for programs 1-2 and 3-4,
   `03 0e` and `06 0e`, have been observed), each row ending in 100, the
   slider's full scale, by their display name; when a

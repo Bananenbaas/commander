@@ -9,7 +9,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ### Added
 - Volume mixer (Windows): while `run` or Commander holds the keyboard, the
   keyboard's mixer page shows the system volume and up to four programs with
-  sound sessions (ones playing sound come first), by name (the program's own,
+  sound sessions on any output device (ones playing sound come first), by name (the program's own,
   else its executable's description), with their levels, and the sliders on
   the keyboard set those volumes in Windows. The page follows Windows as programs start and
   stop and as volumes change elsewhere. Not yet checked on the keyboard.

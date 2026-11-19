@@ -29,6 +29,7 @@ type engine interface {
 	sessions() (system Session, programs []Session, err error)
 	setSystem(level int) error // level is 0 to 100
 	setProgram(id string, level int) error
+	devices() int // the output devices followed
 	close()
 }
 
@@ -36,8 +37,8 @@ type engine interface {
 // of times; it never blocks.
 type opener func(signal func(), logf func(string, ...any)) (engine, error)
 
-// Windows follows the system volume and the programs with sound sessions on
-// the default output device of Windows. Its methods may be called from any
+// Windows follows the system volume of the default output device of Windows
+// and the programs with sound sessions on any active output device. Its methods may be called from any
 // goroutine; the audio calls themselves run on one goroutine of its own.
 type Windows struct {
 	reqs    chan request
@@ -122,8 +123,8 @@ func (w *Windows) do(fn func(engine) error) error {
 }
 
 // Sessions returns the system volume and the programs that have a sound
-// session on the default output device, one per process, in the order
-// Windows lists them; Active tells those that play sound.
+// session on any active output device, one per process, in the order
+// Windows lists them, device by device; Active tells those that play sound.
 func (w *Windows) Sessions() (system Session, programs []Session, err error) {
 	err = w.do(func(e engine) error {
 		var err error
@@ -140,10 +141,21 @@ func (w *Windows) SetSystemLevel(level int) error {
 }
 
 // SetProgramLevel sets the volume of every session of the program with the
-// given ID, 0 to 100.
+// given ID on every output device, 0 to 100.
 func (w *Windows) SetProgramLevel(id string, level int) error {
 	level = clamp(level)
 	return w.do(func(e engine) error { return e.setProgram(id, level) })
+}
+
+// Devices returns the number of output devices followed, as of the latest
+// call; 0 after Close.
+func (w *Windows) Devices() int {
+	n := 0
+	w.do(func(e engine) error {
+		n = e.devices()
+		return nil
+	})
+	return n
 }
 
 // Changes signals that the sessions are to be read again. It is never
