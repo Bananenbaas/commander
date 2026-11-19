@@ -1138,7 +1138,7 @@ Application widgets on the display".
 | `0x29` entry of page *g* position *p* is `12 x (g - 1) + p` | observed for page 2; page 3 from the table size |
 | `0x25` entry of page *g* position *p* is `13 x (g - 1) + p`, with page markers at 12 and 25 | observed (`40-swarm-slots-pages-1`) |
 | Page 3 position 11 has no `0x29` entry | hypothesis, from the table size |
-| Byte 1 of a `0x33` touch on page 2 or 3 | unknown — no tap on those pages was captured |
+| **Byte 1 of a `0x33` touch is the page**, 1–3: `33 02 06 03 00 59 01 01` is a tap on page 2 position 6 (a keypad key, `59`), `33 03 09 1e 00 00 01 01` one on page 3 position 9 | observed (`41-tap-page2-1`, `42-tap-page3-1`; page 1 is `01` in every earlier capture) |
 
 ### The volume dial: a complete round trip
 
