@@ -65,6 +65,11 @@ step with Windows:
   `03 0e` and `06 0e`, have been observed) by their display name (the executable
   name without `.exe` when a program gives none). Nothing is polled while
   nothing changes.
+- Which programs: sessions that are expired are dropped; a program that
+  plays sound comes before one that is only listed (Windows keeps sessions of
+  programs that once played). A shown program keeps its row while it plays;
+  free rows go to playing programs first, then by first appearance. Rows are
+  shown in first-appearance order, so pausing does not reorder them.
 - It sends the levels as `a3` frames (`00 0d` for the system volume, `03 0e`
   and `06 0e` for the program pairs), when they change.
 - A slider moved on the keyboard (`33 00 <row> 07 …  <level>`) sets that
