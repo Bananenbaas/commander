@@ -468,6 +468,20 @@ Bytes 4–5 distinguish frame types. Seen so far:
 | `01 02 04` | `00 00 02 00 00 0c` | unknown | unknown |
 | `01 02 0b` | `00 00 <value> 00` | CPU temperature in °C for the widget at position 2: `10` = 16, drawn as "16 °C". Sent once in 3.5 minutes, so change-driven like the rest; with no host sending, the widget shows 0 °C after a redraw | observed (`15-screen-assign-app3-cputemp-1`, screen) |
 
+**The volume mixer page** (`44-mixer-slider-1`): the screen listed the system
+volume, then `Steam` and twice `Opera GX Internet Browser`, each at 100.
+Dragging the `Steam` slider on the keyboard sent a stream of touch reports
+`33 00 03 07 00 01 03 <level>`, one per step, with the level a percentage
+(`62` = 98 down to `2a` = 42, the value the screen then showed). Swarm II sent
+nothing back for it. Moving the Windows system volume from 99 to 75 and back
+to 100 produced the system-volume `a3 … 00 0d` frames above, one per step.
+
+| Finding | Status |
+|---|---|
+| A mixer slider moved on the keyboard reports `33 00 03 07 00 01 03 <level>`, level 0–100 | observed (`44-mixer-slider-1`) |
+| Byte 3 `07` is the slider widget type; byte 2 `03` and byte 6 `03` name the slider (here the first application) | hypothesis — one slider moved |
+| How the application names and their levels reach the screen | unknown — sent before the capture started |
+
 Read with the last two rows, bytes 4–5 of the `01 …` frames look like
 `<position> <kind>`: the speaker sits at position 2, which carries the mute
 state (`02`) — and, after the CPU temperature widget was dropped there, the
