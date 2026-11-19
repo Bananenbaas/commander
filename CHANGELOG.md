@@ -6,6 +6,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0-beta.5] - 2026-11-19
+
 ### Added
 - Volume mixer (Windows): while `run` or Commander holds the keyboard, the
   keyboard's mixer page shows the system volume and up to four programs with
