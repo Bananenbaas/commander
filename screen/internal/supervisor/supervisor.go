@@ -35,6 +35,7 @@ import (
 	"github.com/Bananenbaas/kb7-commander/screen/internal/access"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/apply"
+	"github.com/Bananenbaas/kb7-commander/screen/internal/audio"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/keys"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
 	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
@@ -131,6 +132,16 @@ const defaultPoll = 2 * time.Second
 // acquireUser takes the per-user lock; tests replace it.
 var acquireUser = runlock.AcquireUser
 
+// openAudio starts following the Windows audio; tests replace it.
+var openAudio = func(logf func(string, ...any)) (run.Audio, io.Closer, error) {
+	w, err := audio.New(logf)
+	if err != nil {
+		// Never wrap a nil *audio.Windows in the interface.
+		return nil, nil, err
+	}
+	return w, w, nil
+}
+
 // noStatus is State.Run while no loop has reported.
 var noStatus = run.Status{Profile: -1}
 
@@ -167,7 +178,10 @@ type Supervisor struct {
 	apply   func(context.Context, *layout.Config) (string, error)
 	poll    time.Duration
 	release func() error // gives back what New took
-	served  atomic.Bool
+	// audio is the computer's sound for the volume mixer, made once in New
+	// and kept across reloads and applies; nil: no mixer.
+	audio  run.Audio
+	served atomic.Bool
 
 	qmu   sync.Mutex
 	queue []op
@@ -257,6 +271,13 @@ func New(dir string, o Options) (*Supervisor, error) {
 			return nil, err
 		}
 		if cl, ok := inj.(io.Closer); ok {
+			locks := release
+			release = func() error { return errors.Join(cl.Close(), locks()) }
+		}
+		if a, cl, err := openAudio(s.logf); err != nil {
+			s.logf("the volume mixer is off: %v", err)
+		} else {
+			s.audio = a
 			locks := release
 			release = func() error { return errors.Join(cl.Close(), locks()) }
 		}
@@ -619,6 +640,7 @@ func (s *Supervisor) runLoop(exec *action.Executor) func(context.Context, *layou
 			Logf:    s.logf,
 			Status:  status,
 			Resume:  resume,
+			Audio:   s.audio,
 		}
 		stacks := map[byte]*light.Stack{}
 		for _, p := range cfg.Profiles {

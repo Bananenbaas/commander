@@ -5,6 +5,8 @@ package supervisor
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -719,4 +721,72 @@ func TestReloadAfterAnUnconfirmedSwitch(t *testing.T) {
 	s.Reload()
 	eventually(t, "a second start", func() bool { return f.nStarts() == 2 })
 	wantResume(t, f, 1, &run.Resume{Profile: 4})
+}
+
+// fakeAudio is a run.Audio that counts its Close.
+type fakeAudio struct {
+	run.Audio
+	closed atomic.Int32
+}
+
+func (a *fakeAudio) Close() error { a.closed.Add(1); return nil }
+
+// realLoopSupervisor makes a supervisor with the real loop (nil Loop), which
+// is where the audio source is made; it skips when no injector can be made.
+func realLoopSupervisor(t *testing.T, logf func(string, ...any)) *Supervisor {
+	t.Helper()
+	s, err := New(t.TempDir(), Options{Logf: logf, Poll: testPoll})
+	if err != nil {
+		t.Skipf("no keystroke injector here: %v", err)
+	}
+	return s
+}
+
+func TestAudioIsMadeOnceAndClosedWithTheSupervisor(t *testing.T) {
+	a := &fakeAudio{}
+	made := 0
+	old := openAudio
+	openAudio = func(func(string, ...any)) (run.Audio, io.Closer, error) {
+		made++
+		return a, a, nil
+	}
+	t.Cleanup(func() { openAudio = old })
+	s := realLoopSupervisor(t, nil)
+	if made != 1 || s.audio != run.Audio(a) {
+		t.Fatalf("made %d times, audio = %v", made, s.audio)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if a.closed.Load() != 1 {
+		t.Fatalf("audio closed %d times, want 1", a.closed.Load())
+	}
+	s.Close()
+	if a.closed.Load() != 1 {
+		t.Fatalf("audio closed %d times after a second Close", a.closed.Load())
+	}
+}
+
+func TestAudioFailureLogsOnceAndLeavesNoMixer(t *testing.T) {
+	old := openAudio
+	openAudio = func(func(string, ...any)) (run.Audio, io.Closer, error) {
+		return nil, nil, errors.New("no output device")
+	}
+	t.Cleanup(func() { openAudio = old })
+	var mu sync.Mutex
+	var lines []string
+	s := realLoopSupervisor(t, func(f string, a ...any) {
+		mu.Lock()
+		defer mu.Unlock()
+		lines = append(lines, fmt.Sprintf(f, a...))
+	})
+	defer s.Close()
+	if s.audio != nil {
+		t.Fatalf("audio = %v, want a nil interface", s.audio)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(lines) != 1 || !strings.Contains(lines[0], "no output device") {
+		t.Fatalf("log = %q, want one line naming the error", lines)
+	}
 }
