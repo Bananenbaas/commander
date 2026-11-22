@@ -1,4 +1,4 @@
-# KB7 Unleashed: Beyond Swarm II
+# Commander: your keyboard, your way
 
 [![CI](https://github.com/Bananenbaas/commander/actions/workflows/ci.yml/badge.svg)](https://github.com/Bananenbaas/commander/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Bananenbaas/commander?include_prereleases&sort=semver)](https://github.com/Bananenbaas/commander/releases)
@@ -7,7 +7,8 @@
 [![Go 1.27+](https://img.shields.io/github/go-mod/go-version/Bananenbaas/commander?filename=screen%2Fgo.mod)](https://go.dev/dl/)
 [![VirusTotal: scanned per release](https://img.shields.io/badge/VirusTotal-scanned%20per%20release-394EFF?logo=virustotal&logoColor=white)](https://github.com/Bananenbaas/commander/releases)
 
-An open-source project to unlock the full potential of the **Turtle Beach
+Commander is an open-source project for using gaming hardware without its
+maker's software. It starts with the **Turtle Beach
 Command Series KB7**.
 
 The goal is to reverse-engineer the KB7's USB protocol and build an independent

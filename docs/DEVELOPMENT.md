@@ -1,6 +1,6 @@
 # Development notes
 
-Working conventions for KB7 Unleashed (`commander`, until 2026-11-22 `kb7-commander`). For how captures are
+Working conventions for Commander (the `commander` repository, until 2026-11-22 `kb7-commander`). For how captures are
 made, see [`CAPTURE-GUIDE.md`](CAPTURE-GUIDE.md); for what is known about the
 protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 [`../CONTRIBUTING.md`](../CONTRIBUTING.md).
