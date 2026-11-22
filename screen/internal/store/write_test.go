@@ -37,6 +37,13 @@ func gameLossless(data []byte) bool {
 	return err == nil && string(out) == string(data)
 }
 
+func mustWrite(t *testing.T, path string, data []byte) {
+	t.Helper()
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func names(t *testing.T, dir string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
@@ -83,7 +90,7 @@ func TestPutCreatesParentFolder(t *testing.T) {
 func TestPutCleansUpOnRenameFailure(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "kb7-sc.toml")
-	os.WriteFile(target, []byte("old"), 0o644)
+	mustWrite(t, target, []byte("old"))
 	w := newWriter(dir)
 	boom := errors.New("rename failed")
 	w.rename = func(from, to string) error { return boom }
@@ -104,7 +111,9 @@ func TestPutCleansUpOnWriteFailure(t *testing.T) {
 	w := newWriter(dir)
 	boom := errors.New("disk full")
 	w.writeFile = func(path string, data []byte) error {
-		os.WriteFile(path, data[:1], 0o644)
+		if err := os.WriteFile(path, data[:1], 0o644); err != nil {
+			return err
+		}
 		return boom
 	}
 	if err := w.put("a.toml", []byte("abc")); !errors.Is(err, boom) {
@@ -120,7 +129,7 @@ func TestBackupOnlyWhenLossy(t *testing.T) {
 	w := fixedWriter(dir)
 
 	hand := []byte("# my layout\nprofile = 0\n[[button]]\npage = 1\nposition = 1\nlabel = \"x\"\n")
-	os.WriteFile(filepath.Join(dir, "kb7-sc.toml"), hand, 0o644)
+	mustWrite(t, filepath.Join(dir, "kb7-sc.toml"), hand)
 	got, err := w.backup("kb7-sc.toml", layoutLossless)
 	if err != nil {
 		t.Fatal(err)
@@ -151,7 +160,7 @@ func TestBackupOnlyWhenLossy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(dir, "kb7-other.toml"), enc, 0o644)
+	mustWrite(t, filepath.Join(dir, "kb7-other.toml"), enc)
 	if got, err := w.backup("kb7-other.toml", layoutLossless); err != nil || got != "" {
 		t.Fatalf("lossless file: backup = %q, %v", got, err)
 	}
@@ -164,7 +173,9 @@ func TestBackupOnlyWhenLossy(t *testing.T) {
 
 func TestBackupOfGameFile(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, "games"), 0o755)
+	if err := os.MkdirAll(filepath.Join(dir, "games"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	os.WriteFile(filepath.Join(dir, "games", "sc.toml"), []byte("# hand written\nname = \"SC\"\n[devices]\nkb7 = 1\n"), 0o644)
 	got, err := fixedWriter(dir).backup("games/sc.toml", gameLossless)
 	if err != nil {

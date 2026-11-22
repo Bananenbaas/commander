@@ -42,9 +42,27 @@ func newWriter(dir string) *writer {
 	return &writer{
 		dir:       dir,
 		now:       time.Now,
-		writeFile: func(p string, data []byte) error { return os.WriteFile(p, data, 0o644) },
+		writeFile: writeSynced,
 		rename:    os.Rename,
 	}
+}
+
+// writeSynced writes data to path and flushes it to disk before returning, so
+// a power loss after the rename cannot leave an empty file.
+func writeSynced(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func (w *writer) abs(rel string) string { return filepath.Join(w.dir, filepath.FromSlash(rel)) }
@@ -105,6 +123,12 @@ func (w *writer) put(rel string, data []byte) error {
 		return err
 	}
 	name := tmp.Name()
+	// CreateTemp makes the file 0600; saved files are 0644 like the others.
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(name)
 		return err
