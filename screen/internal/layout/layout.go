@@ -65,6 +65,8 @@ type StoredLight struct {
 type Config struct {
 	Dir      string
 	Profiles []Profile
+	Games    []Game // without Desktop; games/ files by file name, then games built from layouts by profile number
+	Desktop  *Game  // from games/desktop.toml, nil when there is none
 }
 
 type rawFile struct {
@@ -138,7 +140,11 @@ func Load(dir string) (*Config, error) {
 		owner[p.Number] = name
 		cfg.Profiles = append(cfg.Profiles, *p)
 	}
-	if len(cfg.Profiles) == maxProfile+1 {
+	cfg.Games, cfg.Desktop, err = loadGames(abs, cfg.Profiles)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Desktop == nil && len(cfg.Profiles) == maxProfile+1 {
 		desktop := false
 		for _, p := range cfg.Profiles {
 			if p.SwitchWhenRunning == "" {
@@ -433,13 +439,18 @@ func parseColor(s string) (color.NRGBA, error) {
 	return color.NRGBA{R: byte(v >> 24), G: byte(v >> 16), B: byte(v >> 8), A: byte(v)}, nil
 }
 
-// DesktopProfile returns the profile the keyboard is to show while none of
-// the programs named in switch_when_running runs: the lowest profile whose
+// DesktopProfile returns the profile the keyboard is to show while no game
+// runs. With a games/desktop.toml it is that file's kb7. Otherwise it is the
+// profile to show while none of the programs named in switch_when_running
+// runs: the lowest profile whose
 // layout has no switch_when_running. When every layout has one, it is the
 // lowest profile, 0 to 4, that no layout gives a program; that profile has no
 // layout, and its touches are not acted on. Only when all five profiles have
 // a program is it profile 0.
 func (c *Config) DesktopProfile() byte {
+	if c.Desktop != nil {
+		return *c.Desktop.KB7
+	}
 	best := -1
 	program := map[byte]bool{}
 	for _, p := range c.Profiles {
