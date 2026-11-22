@@ -54,12 +54,15 @@ func RefuseWhileSwarm(what string) error {
 }
 
 // OpenKeyboard opens the KB7.
-func OpenKeyboard() (*keyboard.KB, error) {
+func OpenKeyboard() (*keyboard.KB, error) { return OpenKeyboardTraced(nil) }
+
+// OpenKeyboardTraced opens the KB7 with its calls going into t (nil: none).
+func OpenKeyboardTraced(t *device.Trace) (*keyboard.KB, error) {
 	dev, err := device.Open()
 	if err != nil {
 		return nil, err
 	}
-	return keyboard.New(dev), nil
+	return keyboard.New(t.Wrap(dev)), nil
 }
 
 // ProgramRunning reports whether the named program runs; an error counts as

@@ -36,6 +36,7 @@ import (
 	"github.com/Bananenbaas/commander/screen/internal/action"
 	"github.com/Bananenbaas/commander/screen/internal/apply"
 	"github.com/Bananenbaas/commander/screen/internal/audio"
+	"github.com/Bananenbaas/commander/screen/internal/device"
 	"github.com/Bananenbaas/commander/screen/internal/keys"
 	"github.com/Bananenbaas/commander/screen/internal/layout"
 	"github.com/Bananenbaas/commander/screen/internal/light"
@@ -180,7 +181,10 @@ type Supervisor struct {
 	release func() error // gives back what New took
 	// audio is the computer's sound for the volume mixer, made once in New
 	// and kept across reloads and applies; nil: no mixer.
-	audio  run.Audio
+	audio run.Audio
+	// trace keeps the keyboard's recent calls across loops and applies, for
+	// the log when the keyboard stops answering.
+	trace  *device.Trace
 	served atomic.Bool
 
 	qmu   sync.Mutex
@@ -255,6 +259,7 @@ func New(dir string, o Options) (*Supervisor, error) {
 	if s.logf == nil {
 		s.logf = func(string, ...any) {}
 	}
+	s.trace = device.NewTrace(s.logf)
 	if s.load == nil {
 		s.load = layout.Load
 	}
@@ -631,7 +636,7 @@ func (s *Supervisor) runLoop(exec *action.Executor) func(context.Context, *layou
 	return func(ctx context.Context, cfg *layout.Config, resume *run.Resume, status func(run.Status)) error {
 		deps := run.Deps{
 			Open: func() (run.Keyboard, error) {
-				kb, err := access.OpenKeyboard()
+				kb, err := access.OpenKeyboardTraced(s.trace)
 				if err != nil {
 					return nil, err
 				}
@@ -643,6 +648,7 @@ func (s *Supervisor) runLoop(exec *action.Executor) func(context.Context, *layou
 			Status:  status,
 			Resume:  resume,
 			Audio:   s.audio,
+			Trace:   s.trace,
 		}
 		stacks := map[byte]*light.Stack{}
 		for _, p := range cfg.Profiles {
@@ -698,7 +704,7 @@ func (s *Supervisor) applyButtons(ctx context.Context, cfg *layout.Config) (stri
 	if err != nil {
 		return "", err
 	}
-	kb, err := access.OpenKeyboard()
+	kb, err := access.OpenKeyboardTraced(s.trace)
 	if err != nil {
 		return "", err
 	}
