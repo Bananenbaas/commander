@@ -3,6 +3,7 @@
 package gui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -119,5 +120,102 @@ func TestResponseHeaders(t *testing.T) {
 	}
 	if strings.HasSuffix(h, "\r\n") || strings.Contains(h, "\n\n") {
 		t.Errorf("headers %q have a stray line break", h)
+	}
+}
+
+// pageFiles are the files the window's pages are made of.
+var pageFiles = []string{
+	"index.html",
+	"app.css",
+	"app.js",
+	"BarlowCondensed-SemiBold.ttf",
+	"OFL.txt",
+	"helmet-256.png",
+}
+
+// textPages are the pages written by hand, checked for their content.
+var textPages = []string{"index.html", "app.css", "app.js"}
+
+func page(t *testing.T, name string) string {
+	t.Helper()
+	status, _, body := Resource(AppOrigin + "/" + name)
+	if status != 200 {
+		t.Fatalf("%s: got %d, want 200", name, status)
+	}
+	return string(body)
+}
+
+func TestPagesExist(t *testing.T) {
+	for _, name := range pageFiles {
+		status, _, body := Resource(AppOrigin + "/" + name)
+		if status != 200 || len(body) == 0 {
+			t.Errorf("%s: got %d (%d bytes), want 200 with a body", name, status, len(body))
+		}
+	}
+}
+
+func TestPagesLoadNothingExternal(t *testing.T) {
+	url := regexp.MustCompile(`https?://[^\s"'<>)]*`)
+	for _, name := range textPages {
+		for _, u := range url.FindAllString(page(t, name), -1) {
+			if strings.HasPrefix(u, AppOrigin) {
+				continue
+			}
+			t.Errorf("%s: refers to %q", name, u)
+		}
+	}
+}
+
+const wantCSP = "default-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'"
+
+func TestPagesHaveCSP(t *testing.T) {
+	html := page(t, "index.html")
+	if !strings.Contains(html, `http-equiv="Content-Security-Policy" content="`+wantCSP+`"`) {
+		t.Errorf("index.html lacks the content security policy %q", wantCSP)
+	}
+	if strings.Contains(html, "<style") || strings.Contains(html, " style=") {
+		t.Errorf("index.html has inline style")
+	}
+	if regexp.MustCompile(`<script(\s[^>]*)?>[^<]`).MatchString(html) {
+		t.Errorf("index.html has an inline script")
+	}
+	if regexp.MustCompile(`\son[a-z]+=`).MatchString(html) {
+		t.Errorf("index.html has an inline event handler")
+	}
+	for _, want := range []string{`<link rel="stylesheet" href="app.css">`, `<script src="app.js"`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("index.html lacks %s", want)
+		}
+	}
+}
+
+func TestNoEmDashInPages(t *testing.T) {
+	for _, name := range textPages {
+		if strings.ContainsRune(page(t, name), '\u2014') {
+			t.Errorf("%s contains an em dash", name)
+		}
+	}
+}
+
+func TestPagesHaveSPDX(t *testing.T) {
+	want := map[string]string{
+		"index.html": "<!-- SPDX-License-Identifier: GPL-2.0-or-later -->",
+		"app.css":    "/* SPDX-License-Identifier: GPL-2.0-or-later */",
+		"app.js":     "/* SPDX-License-Identifier: GPL-2.0-or-later */",
+	}
+	for name, line := range want {
+		first, _, _ := strings.Cut(page(t, name), "\n")
+		if strings.TrimRight(first, "\r") != line {
+			t.Errorf("%s: first line is %q, want %q", name, first, line)
+		}
+	}
+}
+
+func TestPagesUseNoUnsafeDOM(t *testing.T) {
+	js := page(t, "app.js")
+	for _, bad := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "window.open", "eval(", "new Function", "_blank"} {
+		if strings.Contains(js, bad) {
+			t.Errorf("app.js uses %s", bad)
+		}
 	}
 }

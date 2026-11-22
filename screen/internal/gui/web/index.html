@@ -4,11 +4,21 @@
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Commander</title>
+<link rel="stylesheet" href="app.css">
 <script src="app.js" defer></script>
 </head>
 <body>
-<h1>Commander</h1>
-<p id="status">Connecting</p>
+<header class="top">
+  <div class="brand"><img src="helmet-256.png" alt="" width="28" height="28"><span>Commander</span></div>
+  <div class="runstate" role="status"><span class="dot" id="dot"></span><span id="status">Connecting to Commander</span></div>
+</header>
+<div class="body">
+  <nav id="nav" class="nav" aria-label="Pages"></nav>
+  <main id="main" class="main">
+    <p class="muted">Connecting to Commander</p>
+  </main>
+</div>
 </body>
 </html>
