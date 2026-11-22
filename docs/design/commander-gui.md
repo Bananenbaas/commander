@@ -3,7 +3,8 @@
 Design for the window in which a player sets up Commander without editing
 files. Status: approved 2026-11-22; part 2 (the window
 shell and its pages without editing) is implemented, its desktop check is still
-to do. Builds on
+to do; part 3 (saving and the Buttons tab) is implemented, its desktop check is
+still to do. Builds on
 [`commander-tray.md`](commander-tray.md),
 [`commander-update.md`](commander-update.md), [`lighting.md`](lighting.md),
 [`pages-lighting-mixer-names.md`](pages-lighting-mixer-names.md) and

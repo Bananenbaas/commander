@@ -33,6 +33,7 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 | `screen/internal/bridge/` | The line protocol between Commander and its window: one JSON object per line (calls, answers, events) over any byte stream |
 | `screen/internal/pipe/` | The per-user named pipe `\\.\pipe\Commander-<SID>` between Commander and its window: only the signed-in user can open it, remote clients are rejected, and the dialling side checks that the pipe's owner is the user |
 | `screen/internal/control/` | Answers the window's calls (state, settings, updates) and turns what happens in Commander into events; no window code and no Windows code |
+| `screen/internal/store/` | The only code that writes the configuration folder: building files, the `switch_when_running` migration, picture and symbol import, backups and atomic writes. A save is validated with `layout.LoadWith` plus `apply.CheckPictures` before anything is written |
 | `screen/internal/gui/` | The window: `commander.exe --window` shows the embedded page (`web/`) in a WebView2 control and relays its calls to Commander over the pipe; nothing outside the embedded files is loaded, new windows, dropped files and permission requests are refused, only messages from the embedded page are relayed, DevTools only in `dev` builds |
 | `screen/internal/startenv/` | Records the five `WEBVIEW2_*` environment variables before the WebView2 binding's package init sets them, so the tray can put them back and the programs it starts from a KB7 button do not inherit them |
 | `screen/internal/icon/` | The helmet icon: the generator (`gen/`), the ICO and the Windows resource with the DPI manifest; `helmet-256.png` is the reference render |
@@ -79,6 +80,14 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 - **Knowledge discipline**: every claim in `PROTOCOL.md` carries a status tag
   (`confirmed` / `observed` / `hypothesis` / `unknown`) and names the capture(s)
   it rests on.
+- **One writer**: only `screen/internal/store` writes the configuration folder
+  (the window process never does). Every file it writes starts with
+  `layout.Header`. Writes go to `.<name>.tmp-*` and are renamed over the
+  target; a file whose bytes Commander's encoding would change is copied to
+  `backup/` first. The migration writes `games/desktop.toml` first, then for
+  each layout the layout without `switch_when_running`, then its game file,
+  so an interruption leaves every file loadable, but a program's link can be
+  missing until the layout is restored from `backup/`.
 - **Tests** use the fake VID:PID 1234:5678 and must not encode guesses about
   the real protocol.
 

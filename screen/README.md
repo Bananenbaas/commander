@@ -112,7 +112,9 @@ that is active is marked), the KB7 (connected or not) and Commander's
 own pages. The top of the window shows the profile the keyboard is on. Today the window shows and does these:
 
 - **KB7**: the profiles on the keyboard as chips; the one it is on is
-  highlighted. The tabs Buttons, Lighting,
+  highlighted. The Buttons tab shows the profile's buttons and edits them:
+  title, look (colour, symbol or your own picture), steps (press keys, wait,
+  start a program, open a website, file or folder) and options. Lighting,
   Mixer and Profile say "Comes in a later version."; keep editing the TOML
   files for those until then.
 - **Desktop and each game**: when the profile switches and which KB7 profile
@@ -121,6 +123,33 @@ own pages. The top of the window shows the profile the keyboard is on. Today the
   (Follow Windows, Light or Dark) and buttons that open the configuration
   folder and the log.
 - **Updates**: the version, Check now, and Update when a newer one is found.
+
+**Saving.** Edits stay a draft (the "Unsaved changes" bar) until you press
+Save. Commander checks that the whole folder still loads and that the pictures
+fit the 15 buttons before it writes anything, and a file that does not load is
+never written. Files are written to a temporary file and renamed, so a crash
+does not leave half a file. Commander writes the files it saves in its own
+form: they start with a line saying so, and comments, formatting and key
+order are not kept. When a file holds any of that, the old file is first
+copied to `backup/` in the configuration folder (for example
+`backup/kb7-sc-20261122-221530.toml`, or `backup/games-sc-....toml` for
+`games/sc.toml`). Pictures and symbols you pick (symbols are PNG files) are
+copied into `pictures/` and `symbols/` in the folder. If the file was changed
+outside Commander while the window was open, Save says so and keeps your edits;
+a second Save overwrites it. After a save Commander reloads the configuration
+(steps, modes, confirmation, states) or applies it to the keyboard (buttons
+added, removed or moved, or a title, label, colour, symbol or picture
+changed).
+
+Windows keeps some keys for itself (Windows key combinations, Print Screen),
+so they cannot be recorded in a key step; add them with Add step.
+
+The first Save also moves `switch_when_running` out of your layouts into game
+profiles: `switch_when_running = "StarCitizen.exe"` becomes the game
+`StarCitizen` in `games/starcitizen.toml`, and the desktop profile goes to
+`games/desktop.toml`. Each file is written in turn, and the original layout is
+kept in `backup/`. If a save is interrupted during this, a program's link to
+its profile can be missing until you restore the layout from `backup/`.
 
 The window needs the Microsoft Edge WebView2 Runtime. Windows 11 has it; if
 it is missing, Commander says so and where to get it

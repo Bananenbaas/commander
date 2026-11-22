@@ -23,6 +23,17 @@ and the project uses [Semantic Versioning](https://semver.org/).
   `games/desktop.toml` sets the desktop profile. `switch_when_running` in a
   layout keeps working for programs that have no game file.
 
+- Commander's window can edit and save: the Buttons tab of a KB7 profile edits
+  each button's title, look (colour, symbol or picture), steps (press keys,
+  wait, start a program, open a website, file or folder) and options, and
+  Save writes them. A save is checked first (the folder must load, the
+  pictures must fit the 15 buttons), files are written atomically, and a file
+  that holds comments or other formatting is copied to `backup/` first; the
+  files Commander saves start with a note that comments are not kept. Picked
+  pictures and symbols are copied into `pictures/` and `symbols/`.
+- The first save moves `switch_when_running` from the layouts into `games/`
+  (the program `StarCitizen.exe` becomes the game `StarCitizen`).
+
 ### Changed
 - When two game programs run, the one started last now decides the profile
   (before: the lowest profile).
