@@ -109,6 +109,14 @@ const maxProfile = 4
 
 // Load reads every *.toml file directly in dir, sorted by name.
 func Load(dir string) (*Config, error) {
+	return LoadWith(dir, nil)
+}
+
+// LoadWith loads dir as Load does, but takes the bytes of the files named in
+// files (paths relative to dir with forward slashes, such as "kb7-sc.toml" or
+// "games/sc.toml") from the map instead of the disk; a name that does not
+// exist on disk is added. Pictures and symbols are still looked up on disk.
+func LoadWith(dir string, files map[string][]byte) (*Config, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
@@ -118,9 +126,16 @@ func Load(dir string) (*Config, error) {
 		return nil, err
 	}
 	var names []string
+	seen := map[string]bool{}
 	for _, e := range entries {
 		if !e.IsDir() && strings.EqualFold(filepath.Ext(e.Name()), ".toml") {
 			names = append(names, e.Name())
+			seen[e.Name()] = true
+		}
+	}
+	for n := range files {
+		if !strings.Contains(n, "/") && strings.EqualFold(filepath.Ext(n), ".toml") && !seen[n] {
+			names = append(names, n)
 		}
 	}
 	sort.Strings(names)
@@ -130,7 +145,11 @@ func Load(dir string) (*Config, error) {
 	cfg := &Config{Dir: abs}
 	owner := map[byte]string{}
 	for _, name := range names {
-		p, err := loadFile(abs, filepath.Join(abs, name))
+		data, err := fileBytes(abs, name, files)
+		if err != nil {
+			return nil, err
+		}
+		p, err := loadFile(abs, filepath.Join(abs, name), data)
 		if err != nil {
 			return nil, err
 		}
@@ -140,7 +159,7 @@ func Load(dir string) (*Config, error) {
 		owner[p.Number] = name
 		cfg.Profiles = append(cfg.Profiles, *p)
 	}
-	cfg.Games, cfg.Desktop, err = loadGames(abs, cfg.Profiles)
+	cfg.Games, cfg.Desktop, err = loadGames(abs, cfg.Profiles, files)
 	if err != nil {
 		return nil, err
 	}
@@ -150,10 +169,19 @@ func Load(dir string) (*Config, error) {
 	return cfg, nil
 }
 
-func loadFile(dir, path string) (*Profile, error) {
+// fileBytes returns the bytes of the file rel (slashes, relative to dir): from
+// files when it is there, else from the disk.
+func fileBytes(dir, rel string, files map[string][]byte) ([]byte, error) {
+	if b, ok := files[rel]; ok {
+		return b, nil
+	}
+	return os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+}
+
+func loadFile(dir, path string, data []byte) (*Profile, error) {
 	name := filepath.Base(path)
 	var raw rawFile
-	md, err := toml.DecodeFile(path, &raw)
+	md, err := toml.Decode(string(data), &raw)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}

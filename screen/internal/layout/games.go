@@ -44,7 +44,7 @@ func programKey(s string) string {
 
 // loadGames reads dir/games, if there is one, and adds a game for every layout
 // program that no game file claims. Errors name the file as games/<file>.toml.
-func loadGames(dir string, profiles []Profile) (games []Game, desktop *Game, err error) {
+func loadGames(dir string, profiles []Profile, files map[string][]byte) (games []Game, desktop *Game, err error) {
 	gdir := filepath.Join(dir, gamesFolder)
 	var names []string
 	if fi, serr := os.Stat(gdir); serr == nil && fi.IsDir() {
@@ -67,13 +67,33 @@ func loadGames(dir string, profiles []Profile) (games []Game, desktop *Game, err
 	} else if serr != nil && !os.IsNotExist(serr) {
 		return nil, nil, serr
 	}
+	have := map[string]bool{}
+	for _, n := range names {
+		have[n] = true
+	}
+	for rel := range files {
+		if n, ok := strings.CutPrefix(rel, gamesFolder+"/"); ok && !strings.Contains(n, "/") && strings.EqualFold(filepath.Ext(n), ".toml") && !have[n] {
+			names = append(names, n)
+		}
+	}
+	sort.Slice(names, func(i, j int) bool {
+		a, b := strings.ToLower(names[i]), strings.ToLower(names[j])
+		if a != b {
+			return a < b
+		}
+		return names[i] < names[j]
+	})
 
 	byProgram := map[string]string{} // program key -> file label
 	byName := map[string]string{}    // lower-case name -> file label
 	desktopLabel := ""
 	for _, fn := range names {
 		label := gamesFolder + "/" + fn
-		g, err := loadGame(filepath.Join(gdir, fn), label, strings.EqualFold(fn, desktopGameFile))
+		data, err := fileBytes(dir, label, files)
+		if err != nil {
+			return nil, nil, err
+		}
+		g, err := loadGame(filepath.Join(gdir, fn), label, data, strings.EqualFold(fn, desktopGameFile))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -123,9 +143,9 @@ func loadGames(dir string, profiles []Profile) (games []Game, desktop *Game, err
 
 // loadGame reads one file of games/. The Desktop game has no program and must
 // give a kb7 profile.
-func loadGame(path, label string, isDesktop bool) (*Game, error) {
+func loadGame(path, label string, data []byte, isDesktop bool) (*Game, error) {
 	var raw rawGame
-	md, err := toml.DecodeFile(path, &raw)
+	md, err := toml.Decode(string(data), &raw)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", label, err)
 	}
