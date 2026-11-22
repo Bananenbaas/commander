@@ -3,6 +3,7 @@
 package layout
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -215,4 +216,62 @@ func TestGameFileEncode(t *testing.T) {
 // prof is a one-button layout for the given profile.
 func prof(n int) string {
 	return strings.Replace(btn(""), "profile = 0", "profile = "+string(rune('0'+n)), 1)
+}
+
+func TestCheckButtonFields(t *testing.T) {
+	dir := t.TempDir()
+	ok := FileButton{Page: 1, Position: 0, Action: []string{"LCtrl+A"}}
+	if err := CheckButton(dir, ok, nil); err != nil {
+		t.Fatalf("good button: %v", err)
+	}
+	cases := []struct {
+		name   string
+		mod    func(b *FileButton)
+		states []string
+		field  string
+		step   int
+	}{
+		{"page", func(b *FileButton) { b.Page = 4 }, nil, "position", -1},
+		{"label", func(b *FileButton) { b.Label = "twelve chars" }, nil, "label", -1},
+		{"color", func(b *FileButton) { b.Color = "red" }, nil, "color", -1},
+		{"symbol", func(b *FileButton) { b.Symbol = "symbols/none.png" }, nil, "symbol", -1},
+		{"both", func(b *FileButton) { b.Symbol = "a.png"; b.Picture = "b.png" }, nil, "picture", -1},
+		{"no action", func(b *FileButton) { b.Action = nil }, nil, "action", -1},
+		{"bad step", func(b *FileButton) { b.Action = []string{"LCtrl+A", "bogus"} }, nil, "action", 1},
+		{"hold two", func(b *FileButton) { b.Mode = "hold"; b.Action = []string{"A", "B"} }, nil, "mode", -1},
+		{"confirm", func(b *FileButton) { b.Confirm = "hold 9s" }, nil, "confirm", -1},
+		{"state", func(b *FileButton) { b.State = "x" }, []string{"y"}, "state", -1},
+		{"state without light", func(b *FileButton) { b.State = "x" }, nil, "state", -1},
+	}
+	for _, c := range cases {
+		b := ok
+		c.mod(&b)
+		err := CheckButton(dir, b, c.states)
+		var fe *FieldError
+		if !errors.As(err, &fe) {
+			t.Errorf("%s: want a FieldError, got %v", c.name, err)
+			continue
+		}
+		if fe.Field != c.field || fe.Step != c.step {
+			t.Errorf("%s: field %q step %d, want %q %d (%v)", c.name, fe.Field, fe.Step, c.field, c.step, err)
+		}
+	}
+	good := ok
+	good.State = "x"
+	if err := CheckButton(dir, good, []string{"x"}); err != nil {
+		t.Errorf("declared state: %v", err)
+	}
+}
+
+func TestLoadErrorCarriesField(t *testing.T) {
+	dir := folder(t, map[string]string{"a.toml": "profile = 0\n[[button]]\npage = 1\nposition = 2\ncolor = \"red\"\naction = [\"A\"]\n"})
+	_, err := Load(dir)
+	var fe *FieldError
+	if !errors.As(err, &fe) || fe.Field != "color" {
+		t.Fatalf("want a color FieldError, got %v", err)
+	}
+	want := `a.toml: page 1 position 2: color must be #RRGGBB or #RRGGBBAA, got "red"`
+	if err.Error() != want {
+		t.Errorf("text %q, want %q", err.Error(), want)
+	}
 }

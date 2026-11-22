@@ -235,13 +235,25 @@ func loadFile(dir, path string, data []byte) (*Profile, error) {
 		}
 		seen[key] = true
 		if b.State != "" {
-			if err := checkState(p.Light, b.State); err != nil {
+			if err := checkState(stateNames(p.Light), b.State); err != nil {
 				return nil, fmt.Errorf("%s: %w", where, err)
 			}
 		}
 		p.Buttons = append(p.Buttons, b)
 	}
 	return p, nil
+}
+
+// stateNames lists the lighting states a stack declares; nil for no stack.
+func stateNames(st *light.Stack) []string {
+	if st == nil {
+		return nil
+	}
+	names := []string{}
+	for _, d := range st.States() {
+		names = append(names, d.Name)
+	}
+	return names
 }
 
 // buildLight turns the [light] table into a stack. Errors name light.layer N
@@ -321,66 +333,67 @@ func buildStored(rs *rawStored) (*StoredLight, error) {
 	return sl, nil
 }
 
-// checkState makes sure a button's state is one the profile's [light] declares.
-func checkState(st *light.Stack, name string) error {
-	if st == nil {
-		return fmt.Errorf("state %q: the layout has no [light]", name)
+// checkState makes sure a button's state is one the profile's [light]
+// declares; states is nil when the layout has no [light].
+func checkState(states []string, name string) error {
+	if states == nil {
+		return fieldErr("state", fmt.Errorf("state %q: the layout has no [light]", name))
 	}
-	for _, d := range st.States() {
-		if d.Name == name {
+	for _, d := range states {
+		if d == name {
 			return nil
 		}
 	}
-	return fmt.Errorf("state %q is not declared by any light layer of this layout", name)
+	return fieldErr("state", fmt.Errorf("state %q is not declared by any light layer of this layout", name))
 }
 
 func buildButton(dir string, rb rawButton) (Button, error) {
 	b := Button{Page: *rb.Page, Position: *rb.Position, Title: rb.Title, Label: rb.Label, Color: defaultColor, State: rb.State}
 	if b.Page < 1 || b.Page > 3 {
-		return b, fmt.Errorf("page must be 1 to 3")
+		return b, fieldErr("position", fmt.Errorf("page must be 1 to 3"))
 	}
 	if b.Position < 0 || b.Position > 11 {
-		return b, fmt.Errorf("position must be 0 to 11")
+		return b, fieldErr("position", fmt.Errorf("position must be 0 to 11"))
 	}
 	if b.Page == 3 && b.Position == 11 {
-		return b, fmt.Errorf("page 3 has positions 0 to 10 only")
+		return b, fieldErr("position", fmt.Errorf("page 3 has positions 0 to 10 only"))
 	}
 	if len(b.Label) > 11 {
-		return b, fmt.Errorf("label must be at most 11 characters")
+		return b, fieldErr("label", fmt.Errorf("label must be at most 11 characters"))
 	}
 	for _, r := range b.Label {
 		if r < 0x20 || r > 0x7e {
-			return b, fmt.Errorf("label must be printable ASCII")
+			return b, fieldErr("label", fmt.Errorf("label must be printable ASCII"))
 		}
 	}
 	if rb.Color != "" {
 		c, err := parseColor(rb.Color)
 		if err != nil {
-			return b, err
+			return b, fieldErr("color", err)
 		}
 		b.Color = c
 	}
 	if rb.Symbol != "" && rb.Picture != "" {
-		return b, fmt.Errorf("symbol and picture cannot both be set")
+		return b, fieldErr("picture", fmt.Errorf("symbol and picture cannot both be set"))
 	}
 	var err error
 	if rb.Symbol != "" {
 		if b.Symbol, err = resolveFile(dir, "symbol", rb.Symbol); err != nil {
-			return b, err
+			return b, fieldErr("symbol", err)
 		}
 	}
 	if rb.Picture != "" {
 		if b.Picture, err = resolveFile(dir, "picture", rb.Picture); err != nil {
-			return b, err
+			return b, fieldErr("picture", err)
 		}
 	}
 	if len(rb.Action) == 0 && rb.State == "" {
-		return b, fmt.Errorf("action must hold at least one step")
+		return b, fieldErr("action", fmt.Errorf("action must hold at least one step"))
 	}
-	for _, s := range rb.Action {
+	for i, s := range rb.Action {
 		st, err := action.ParseStep(s)
 		if err != nil {
-			return b, fmt.Errorf("action %q: %w", s, err)
+			return b, &FieldError{Field: "action", Step: i, Err: fmt.Errorf("action %q: %w", s, err)}
 		}
 		b.Action = append(b.Action, st)
 	}
@@ -390,26 +403,62 @@ func buildButton(dir string, rb rawButton) (Button, error) {
 	case "hold":
 		b.Mode = Hold
 		if len(b.Action) == 0 {
-			return b, fmt.Errorf("hold needs an action; a button with only a state is a tap")
+			return b, fieldErr("mode", fmt.Errorf("hold needs an action; a button with only a state is a tap"))
 		}
 		if _, ok := b.Action[0].(action.Chord); len(b.Action) != 1 || !ok {
-			return b, fmt.Errorf("hold needs exactly one step and it must be a key chord")
+			return b, fieldErr("mode", fmt.Errorf("hold needs exactly one step and it must be a key chord"))
 		}
 	default:
-		return b, fmt.Errorf("mode must be \"tap\" or \"hold\", got %q", rb.Mode)
+		return b, fieldErr("mode", fmt.Errorf("mode must be \"tap\" or \"hold\", got %q", rb.Mode))
 	}
 	if rb.Confirm != "" {
 		if b.Mode == Hold {
-			return b, fmt.Errorf("confirm cannot be used with mode \"hold\"")
+			return b, fieldErr("confirm", fmt.Errorf("confirm cannot be used with mode \"hold\""))
 		}
 		if len(b.Action) == 0 {
-			return b, fmt.Errorf("confirm needs an action; a button with only a state has nothing to confirm")
+			return b, fieldErr("confirm", fmt.Errorf("confirm needs an action; a button with only a state has nothing to confirm"))
 		}
 		if b.Confirm, err = parseConfirm(rb.Confirm); err != nil {
-			return b, err
+			return b, fieldErr("confirm", err)
 		}
 	}
 	return b, nil
+}
+
+// FieldError is a button error tied to the field it concerns. Its Error()
+// is Err's text, unchanged, so the messages of Load stay as they are.
+type FieldError struct {
+	Field string // "position", "title", "label", "color", "symbol", "picture", "action", "mode", "state", "confirm"
+	Step  int    // index into the action for Field "action" when one step is wrong, else -1
+	Err   error
+}
+
+func (e *FieldError) Error() string { return e.Err.Error() }
+func (e *FieldError) Unwrap() error { return e.Err }
+
+func fieldErr(field string, err error) *FieldError {
+	return &FieldError{Field: field, Step: -1, Err: err}
+}
+
+// CheckButton checks one button as Load would, against the light states
+// the profile declares (nil = no [light]). It returns nil or a *FieldError.
+func CheckButton(dir string, b FileButton, states []string) error {
+	page, pos := b.Page, b.Position
+	rb := rawButton{
+		Page: &page, Position: &pos,
+		Title: b.Title, Label: b.Label, Color: b.Color, Symbol: b.Symbol, Picture: b.Picture,
+		Action: b.Action, Mode: b.Mode, State: b.State, Confirm: b.Confirm,
+	}
+	built, err := buildButton(dir, rb)
+	if err != nil {
+		return err
+	}
+	if built.State != "" {
+		if err := checkState(states, built.State); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Limits of a confirm duration.
