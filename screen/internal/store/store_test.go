@@ -16,6 +16,7 @@ import (
 
 	"github.com/Bananenbaas/commander/screen/internal/action"
 	"github.com/Bananenbaas/commander/screen/internal/layout"
+	"github.com/Bananenbaas/commander/screen/internal/light"
 )
 
 func steps(t *testing.T, ss ...string) []action.Step {
@@ -134,7 +135,7 @@ func handFolder(t *testing.T) string {
 	return folder(t, map[string]string{"kb7-desk.toml": handDesk, "kb7-sc.toml": handSC})
 }
 
-// buttonsOf returns the buttons of the layout file rel and the file's version.
+// buttonsOf returns the buttons of the layout file rel and their version.
 func buttonsOf(t *testing.T, dir, rel string) ([]layout.FileButton, string) {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(dir, rel))
@@ -145,7 +146,7 @@ func buttonsOf(t *testing.T, dir, rel string) ([]layout.FileButton, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return f.Buttons, Version(data)
+	return f.Buttons, ButtonsVersion(f)
 }
 
 func mustLoad(t *testing.T, dir string) *layout.Config {
@@ -196,8 +197,12 @@ func TestSaveButtons(t *testing.T) {
 	if !strings.HasPrefix(string(data), layout.Header) {
 		t.Errorf("saved file does not start with the header:\n%s", data)
 	}
-	if res.Version != Version(data) {
-		t.Errorf("Version = %q, want %q", res.Version, Version(data))
+	saved, err := layout.DecodeFile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Version != ButtonsVersion(saved) {
+		t.Errorf("Version = %q, want the buttons version %q", res.Version, ButtonsVersion(saved))
 	}
 	if res.Change != Apply {
 		t.Errorf("Change = %v, want apply", res.Change)
@@ -214,10 +219,6 @@ func TestSaveButtons(t *testing.T) {
 
 	after := mustLoad(t, dir)
 	old, _ := layout.DecodeFile([]byte(handSC))
-	saved, err := layout.DecodeFile(data)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if !reflect.DeepEqual(old.Light, saved.Light) {
 		t.Errorf("light changed:\n%+v\n%+v", old.Light, saved.Light)
 	}
@@ -379,7 +380,7 @@ func TestSaveButtonsRefuses(t *testing.T) {
 				for _, n := range names(t, dir) {
 					data, _ := os.ReadFile(filepath.Join(dir, n))
 					if f, err := layout.DecodeFile(data); err == nil && f.Profile == int(c.slot) {
-						base = Version(data)
+						base = ButtonsVersion(f)
 					}
 				}
 			}
@@ -459,5 +460,262 @@ func TestSaveButtonsFirstWriteFails(t *testing.T) {
 	}
 	if res.Written {
 		t.Error("Written = true, but no file was written")
+	}
+}
+
+func stack(t *testing.T, colour string) *light.Stack {
+	t.Helper()
+	st, err := light.Build(light.Config{Layers: []light.LayerConfig{{Effect: "static", Settings: map[string]any{"color": colour}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
+func TestDecideLighting(t *testing.T) {
+	red := color.NRGBA{R: 0xFF, A: 0xFF}
+	base := func(stored *layout.StoredLight) *layout.Profile {
+		return &layout.Profile{Number: 1, Light: stack(t, "#FF0000"), StoredLight: stored}
+	}
+	still := func() *layout.StoredLight { return &layout.StoredLight{Brightness: 50} }
+	solid := func() *layout.StoredLight { return &layout.StoredLight{Color: red, Brightness: -1} }
+	cases := []struct {
+		name     string
+		old, new *layout.Profile
+		want     Change
+	}{
+		{"nothing changed", base(solid()), base(solid()), NoChange},
+		{"light changed, no stored light", base(nil), &layout.Profile{Number: 1, Light: stack(t, "#0000FF")}, Apply},
+		{"light changed, stored still", base(still()), &layout.Profile{Number: 1, Light: stack(t, "#0000FF"), StoredLight: still()}, Apply},
+		{"light changed, stored colour", base(solid()), &layout.Profile{Number: 1, Light: stack(t, "#0000FF"), StoredLight: solid()}, Reload},
+		{"light removed, stored colour", base(solid()), &layout.Profile{Number: 1, StoredLight: solid()}, Reload},
+		{"stored brightness changed", base(still()), base(&layout.StoredLight{Brightness: 80}), Apply},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := Decide(c.old, c.new); got != c.want {
+				t.Fatalf("Decide = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// fileOf returns the decoded layout file rel.
+func fileOf(t *testing.T, dir, rel string) *layout.File {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, rel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := layout.DecodeFile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+func lightPtr(l *layout.FileLight) **layout.FileLight { return &l }
+
+// noState is handSC without the button that flips a lighting state.
+var noState = strings.Replace(handSC, "state = \"gear\"\n", "", 1)
+
+func TestSaveProfileVersionsPerSection(t *testing.T) {
+	blue := &layout.FileLight{Layers: []map[string]any{
+		{"effect": "static", "color": "#0000FF"},
+		{"effect": "state", "name": "gear", "toggle": "N", "keys": []string{"N"}, "color": "#30E070"},
+	}}
+
+	t.Run("lighting with a stale buttons version", func(t *testing.T) {
+		dir := handFolder(t)
+		f := fileOf(t, dir, "kb7-sc.toml")
+		bases := map[string]string{"buttons": "0000000000000000", "light": LightVersion(f)}
+		res, err := SaveProfile(dir, 1, bases, Edit{Light: lightPtr(blue)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		saved := fileOf(t, dir, "kb7-sc.toml")
+		if res.Version != LightVersion(saved) {
+			t.Errorf("Version = %q, want the lighting version %q", res.Version, LightVersion(saved))
+		}
+		if res.Version == LightVersion(f) {
+			t.Error("the lighting version did not change")
+		}
+		if ButtonsVersion(saved) != ButtonsVersion(f) {
+			t.Error("the buttons version changed in a lighting save")
+		}
+		if res.Change != Reload {
+			t.Errorf("Change = %v, want reload (the profile has a stored colour)", res.Change)
+		}
+	})
+
+	t.Run("buttons with a stale lighting version", func(t *testing.T) {
+		dir := handFolder(t)
+		f := fileOf(t, dir, "kb7-sc.toml")
+		f.Buttons[1].Title = "Afterburner"
+		bases := map[string]string{"buttons": ButtonsVersion(fileOf(t, dir, "kb7-sc.toml")), "light": "0000000000000000"}
+		if _, err := SaveProfile(dir, 1, bases, Edit{Buttons: &f.Buttons}); err != nil {
+			t.Fatal(err)
+		}
+		if got := fileOf(t, dir, "kb7-sc.toml").Buttons[1].Title; got != "Afterburner" {
+			t.Errorf("title = %q", got)
+		}
+	})
+
+	t.Run("stale lighting version", func(t *testing.T) {
+		dir := handFolder(t)
+		f := fileOf(t, dir, "kb7-sc.toml")
+		before := snapshot(t, dir)
+		bases := map[string]string{"buttons": ButtonsVersion(f), "light": "0000000000000000"}
+		if _, err := SaveProfile(dir, 1, bases, Edit{Light: lightPtr(blue)}); !errors.Is(err, ErrChanged) {
+			t.Fatalf("err = %v, want ErrChanged", err)
+		}
+		var none *layout.FileStored
+		if _, err := SaveProfile(dir, 1, bases, Edit{StoredLight: &none}); !errors.Is(err, ErrChanged) {
+			t.Fatalf("stored light: err = %v, want ErrChanged", err)
+		}
+		if !reflect.DeepEqual(before, snapshot(t, dir)) {
+			t.Fatal("the folder changed")
+		}
+	})
+
+	t.Run("versions of absent and empty sections", func(t *testing.T) {
+		empty := &layout.File{Profile: 1}
+		if LightVersion(empty) != LightVersion(&layout.File{Profile: 3, Buttons: []layout.FileButton{{Page: 1}}}) {
+			t.Error("the lighting version depends on the rest of the file")
+		}
+		if ButtonsVersion(empty) != ButtonsVersion(&layout.File{Profile: 2, Buttons: []layout.FileButton{}}) {
+			t.Error("no buttons and an empty button list have different versions")
+		}
+		if ButtonsVersion(empty) != ButtonsVersion(&layout.File{Profile: 1, Light: blue}) {
+			t.Error("the buttons version depends on the lighting")
+		}
+		if LightVersion(empty) == LightVersion(&layout.File{Light: &layout.FileLight{}}) {
+			t.Error("no [light] and an empty [light] have the same version")
+		}
+	})
+}
+
+func TestSaveProfileLightError(t *testing.T) {
+	dir := handFolder(t)
+	f := fileOf(t, dir, "kb7-sc.toml")
+	before := snapshot(t, dir)
+	wave := &layout.FileLight{Layers: []map[string]any{
+		{"effect": "wave", "colors": []string{"#FF0000"}},
+		{"effect": "state", "name": "gear", "toggle": "N", "keys": []string{"N"}, "color": "#30E070"},
+	}}
+	res, err := SaveProfile(dir, 1, map[string]string{"light": LightVersion(f)}, Edit{Light: lightPtr(wave)})
+	var le *LightError
+	if !errors.As(err, &le) || le.Layer != 1 || le.Setting != "colors" {
+		t.Fatalf("err = %#v, want a LightError for layer 1, setting colors", err)
+	}
+	if want := "light.layer 1: wave: wave: colors: needs at least two colours"; err.Error() != want {
+		t.Errorf("err = %q, want %q", err, want)
+	}
+	if res.Written {
+		t.Error("Written = true")
+	}
+	if !reflect.DeepEqual(before, snapshot(t, dir)) {
+		t.Fatal("the folder changed")
+	}
+
+	// An error about the lighting as a whole.
+	off := &layout.FileLight{Layers: []map[string]any{{"effect": "static", "color": "#FF0000", "enabled": false}}}
+	dir = folder(t, map[string]string{"kb7-sc.toml": noState})
+	f = fileOf(t, dir, "kb7-sc.toml")
+	_, err = SaveProfile(dir, 1, map[string]string{"light": LightVersion(f)}, Edit{Light: lightPtr(off)})
+	if !errors.As(err, &le) || le.Layer != 0 || le.Setting != "" {
+		t.Fatalf("err = %#v, want a LightError for the lighting as a whole", err)
+	}
+	if want := "light: every lighting layer is off; turn one on or remove the lighting"; err.Error() != want {
+		t.Errorf("err = %q, want %q", err, want)
+	}
+
+	// A bad [stored_light] is about the lighting as a whole too.
+	bright := int64(120)
+	bad := &layout.FileStored{Brightness: &bright}
+	_, err = SaveProfile(dir, 1, map[string]string{"light": LightVersion(f)}, Edit{StoredLight: &bad})
+	if !errors.As(err, &le) || le.Layer != 0 {
+		t.Fatalf("err = %#v, want a LightError for the lighting as a whole", err)
+	}
+	if want := "stored_light: brightness must be 0 to 100, got 120"; err.Error() != want {
+		t.Errorf("err = %q, want %q", err, want)
+	}
+}
+
+func TestSaveProfileRemovesLight(t *testing.T) {
+	dir := folder(t, map[string]string{"kb7-sc.toml": noState})
+	f := fileOf(t, dir, "kb7-sc.toml")
+	var none *layout.FileLight
+	res, err := SaveProfile(dir, 1, map[string]string{"light": LightVersion(f)}, Edit{Light: &none})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := fileOf(t, dir, "kb7-sc.toml")
+	if saved.Light != nil {
+		t.Errorf("[light] kept: %+v", saved.Light)
+	}
+	if !reflect.DeepEqual(saved.Buttons, f.Buttons) || !reflect.DeepEqual(saved.StoredLight, f.StoredLight) {
+		t.Errorf("buttons or stored light changed:\n%+v\n%+v", f, saved)
+	}
+	if res.Change != Reload {
+		t.Errorf("Change = %v, want reload", res.Change)
+	}
+}
+
+const handLight = `profile = 2
+[light]
+fps = 20
+
+[[light.layer]]
+effect = "wave"
+colors = ["#FF0000", "#0000FF"]
+speed = 1.0
+length = 20
+
+[[light.layer]]
+effect = "fixed"
+keys = ["wrist"]
+color = "#FFFFFF"
+
+[[light.layer]]
+effect = "breathing"
+enabled = false
+period = "4s"
+low = 0.25
+
+[[button]]
+page = 1
+position = 0
+action = ["A"]
+`
+
+func TestSaveProfileUnchangedLight(t *testing.T) {
+	dir := folder(t, map[string]string{"kb7-light.toml": handLight})
+	before := mustLoad(t, dir)
+	f := fileOf(t, dir, "kb7-light.toml")
+	decoded := f.Light
+	res, err := SaveProfile(dir, 2, map[string]string{"light": LightVersion(f)}, Edit{Light: &decoded})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Change != NoChange {
+		t.Errorf("Change = %v, want none", res.Change)
+	}
+	saved := fileOf(t, dir, "kb7-light.toml")
+	if !reflect.DeepEqual(saved.Light, f.Light) {
+		t.Errorf("[light] changed:\nbefore %#v\nafter  %#v", f.Light, saved.Light)
+	}
+	if _, ok := saved.Light.Layers[0]["length"].(int64); !ok {
+		t.Errorf("length = %#v, want an integer", saved.Light.Layers[0]["length"])
+	}
+	if _, ok := saved.Light.Layers[0]["speed"].(float64); !ok {
+		t.Errorf("speed = %#v, want a float", saved.Light.Layers[0]["speed"])
+	}
+	if res.Version != LightVersion(f) {
+		t.Errorf("Version = %q, want the unchanged lighting version %q", res.Version, LightVersion(f))
+	}
+	after := mustLoad(t, dir)
+	if !reflect.DeepEqual(before.Profiles, after.Profiles) {
+		t.Errorf("Load differs:\nbefore %+v\nafter  %+v", before.Profiles, after.Profiles)
 	}
 }

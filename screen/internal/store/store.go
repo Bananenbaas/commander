@@ -14,6 +14,7 @@ import (
 	"github.com/Bananenbaas/commander/screen/internal/apply"
 	"github.com/Bananenbaas/commander/screen/internal/layout"
 	"github.com/Bananenbaas/commander/screen/internal/ledger"
+	"github.com/Bananenbaas/commander/screen/internal/light"
 )
 
 // Change says what Commander has to do after a save.
@@ -21,8 +22,8 @@ type Change int
 
 const (
 	NoChange Change = iota
-	Reload          // actions, modes, confirm, states or game profiles changed
-	Apply           // buttons added, removed or moved, or a title, label, colour, symbol or picture changed
+	Reload          // actions, modes, confirm, states, game profiles, or the lighting of a profile with a stored colour changed
+	Apply           // buttons added, removed or moved, a title, label, colour, symbol or picture, [stored_light], or the lighting of a profile without a stored colour changed
 )
 
 func (c Change) String() string {
@@ -39,8 +40,9 @@ func (c Change) String() string {
 
 // Decide compares one profile before and after a save. Buttons are matched
 // by page and position. A nil profile (one that did not load) counts as
-// changed in every way. Lighting layers are not compared: a buttons save
-// does not change them.
+// changed in every way. A changed [light] is an apply when the new profile
+// has no [stored_light] colour (the stored still follows the lighting), else
+// a reload.
 func Decide(old, new *layout.Profile) Change {
 	if old == nil || new == nil {
 		return Apply
@@ -50,6 +52,12 @@ func Decide(old, new *layout.Profile) Change {
 	}
 	change := NoChange
 	if old.SwitchWhenRunning != new.SwitchWhenRunning {
+		change = Reload
+	}
+	if !reflect.DeepEqual(old.Light, new.Light) {
+		if new.StoredLight == nil || new.StoredLight.Color.A == 0 {
+			return Apply
+		}
 		change = Reload
 	}
 	if len(old.Buttons) != len(new.Buttons) {
@@ -76,14 +84,15 @@ func Decide(old, new *layout.Profile) Change {
 
 // Result tells what a save did.
 type Result struct {
-	Version  string // the new version of the saved layout
+	Version  string // the new version of the section saved: the lighting when the save replaced it, else the buttons
 	Change   Change
 	Backups  []string // relative paths of the backups made
 	Migrated bool
 	Written  bool // at least one file was written, even if the save then failed
 }
 
-// ErrChanged: the layout on disk no longer has the version the save was based on.
+// ErrChanged: a section of the layout on disk no longer has the version the
+// save was based on.
 var ErrChanged = errors.New("the file was changed outside Commander")
 
 // ButtonError is a button of the saved layout that is wrong.
@@ -98,6 +107,53 @@ func (e *ButtonError) Error() string {
 
 func (e *ButtonError) Unwrap() error { return e.Err }
 
+// LightError is a save refused because of the saved layout's lighting.
+type LightError struct {
+	Layer   int    // 1-based, bottom first, counting switched-off layers; 0 = the lighting as a whole
+	Setting string // "" when not about one setting
+	Err     error  // for Layer 0, its text names the table: "light: ..." or "stored_light: ..."
+}
+
+func (e *LightError) Error() string {
+	if e.Layer == 0 {
+		return e.Err.Error()
+	}
+	return fmt.Sprintf("light.layer %d: %v", e.Layer, e.Err)
+}
+
+func (e *LightError) Unwrap() error { return e.Err }
+
+// Edit says which sections of a layout a save replaces; nil fields are kept
+// as they are in the file on disk.
+type Edit struct {
+	Buttons     *[]layout.FileButton
+	Light       **layout.FileLight  // set to a nil *FileLight to remove [light]
+	StoredLight **layout.FileStored // set to a nil *FileStored to remove [stored_light]
+}
+
+// Section versions: the first 16 hex digits of the SHA-256 of the section
+// encoded on its own (buttons: the [[button]] tables; lighting: [light] and
+// [stored_light]).
+
+// ButtonsVersion is the version of f's buttons.
+func ButtonsVersion(f *layout.File) string {
+	return sectionVersion(&layout.File{Buttons: f.Buttons})
+}
+
+// LightVersion is the version of f's lighting.
+func LightVersion(f *layout.File) string {
+	return sectionVersion(&layout.File{Light: f.Light, StoredLight: f.StoredLight})
+}
+
+func sectionVersion(f *layout.File) string {
+	data, err := f.Encode()
+	if err != nil {
+		// Not a version any file has, so a save based on it is refused.
+		return Version([]byte("unencodable: " + err.Error()))
+	}
+	return Version(data)
+}
+
 // saveMu serializes saves.
 var saveMu sync.Mutex
 
@@ -105,10 +161,17 @@ var saveMu sync.Mutex
 var newSaveWriter = newWriter
 
 // SaveButtons replaces the buttons of the layout of KB7 profile slot (0-4)
-// with buttons, after checking the file still has version base. It
-// migrates first when any layout has switch_when_running. Nothing is
-// written unless the folder with every new file loads and its pictures fit.
+// with buttons, after checking they still have version base (ButtonsVersion).
 func SaveButtons(dir string, slot byte, base string, buttons []layout.FileButton) (Result, error) {
+	return SaveProfile(dir, slot, map[string]string{"buttons": base}, Edit{Buttons: &buttons})
+}
+
+// SaveProfile replaces the sections e gives of the layout of KB7 profile slot
+// (0-4), after checking each replaced section still has its base version
+// (bases maps "buttons" and "light" to it; ErrChanged when one differs). It
+// migrates first when any layout has switch_when_running. Nothing is written
+// unless the folder with every new file loads and its pictures fit.
+func SaveProfile(dir string, slot byte, bases map[string]string, e Edit) (Result, error) {
 	saveMu.Lock()
 	defer saveMu.Unlock()
 	abs, err := filepath.Abs(dir)
@@ -123,15 +186,28 @@ func SaveButtons(dir string, slot byte, base string, buttons []layout.FileButton
 	if err != nil {
 		return Result{}, err
 	}
-	if Version(saved.data) != base {
+	lighting := e.Light != nil || e.StoredLight != nil
+	if e.Buttons != nil && ButtonsVersion(saved.file) != bases["buttons"] {
 		return Result{}, ErrChanged
 	}
-	if err := checkPlaces(buttons); err != nil {
-		return Result{}, err
+	if lighting && LightVersion(saved.file) != bases["light"] {
+		return Result{}, ErrChanged
 	}
 
 	edited := *saved.file
-	edited.Buttons = append([]layout.FileButton(nil), buttons...)
+	if e.Buttons != nil {
+		if err := checkPlaces(*e.Buttons); err != nil {
+			return Result{}, err
+		}
+		edited.Buttons = append([]layout.FileButton(nil), *e.Buttons...)
+	}
+	if e.Light != nil {
+		edited.Light = *e.Light
+	}
+	if e.StoredLight != nil {
+		edited.StoredLight = *e.StoredLight
+	}
+	buttons := edited.Buttons
 	data, err := edited.Encode()
 	if err != nil {
 		return Result{}, err
@@ -181,6 +257,14 @@ func SaveButtons(dir string, slot byte, base string, buttons []layout.FileButton
 	if n > ledger.MaxSlot {
 		return Result{}, fmt.Errorf("The KB7 holds %d different pictures; this would be %d.", ledger.MaxSlot, n)
 	}
+	final, err := layout.DecodeFile(data)
+	if err != nil {
+		return Result{}, err
+	}
+	version := ButtonsVersion(final)
+	if lighting {
+		version = LightVersion(final)
+	}
 
 	var oldP, newP *layout.Profile
 	if old, err := layout.Load(abs); err == nil {
@@ -210,7 +294,7 @@ func SaveButtons(dir string, slot byte, base string, buttons []layout.FileButton
 		}
 		res.Written = true
 	}
-	res.Version = Version(data)
+	res.Version = version
 	return res, nil
 }
 
@@ -300,10 +384,20 @@ func checkPlaces(buttons []layout.FileButton) error {
 }
 
 // refusal turns an error of loading or rendering the folder with the new
-// layout saved into a *ButtonError when it concerns one of the new buttons,
-// else into the sentence naming the file that has the error.
+// layout saved into a *LightError when it concerns the layout's lighting, a
+// *ButtonError when it concerns one of its buttons, else into the sentence
+// naming the file that has the error.
 func refusal(err error, saved string, buttons []layout.FileButton) error {
 	rest, ok := strings.CutPrefix(err.Error(), saved+": ")
+	if ok {
+		var le *light.LayerError
+		if layer, setting, isLight := layout.LightError(err); isLight && errors.As(err, &le) {
+			return &LightError{Layer: layer, Setting: setting, Err: le.Err}
+		}
+		if strings.HasPrefix(rest, "light: ") || strings.HasPrefix(rest, "stored_light: ") {
+			return &LightError{Err: errors.New(rest)}
+		}
+	}
 	var page, pos int
 	if ok {
 		if _, serr := fmt.Sscanf(rest, "page %d position %d:", &page, &pos); serr != nil {

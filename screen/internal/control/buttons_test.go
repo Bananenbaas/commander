@@ -127,7 +127,8 @@ func TestSaveStale(t *testing.T) {
 	p := profileCall(t, s)
 	f := filepath.Join(dir, "desk.toml")
 	data, _ := os.ReadFile(f)
-	if err := os.WriteFile(f, append(data, "\n# edited\n"...), 0o600); err != nil {
+	// A button added by hand changes the buttons section.
+	if err := os.WriteFile(f, append(data, "\n[[button]]\npage = 3\nposition = 0\naction = [\"A\"]\n"...), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	m := call(t, s, "saveDeviceProfile", saveArgs(t, p, p["version"].(string), nil))

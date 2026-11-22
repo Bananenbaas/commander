@@ -212,12 +212,12 @@ func (s *Service) deviceProfile(args json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("deviceProfile: %w", err)
 	}
-	data, f, err := layoutOf(s.d.Dir, slot)
+	_, f, err := layoutOf(s.d.Dir, slot)
 	if err != nil {
 		return nil, fmt.Errorf("deviceProfile: %w", err)
 	}
 	out := deviceProfileOut{
-		Device: "kb7", Profile: int(slot), Version: store.Version(data),
+		Device: "kb7", Profile: int(slot), Version: store.ButtonsVersion(f),
 		Buttons: []buttonJSON{}, States: []string{}, PictureSlots: pictureSlots,
 	}
 	if f.Name != nil {
