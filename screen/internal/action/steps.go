@@ -142,3 +142,70 @@ func parseChord(s string) (Step, error) {
 	}
 	return Chord{Keys: keys}, nil
 }
+
+// FormatStep returns the text that ParseStep reads back to an equal step.
+func FormatStep(s Step) (string, error) {
+	switch v := s.(type) {
+	case Chord:
+		return formatChord(v)
+	case Wait:
+		return formatWait(v)
+	case Run:
+		return formatRun(v)
+	case Open:
+		return formatOpen(v)
+	}
+	return "", fmt.Errorf("unknown step type %T", s)
+}
+
+func formatChord(c Chord) (string, error) {
+	if len(c.Keys) == 0 {
+		return "", fmt.Errorf("a chord needs at least one key")
+	}
+	seen := map[Key]bool{}
+	names := make([]string, 0, len(c.Keys))
+	for _, k := range c.Keys {
+		name := KeyName(k)
+		if name == "" {
+			return "", fmt.Errorf("unknown key code %#x in chord", uint16(k))
+		}
+		if seen[k] {
+			return "", fmt.Errorf("key %q repeats in chord", name)
+		}
+		seen[k] = true
+		names = append(names, name)
+	}
+	return strings.Join(names, "+"), nil
+}
+
+func formatWait(w Wait) (string, error) {
+	if w.D%time.Millisecond != 0 {
+		return "", fmt.Errorf("wait must be a whole number of milliseconds, got %v", w.D)
+	}
+	ms := w.D / time.Millisecond
+	if ms < 1 || ms > maxWait {
+		return "", fmt.Errorf("wait must be a whole number of milliseconds from 1 to %d, got %v", maxWait, w.D)
+	}
+	return fmt.Sprintf("wait %dms", int64(ms)), nil
+}
+
+func formatRun(r Run) (string, error) {
+	parts := make([]string, 0, 1+len(r.Args))
+	for _, field := range append([]string{r.Program}, r.Args...) {
+		if strings.Contains(field, `"`) {
+			return "", fmt.Errorf("a program or argument cannot hold a double quote, got %q", field)
+		}
+		if field == "" || strings.ContainsAny(field, " \t") {
+			field = `"` + field + `"`
+		}
+		parts = append(parts, field)
+	}
+	return "run " + strings.Join(parts, " "), nil
+}
+
+func formatOpen(o Open) (string, error) {
+	if o.Target == "" || o.Target != strings.TrimSpace(o.Target) {
+		return "", fmt.Errorf("open needs a target without leading or trailing spaces, got %q", o.Target)
+	}
+	return "open " + o.Target, nil
+}

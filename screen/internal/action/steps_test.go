@@ -66,3 +66,50 @@ func TestKeyValues(t *testing.T) {
 		t.Fatal("media values wrong")
 	}
 }
+
+func TestFormatStepRoundTrip(t *testing.T) {
+	inputs := []string{
+		"LCtrl+LShift+A",
+		"AltGr+Q",
+		"VolumeUp",
+		"wait 600ms",
+		"run notepad.exe",
+		`run "C:\Program Files\x\x.exe" --a "b c"`,
+		"open https://example.com/a b",
+	}
+	for _, in := range inputs {
+		first, err := ParseStep(in)
+		if err != nil {
+			t.Fatalf("%q: parse: %v", in, err)
+		}
+		text, err := FormatStep(first)
+		if err != nil {
+			t.Fatalf("%q: format: %v", in, err)
+		}
+		second, err := ParseStep(text)
+		if err != nil {
+			t.Fatalf("%q: formatted as %q, which does not parse: %v", in, text, err)
+		}
+		if !reflect.DeepEqual(first, second) {
+			t.Errorf("%q: formatted as %q, parsed back as %#v, want %#v", in, text, second, first)
+		}
+	}
+}
+
+func TestFormatStepRefuses(t *testing.T) {
+	cases := map[string]Step{
+		"program with quote":  Run{Program: `a"b`},
+		"argument with quote": Run{Program: "notepad", Args: []string{`x"y`}},
+		"empty open target":   Open{Target: ""},
+		"open with space":     Open{Target: " https://example.com"},
+		"empty chord":         Chord{},
+		"unknown key":         Chord{Keys: []Key{Key(0x01)}},
+		"zero wait":           Wait{D: 0},
+		"wait over maximum":   Wait{D: 60001 * time.Millisecond},
+	}
+	for name, s := range cases {
+		if text, err := FormatStep(s); err == nil {
+			t.Errorf("%s: got %q, want an error", name, text)
+		}
+	}
+}
