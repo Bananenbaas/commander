@@ -3,6 +3,7 @@
 package layout
 
 import (
+	"errors"
 	"fmt"
 	"image/color"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Bananenbaas/commander/screen/internal/action"
+	"github.com/Bananenbaas/commander/screen/internal/light"
 )
 
 const desktopTOML = `
@@ -527,5 +529,100 @@ func TestStoredLightErrors(t *testing.T) {
 				t.Errorf("%s: error %q lacks %q", c.name, err, w)
 			}
 		}
+	}
+}
+
+const offLayers = `profile = 1
+
+[light]
+fps = 30
+
+[[light.layer]]
+effect = "static"
+color = "#102030"
+
+[[light.layer]]
+enabled = false
+effect = "wave"
+colors = ["#FFFFFF"]
+speed = 99
+
+[[light.layer]]
+effect = "ripple"
+color = "#FFFFFF"
+`
+
+func TestSwitchedOffLayer(t *testing.T) {
+	on, err := Load(folder(t, map[string]string{"a.toml": offLayers}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	two := "profile = 1\n[light]\nfps = 30\n[[light.layer]]\neffect = \"static\"\ncolor = \"#102030\"\n[[light.layer]]\neffect = \"ripple\"\ncolor = \"#FFFFFF\"\n"
+	want, err := Load(folder(t, map[string]string{"a.toml": two}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b := on.Profiles[0].Light, want.Profiles[0].Light
+	for _, at := range []time.Duration{0, 400 * time.Millisecond, time.Second} {
+		if a.Render(at, &light.Input{}) != b.Render(at, &light.Input{}) {
+			t.Errorf("stack differs at %v", at)
+		}
+	}
+}
+
+func TestSwitchedOffLayerNumbering(t *testing.T) {
+	bad := strings.Replace(offLayers, "effect = \"ripple\"\ncolor = \"#FFFFFF\"", "effect = \"ripple\"\ncolor = \"#FFFFFF\"\nspeeed = 1", 1)
+	_, err := Load(folder(t, map[string]string{"a.toml": bad}))
+	if err == nil || !strings.Contains(err.Error(), "light.layer 3: ") || !strings.Contains(err.Error(), "speeed") {
+		t.Fatalf("error %v", err)
+	}
+	layer, setting, ok := LightError(err)
+	if !ok || layer != 3 || setting != "speeed" {
+		t.Errorf("LightError = %d %q %v", layer, setting, ok)
+	}
+	noEffect := strings.Replace(offLayers, "[[light.layer]]\neffect = \"ripple\"", "[[light.layer]]\nname = \"x\"\n[[light.layer]]\neffect = \"ripple\"", 1)
+	_, err = Load(folder(t, map[string]string{"a.toml": noEffect}))
+	if layer, setting, ok := LightError(err); !ok || layer != 3 || setting != "effect" {
+		t.Errorf("own error: %v: %d %q %v", err, layer, setting, ok)
+	}
+	if _, _, ok := LightError(errors.New("other")); ok {
+		t.Error("LightError accepted a foreign error")
+	}
+	dup := "profile = 1\n[light]\n[[light.layer]]\neffect = \"state\"\nname = \"g\"\ntoggle = \"N\"\nkeys = [\"N\"]\ncolor = \"#30E070\"\n" +
+		"[[light.layer]]\nenabled = false\neffect = \"static\"\ncolor = \"#000000\"\n" +
+		"[[light.layer]]\neffect = \"state\"\nname = \"g\"\ntoggle = \"B\"\nkeys = [\"B\"]\ncolor = \"#30E070\"\n"
+	_, err = Load(folder(t, map[string]string{"a.toml": dup}))
+	if err == nil || !strings.Contains(err.Error(), "light.layer 3: ") || !strings.Contains(err.Error(), "layer 1") {
+		t.Errorf("duplicate state: %v", err)
+	}
+}
+
+func TestSwitchedOffLayerErrors(t *testing.T) {
+	allOff := "profile = 1\n[light]\n[[light.layer]]\nenabled = false\neffect = \"static\"\ncolor = \"#000000\"\n"
+	_, err := Load(folder(t, map[string]string{"a.toml": allOff}))
+	if err == nil || !strings.Contains(err.Error(), "light: every lighting layer is off; turn one on or remove the lighting") {
+		t.Errorf("all off: %v", err)
+	}
+	str := strings.Replace(allOff, "enabled = false", "enabled = \"no\"", 1)
+	_, err = Load(folder(t, map[string]string{"a.toml": str}))
+	if err == nil || !strings.Contains(err.Error(), "light.layer 1: enabled must be true or false") {
+		t.Errorf("enabled string: %v", err)
+	}
+	if layer, setting, ok := LightError(err); !ok || layer != 1 || setting != "enabled" {
+		t.Errorf("LightError = %d %q %v", layer, setting, ok)
+	}
+}
+
+func TestEncodeKeepsEnabled(t *testing.T) {
+	f, err := DecodeFile([]byte(offLayers))
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, err := f.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(enc), "enabled = false") {
+		t.Errorf("enabled lost:\n%s", enc)
 	}
 }

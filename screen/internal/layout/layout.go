@@ -4,10 +4,12 @@
 package layout
 
 import (
+	"errors"
 	"fmt"
 	"image/color"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -256,33 +258,66 @@ func stateNames(st *light.Stack) []string {
 	return names
 }
 
+// layerError is a light.LayerError with the file's layer number; its text is
+// the form Load has always printed, "light.layer N: ...".
+type layerError struct{ le *light.LayerError }
+
+func (e *layerError) Error() string { return "light." + e.le.Error() }
+func (e *layerError) Unwrap() error { return e.le }
+
+// LightError reads the lighting layer (1-based, counting every layer in the
+// file, switched-off ones included) and the setting a load error is about.
+// setting is "" when the error concerns the layer as a whole; ok is false for
+// an error that is not about one lighting layer.
+func LightError(err error) (layer int, setting string, ok bool) {
+	var le *light.LayerError
+	if !errors.As(err, &le) {
+		return 0, "", false
+	}
+	return le.Layer, le.Setting, true
+}
+
+var declaredBy = regexp.MustCompile(`is already declared by layer (\d+)$`)
+
 // buildLight turns the [light] table into a stack. Errors name light.layer N
-// (1-based) and the setting.
+// (1-based, as the file numbers its layers) and the setting. A layer with
+// enabled = false stays out of the stack.
 func buildLight(rl *rawLight) (*light.Stack, error) {
 	cfg := light.Config{FPS: int(rl.FPS)}
 	if rl.FPS != int64(cfg.FPS) {
 		return nil, fmt.Errorf("light: fps %d is out of range", rl.FPS)
 	}
+	var fileNo []int // file layer number of each layer passed to Build
+	fail := func(n int, setting, format string, args ...any) error {
+		return &layerError{&light.LayerError{Layer: n, Setting: setting, Err: fmt.Errorf(format, args...)}}
+	}
 	for i, m := range rl.Layers {
-		where := fmt.Sprintf("light.layer %d", i+1)
+		n := i + 1
 		lc := light.LayerConfig{Settings: map[string]any{}}
+		off := false
 		for k, v := range m {
 			switch k {
+			case "enabled":
+				on, ok := v.(bool)
+				if !ok {
+					return nil, fail(n, k, "enabled must be true or false")
+				}
+				off = !on
 			case "effect":
 				e, ok := v.(string)
 				if !ok {
-					return nil, fmt.Errorf("%s: effect must be a string", where)
+					return nil, fail(n, k, "effect must be a string")
 				}
 				lc.Effect = e
 			case "keys":
 				list, ok := v.([]any)
 				if !ok {
-					return nil, fmt.Errorf("%s: keys must be a list of key names", where)
+					return nil, fail(n, k, "keys must be a list of key names")
 				}
 				for _, x := range list {
 					ks, ok := x.(string)
 					if !ok {
-						return nil, fmt.Errorf("%s: keys must be a list of key names", where)
+						return nil, fail(n, k, "keys must be a list of key names")
 					}
 					lc.Keys = append(lc.Keys, ks)
 				}
@@ -291,17 +326,33 @@ func buildLight(rl *rawLight) (*light.Stack, error) {
 			}
 		}
 		if lc.Effect == "" {
-			return nil, fmt.Errorf("%s: effect is required", where)
+			return nil, fail(n, "effect", "effect is required")
+		}
+		if off {
+			continue
 		}
 		cfg.Layers = append(cfg.Layers, lc)
+		fileNo = append(fileNo, n)
+	}
+	if len(rl.Layers) > 0 && len(cfg.Layers) == 0 {
+		return nil, fmt.Errorf("light: every lighting layer is off; turn one on or remove the lighting")
 	}
 	stack, err := light.Build(cfg)
 	if err != nil {
-		msg := err.Error()
-		if strings.HasPrefix(msg, "layer ") {
-			return nil, fmt.Errorf("light.%s", msg)
+		var le *light.LayerError
+		if errors.As(err, &le) && le.Layer >= 1 && le.Layer <= len(fileNo) {
+			out := *le
+			out.Layer = fileNo[le.Layer-1]
+			// "state ... is already declared by layer K" names a Build layer too.
+			if m := declaredBy.FindStringSubmatch(le.Err.Error()); m != nil {
+				if k, _ := strconv.Atoi(m[1]); k >= 1 && k <= len(fileNo) {
+					text := le.Err.Error()
+					out.Err = errors.New(text[:len(text)-len(m[1])] + strconv.Itoa(fileNo[k-1]))
+				}
+			}
+			return nil, &layerError{&out}
 		}
-		return nil, fmt.Errorf("light: %s", msg)
+		return nil, fmt.Errorf("light: %s", err.Error())
 	}
 	return stack, nil
 }
