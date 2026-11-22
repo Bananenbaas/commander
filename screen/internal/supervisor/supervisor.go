@@ -636,7 +636,7 @@ func (s *Supervisor) runLoop(exec *action.Executor) func(context.Context, *layou
 	return func(ctx context.Context, cfg *layout.Config, resume *run.Resume, status func(run.Status)) error {
 		deps := run.Deps{
 			Open: func() (run.Keyboard, error) {
-				kb, err := access.OpenKeyboardTraced(s.trace)
+				kb, err := access.OpenKeyboardTraced(s.trace, "run")
 				if err != nil {
 					return nil, err
 				}
@@ -704,7 +704,7 @@ func (s *Supervisor) applyButtons(ctx context.Context, cfg *layout.Config) (stri
 	if err != nil {
 		return "", err
 	}
-	kb, err := access.OpenKeyboardTraced(s.trace)
+	kb, err := access.OpenKeyboardTraced(s.trace, "apply")
 	if err != nil {
 		return "", err
 	}
