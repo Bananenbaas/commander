@@ -13,9 +13,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
   switch. The `Pages` workflow publishes it to GitHub Pages when `site/`
   changes on `main`.
 - Diagnostics: Commander keeps the keyboard's recent traffic in memory (kinds
-  of call, report IDs, lengths, durations and errors; never payloads or key
-  presses) and writes it to its log when the keyboard stops answering, to
-  show what came before a hang.
+  of call, report IDs, lengths, durations and errors; never payloads, key
+  presses or touch positions) and writes it to its log when the keyboard
+  stops answering, at most once per five minutes, to show what came before a
+  hang.
 
 ## [0.1.0-beta.6] - 2026-11-22
 
