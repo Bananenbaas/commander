@@ -132,8 +132,8 @@ type Deps struct {
 	Audio Audio
 	// Trace keeps the keyboard's recent traffic (device.Trace); nil: none.
 	// Run asks for it to be written to the log with the replug advice, tells
-	// it when the keyboard confirmed a switch, and marks in it a program of
-	// switch_when_running seen ending and the switch that follows.
+	// it when the keyboard confirmed a switch, and marks in it a game's
+	// program seen ending and the switch that follows.
 	Trace Trace
 }
 
@@ -158,8 +158,8 @@ func (noTrace) Answered()   {}
 // Resume is a profile an earlier Run left the keyboard on.
 //
 // The first connect of Run goes to Profile instead of the expected profile,
-// unless a program of switch_when_running runs whose profile differs: then
-// that profile wins, as always. The expected profile itself stays what the
+// unless a running game decides the profile and it differs: then that
+// profile wins, as always. The expected profile itself stays what the
 // running programs say, so the next poll does not switch away; later
 // program starts and stops switch as always.
 //
@@ -198,11 +198,11 @@ type loop struct {
 	status  func(Status)
 	last    Status // the last status reported
 
-	names     []string         // programs checked at every poll: Swarm II first
-	switchers []layout.Profile // profiles with switch_when_running, ascending
-	managed   []layout.Profile // profiles with buttons, ascending
-	buttons   map[spot]layout.Button
-	chords    map[spot]action.Chord // the chord of every hold button
+	names   []string         // programs checked at every poll: Swarm II first
+	order   []string         // the games' programs that run, most recently started first
+	managed []layout.Profile // profiles with buttons, ascending
+	buttons map[spot]layout.Button
+	chords  map[spot]action.Chord // the chord of every hold button
 
 	kb       Keyboard              // nil while closed
 	active   byte                  // the keyboard's active profile, while open
@@ -218,14 +218,14 @@ type loop struct {
 	assumed  bool                  // the keyboard did not confirm the switch to the active profile
 
 	trace   Trace
-	ended   string    // the switch_when_running program last seen ending, until the switch that follows
+	ended   string    // the game's program last seen ending, until the switch that follows
 	endedAt time.Time // when it was seen ending
 
 	// Lighting; eng is nil without it.
 	eng        *light.Engine
 	keys       <-chan keys.Event            // nil without key input, or once it is closed
 	flips      map[spot]string              // the state a touch of the button flips itself
-	wasRunning map[string]bool              // switch_when_running programs running at the last poll
+	wasRunning map[string]bool              // games' programs running at the last poll
 	nextFrame  time.Time                    // when the next frame is due
 	streamed   bool                         // a frame was sent since the keyboard was opened or the last rest frame
 	shown      byte                         // the profile of the last frame sent
@@ -242,14 +242,14 @@ type loop struct {
 // returns an error only when cfg or d is incomplete.
 //
 // Every poll it checks, in one call of d.Running, Swarm II and the programs
-// named in switch_when_running. While Swarm II runs the keyboard stays
-// closed. Otherwise the keyboard is opened when it is not, touch
-// notifications are enabled and the expected profile is switched to: the
-// lowest profile whose program runs, else the desktop profile (d.Resume can
-// keep another one at the first connect, see Resume). A change of the
-// expected profile switches the keyboard. When Swarm II has closed, the
-// managed profiles' button tables are read and differences from the layout
-// are reported; nothing is written.
+// of cfg.Games. While Swarm II runs the keyboard stays closed. Otherwise the
+// keyboard is opened when it is not, touch notifications are enabled and the
+// expected profile is switched to: the kb7 profile of the most recently
+// started game that has one (games found together at one poll in the order
+// of cfg.Games), else the desktop profile (d.Resume can keep another one at
+// the first connect, see Resume). A change of the expected profile switches
+// the keyboard. When Swarm II has closed, the managed profiles' button tables
+// are read and differences from the layout are reported; nothing is written.
 //
 // A touch of an application button on a managed position of the active
 // profile starts its action (tap) or presses its chord (hold); the touch's
@@ -263,9 +263,9 @@ type loop struct {
 // engine before every frame. After every profile change the profile's
 // report 0x11 is read, its brightness and stored lighting in one (the last
 // level stays when that fails), and brightness notifications are followed. A
-// profile's states take their start values when its program starts. A touch
-// of a button with a state flips it, unless the button's action sends the
-// state's toggle, which flips it already. When the stream stops, because the
+// profile's states take their start values when the program of a game with
+// that kb7 profile starts. A touch of a button with a state flips it, unless
+// the button's action sends the state's toggle, which flips it already. When the stream stops, because the
 // active profile is not lit, Swarm II runs or Run stops, the active
 // profile's stored lighting, scaled by the brightness, is sent after the held
 // keys are released, as the keyboard keeps the last frame streamed; when it
@@ -380,14 +380,13 @@ func newLoop(cfg *layout.Config, d Deps) (*loop, error) {
 	for _, n := range procs.Swarm {
 		seen[n] = true
 	}
-	for _, p := range profiles {
-		if n := p.SwitchWhenRunning; n != "" {
-			l.switchers = append(l.switchers, p)
-			if !seen[n] {
-				seen[n] = true
-				l.names = append(l.names, n)
-			}
+	for _, g := range cfg.Games {
+		if n := g.Program; n != "" && !seen[n] {
+			seen[n] = true
+			l.names = append(l.names, n)
 		}
+	}
+	for _, p := range profiles {
 		found := false
 		for _, b := range p.Buttons {
 			found = true
@@ -545,6 +544,7 @@ func (l *loop) poll(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
+	l.order = layout.StartOrder(l.order, running, l.cfg.Games)
 	l.noteStarts(running)
 	if anyOf(running, procs.Swarm) {
 		if !l.paused {
@@ -560,10 +560,10 @@ func (l *loop) poll(ctx context.Context) {
 		l.logf("Swarm II has closed; taking the keyboard back")
 	}
 	if l.kb == nil {
-		l.connect(ctx, running)
+		l.connect(ctx)
 		return
 	}
-	want := l.expect(running)
+	want := l.expect()
 	if want == l.expected {
 		return
 	}
@@ -589,29 +589,25 @@ func anyOf(running map[string]bool, names []string) bool {
 	return false
 }
 
-// expect returns the profile the keyboard should be on: the lowest one whose
-// program runs, else the desktop profile.
-func (l *loop) expect(running map[string]bool) byte {
-	p, _ := l.program(running)
+// expect returns the profile the keyboard should be on: that of the most
+// recently started game with a kb7 profile, else the desktop profile.
+func (l *loop) expect() byte {
+	p, _ := l.program()
 	return p
 }
 
-// program returns the lowest profile whose program runs and true, or the
-// desktop profile and false when none runs.
-func (l *loop) program(running map[string]bool) (byte, bool) {
-	for _, p := range l.switchers {
-		if running[p.SwitchWhenRunning] {
-			return p.Number, true
-		}
-	}
-	return l.cfg.DesktopProfile(), false
+// program returns the profile of the most recently started game with a kb7
+// profile and true, or the desktop profile and false when no such game runs.
+func (l *loop) program() (byte, bool) {
+	p, g := l.cfg.Choose(l.order)
+	return p, g != nil
 }
 
 // connect opens the keyboard, enables notifications and switches to the
 // expected profile, or at the first connect to the resumed one (see Resume).
 // On failure the keyboard is closed again; the next poll retries.
-func (l *loop) connect(ctx context.Context, running map[string]bool) {
-	want, byProgram := l.program(running)
+func (l *loop) connect(ctx context.Context) {
+	want, byProgram := l.program()
 	target, how := want, switchFresh
 	if r := l.resume; r != nil {
 		if !byProgram || want == r.Profile {

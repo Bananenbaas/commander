@@ -55,7 +55,7 @@ func holdButton(pos int, label string, c action.Chord) layout.Button {
 // runs) and profile 3 (while other.exe runs); profiles 1 and 4 are not
 // managed. The profiles are deliberately not in ascending order.
 func testConfig() *layout.Config {
-	return &layout.Config{Profiles: []layout.Profile{
+	return withGames(&layout.Config{Profiles: []layout.Profile{
 		{Number: 3, SwitchWhenRunning: other, Buttons: []layout.Button{tapButton(3, chord(action.C))}},
 		{Number: 0, Buttons: []layout.Button{
 			tapButton(3, chord(action.A)),
@@ -64,8 +64,25 @@ func testConfig() *layout.Config {
 			tapButton(8, chord(action.A), action.Wait{D: 3 * time.Second}, chord(action.B)),
 		}},
 		{Number: 2, SwitchWhenRunning: game, Buttons: []layout.Button{tapButton(3, chord(action.B))}},
-	}}
+	}})
 }
+
+// withGames fills cfg.Games from the profiles' SwitchWhenRunning, by profile
+// number, as layout.Load does without a games folder, and returns cfg.
+func withGames(cfg *layout.Config) *layout.Config {
+	profiles := slices.Clone(cfg.Profiles)
+	slices.SortStableFunc(profiles, func(a, b layout.Profile) int { return int(a.Number) - int(b.Number) })
+	cfg.Games = nil
+	for _, p := range profiles {
+		if p.SwitchWhenRunning != "" {
+			cfg.Games = append(cfg.Games, layout.Game{Name: p.SwitchWhenRunning, Program: p.SwitchWhenRunning, KB7: kb7(p.Number)})
+		}
+	}
+	return cfg
+}
+
+// kb7 is a KB7 profile number for a game.
+func kb7(n byte) *byte { return &n }
 
 // item is what one NextEvent call of a fake keyboard returns, or, with boom
 // set, the value it panics with.
@@ -644,7 +661,7 @@ func TestStartUpChoosesTheProfile(t *testing.T) {
 		{nil, "fresh 0"},
 		{[]string{game}, "fresh 2"},
 		{[]string{other}, "fresh 3"},
-		{[]string{other, game}, "fresh 2"}, // the lower profile wins
+		{[]string{other, game}, "fresh 2"}, // both at the first poll: games order, here profile order
 	} {
 		t.Run(strings.Join(c.running, "+"), func(t *testing.T) {
 			test(t, func(h *harness) {
@@ -661,10 +678,10 @@ func TestStartUpChoosesTheProfile(t *testing.T) {
 
 func TestDesktopIsTheFallback(t *testing.T) {
 	test(t, func(h *harness) {
-		cfg := &layout.Config{Profiles: []layout.Profile{
+		cfg := withGames(&layout.Config{Profiles: []layout.Profile{
 			{Number: 4, SwitchWhenRunning: game, Buttons: []layout.Button{tapButton(3, chord(action.B))}},
 			{Number: 1, Buttons: []layout.Button{tapButton(3, chord(action.A))}},
-		}}
+		}})
 		h.onPoll[1] = h.cancel
 		h.run(cfg)
 		h.want("poll", "open", "notify", "fresh 1", "poll", "close")
@@ -675,9 +692,9 @@ func TestDesktopIsTheFallback(t *testing.T) {
 // layout, and the keyboard goes back there when the game ends.
 func TestGameOnlyFolderSwitchesBack(t *testing.T) {
 	test(t, func(h *harness) {
-		cfg := &layout.Config{Profiles: []layout.Profile{
+		cfg := withGames(&layout.Config{Profiles: []layout.Profile{
 			{Number: 1, SwitchWhenRunning: game, Buttons: []layout.Button{tapButton(3, chord(action.B))}},
-		}}
+		}})
 		h.onPoll[1] = func() { h.running[game] = true }
 		h.onPoll[2] = func() { h.running[game] = false }
 		h.onPoll[3] = h.cancel
@@ -837,13 +854,76 @@ func TestGameStartOnTheActiveProfileDoesNotSwitch(t *testing.T) {
 	})
 }
 
-func TestOtherProgramsDoNotSwitch(t *testing.T) {
+// The game started last decides the profile, whatever its profile number;
+// when it ends, the one still running takes over.
+func TestNewestGameWins(t *testing.T) {
 	test(t, func(h *harness) {
 		h.running[game] = true
-		h.onPoll[1] = func() { h.running[other] = true } // profile 2 still comes first
-		h.onPoll[2] = h.cancel
+		h.onPoll[1] = func() { h.running[other] = true }
+		h.onPoll[2] = func() { h.running[other] = false }
+		h.onPoll[3] = h.cancel
 		h.run(testConfig())
-		h.want("poll", "open", "notify", "fresh 2", "poll", "poll", "close")
+		h.want("poll", "open", "notify", "fresh 2",
+			"poll", "switch 3",
+			"poll", "switch 2",
+			"poll", "close")
+	})
+}
+
+// A game without a kb7 profile leaves the keyboard where it is.
+func TestDontSwitchGame(t *testing.T) {
+	test(t, func(h *harness) {
+		cfg := &layout.Config{
+			Profiles: []layout.Profile{
+				{Number: 0, Buttons: []layout.Button{tapButton(3, chord(action.A))}},
+				{Number: 1, Buttons: []layout.Button{tapButton(3, chord(action.B))}},
+			},
+			Games:   []layout.Game{{Name: "Game", Program: game}},
+			Desktop: &layout.Game{Name: "Desktop", KB7: kb7(1)},
+		}
+		h.onPoll[1] = func() { h.running[game] = true }
+		h.onPoll[2] = h.cancel
+		h.run(cfg)
+		h.want("poll", "open", "notify", "fresh 1", "poll", "poll", "close")
+	})
+}
+
+// A game may switch to a profile without a layout: the keyboard goes there,
+// and the buttons of the other profiles do not act on it.
+func TestGameWithoutLayoutSwitches(t *testing.T) {
+	test(t, func(h *harness) {
+		cfg := &layout.Config{
+			Profiles: []layout.Profile{{Number: 0, Buttons: []layout.Button{tapButton(3, chord(action.A))}}},
+			Games:    []layout.Game{{Name: "Game", Program: game, KB7: kb7(4)}},
+		}
+		h.scripts = [][]item{tap(3)} // control: on profile 0 the tap acts
+		h.onPoll[1] = func() { h.running[game] = true }
+		h.onPoll[2] = func() { h.push(tap(3)...) }
+		h.onPoll[3] = h.cancel
+		h.run(cfg)
+		h.want("poll", "open", "notify", "fresh 0", "down A", "up A",
+			"poll", "switch 4",
+			"poll",
+			"poll", "close")
+		if want := append(slices.Clone(procs.Swarm), game); !slices.Equal(h.names, want) {
+			h.t.Errorf("Running(%q), want Running(%q)", h.names, want)
+		}
+	})
+}
+
+// The Desktop game names the profile shown while no game decides.
+func TestGamesDesktop(t *testing.T) {
+	test(t, func(h *harness) {
+		cfg := &layout.Config{
+			Profiles: []layout.Profile{
+				{Number: 0, Buttons: []layout.Button{tapButton(3, chord(action.A))}},
+				{Number: 3, Buttons: []layout.Button{tapButton(3, chord(action.C))}},
+			},
+			Desktop: &layout.Game{Name: "Desktop", KB7: kb7(3)},
+		}
+		h.onPoll[1] = h.cancel
+		h.run(cfg)
+		h.want("poll", "open", "notify", "fresh 3", "poll", "close")
 	})
 }
 
