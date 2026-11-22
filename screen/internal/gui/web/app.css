@@ -697,6 +697,217 @@ button.chip:hover { color: var(--text); }
   .bpanel { flex-basis: 100%; }
 }
 
+/* The edit panel */
+
+.bpanel { color: var(--text); }
+.bpanel .note { margin: 4px 0 8px; white-space: pre-line; }
+.bpanel .note.error { color: var(--bad); }
+
+.bsec {
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.bhead { display: block; }
+
+.binput {
+  min-height: 34px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-sunk);
+  color: var(--text);
+  font: 14px var(--sans);
+}
+
+.binput:hover { border-color: var(--text-muted); }
+#bp-title { width: 100%; }
+.binput.bwide { flex: 1 1 160px; min-width: 0; }
+.binput.bms { width: 96px; }
+
+.bsmall {
+  min-height: 30px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  font-size: 14px;
+}
+
+.bsmall:hover { border-color: var(--text-muted); }
+.bsmall:disabled { opacity: 0.4; cursor: default; }
+.bsmall.bicon { min-width: 30px; padding: 3px 0; text-align: center; }
+
+.btn.danger { color: var(--bad); }
+
+.blook { margin-top: 10px; }
+
+.bswatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bswatch {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+
+.bswatch[aria-pressed="true"],
+.bany.on input {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.bany {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.bany input {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+
+/* Steps: a numbered list, each a sentence with its value. */
+
+.bsteps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bstep {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 8px;
+  align-items: start;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.bstep:first-child { border-top: 0; padding-top: 0; }
+
+.bstep-num {
+  font: 600 22px/30px var(--display);
+  color: var(--accent);
+  text-align: right;
+}
+
+.bstep-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+  min-height: 30px;
+}
+
+.bstep-body .note { flex-basis: 100%; margin: 0; }
+.bstep-what { font-weight: 600; }
+.bstep-unit { color: var(--text-muted); }
+.bstep-acts { display: flex; gap: 4px; }
+
+/* Key caps with the cut corner: the line colour drawn behind, the face on
+   top of it. */
+.bcaps {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bcap {
+  position: relative;
+  isolation: isolate;
+  display: inline-block;
+  min-width: 28px;
+  padding: 2px 9px 3px;
+  color: var(--text);
+  font: 13px/20px var(--sans);
+  text-align: center;
+}
+
+.bcap::before,
+.bcap::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%);
+}
+
+.bcap::before { inset: 0; background: var(--line); }
+.bcap::after { inset: 1px; background: var(--bg-sunk); }
+
+.bsec > .row { margin-top: 10px; }
+
+.bmenu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.brec {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  background: var(--glow);
+}
+
+.brec-text::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--bad);
+  vertical-align: 1px;
+}
+
+.brec .bcaps { margin-bottom: 8px; }
+
+.bcheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  cursor: pointer;
+}
+
+.bcheck input,
+.brange { accent-color: var(--accent); }
+
+.bcheck input:disabled + span { color: var(--text-muted); }
+
+.bconfirm { margin: 0 0 8px; }
+.brange { flex: 1 1 160px; max-width: 260px; }
+.bconfirm-val { min-width: 44px; font-variant-numeric: tabular-nums; }
+
+.bstate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.bstate .note { flex-basis: 100%; margin: 0; }
+.bacts { gap: 10px; }
+
 .version {
   font: 600 28px var(--display);
   letter-spacing: 0.02em;

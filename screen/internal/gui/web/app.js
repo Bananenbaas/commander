@@ -867,6 +867,10 @@
     var top = main.scrollTop;
     replaceKeeping(main, out);
     main.scrollTop = top;
+    // Keys are recorded only while the Buttons tab is shown.
+    if (editor && out.indexOf(buttonsPanel) < 0) {
+      editor.stopRecording();
+    }
   }
 
   // replaceKeeping makes nodes the children of parent. A node already in
