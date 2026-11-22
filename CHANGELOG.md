@@ -6,6 +6,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0-beta.6] - 2026-11-22
+
 ### Changed
 - The repository is now `Bananenbaas/commander` (it was `kb7-commander`).
   Commander asks the new name for updates; older versions keep working
