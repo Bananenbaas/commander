@@ -885,6 +885,10 @@ func TestDontSwitchGame(t *testing.T) {
 		h.onPoll[2] = h.cancel
 		h.run(cfg)
 		h.want("poll", "open", "notify", "fresh 1", "poll", "poll", "close")
+		// Control: the game was polled, so staying on 1 is the rule at work.
+		if want := append(slices.Clone(procs.Swarm), game); !slices.Equal(h.names, want) {
+			h.t.Errorf("Running(%q), want Running(%q)", h.names, want)
+		}
 	})
 }
 

@@ -283,7 +283,8 @@ The rules:
 
 - `name` and `program` are required, except in `desktop.toml`, where `name`
   defaults to "Desktop". `program` is matched like `switch_when_running`:
-  upper or lower case, with or without `.exe`.
+  upper or lower case, with or without `.exe`. Unknown top-level keys are
+  refused.
 - `kb7` is optional in a game. A game without `kb7` leaves the keyboard
   alone: while it runs, the other running games, or the desktop profile,
   decide. Other keys under `[devices]` are ignored, so a file can already
@@ -367,7 +368,9 @@ so where the active profile is not known (the first switch of `apply` and
 through another profile first. When the loop starts again within the same
 `run` or Commander (a reload, or after Apply buttons), it keeps the profile
 the keyboard was on, also one chosen on the keyboard by hand, unless a
-game is running whose profile differs; that profile wins as always. After a reload the keyboard is taken to be on that profile,
+game is running whose profile differs; that profile wins as always. Games
+already running when the loop starts again count as started together, so the
+first-listed of them wins. After a reload the keyboard is taken to be on that profile,
 so nothing is switched at all; after Apply buttons, which switches profiles,
 or when the keyboard had not confirmed the switch to that profile, the
 switch back goes through another profile first. A profile tapped on the

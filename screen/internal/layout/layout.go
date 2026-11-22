@@ -66,7 +66,7 @@ type Config struct {
 	Dir      string
 	Profiles []Profile
 	Games    []Game // without Desktop; games/ files by file name, then games built from layouts by profile number
-	Desktop  *Game  // from games/desktop.toml, nil when there is none
+	Desktop  *Game  // from games/desktop.toml, nil when there is none; when set, its KB7 is set
 }
 
 type rawFile struct {
@@ -144,16 +144,8 @@ func Load(dir string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Desktop == nil && len(cfg.Profiles) == maxProfile+1 {
-		desktop := false
-		for _, p := range cfg.Profiles {
-			if p.SwitchWhenRunning == "" {
-				desktop = true
-			}
-		}
-		if !desktop {
-			return nil, fmt.Errorf("every profile 0 to %d has switch_when_running, so no profile is left for the desktop; remove it from one layout", maxProfile)
-		}
+	if cfg.Desktop == nil && len(cfg.claimed()) == maxProfile+1 {
+		return nil, fmt.Errorf("every profile 0 to %d is the kb7 profile of a game (switch_when_running or games/), so no profile is left for the desktop; free one or add games/desktop.toml", maxProfile)
 	}
 	return cfg, nil
 }
@@ -439,24 +431,38 @@ func parseColor(s string) (color.NRGBA, error) {
 	return color.NRGBA{R: byte(v >> 24), G: byte(v >> 16), B: byte(v >> 8), A: byte(v)}, nil
 }
 
+// claimed returns the profiles that a program is tied to: by a layout's
+// switch_when_running or by the kb7 of a game.
+func (c *Config) claimed() map[byte]bool {
+	m := map[byte]bool{}
+	for _, p := range c.Profiles {
+		if p.SwitchWhenRunning != "" {
+			m[p.Number] = true
+		}
+	}
+	for _, g := range c.Games {
+		if g.KB7 != nil {
+			m[*g.KB7] = true
+		}
+	}
+	return m
+}
+
 // DesktopProfile returns the profile the keyboard is to show while no game
 // runs. With a games/desktop.toml it is that file's kb7. Otherwise it is the
-// profile to show while none of the programs named in switch_when_running
-// runs: the lowest profile whose
-// layout has no switch_when_running. When every layout has one, it is the
-// lowest profile, 0 to 4, that no layout gives a program; that profile has no
-// layout, and its touches are not acted on. Only when all five profiles have
-// a program is it profile 0.
+// lowest profile that has a layout and that no program is tied to, by its
+// switch_when_running or by a game's kb7. When every layout's profile has a
+// program, it is the lowest profile, 0 to 4, that has none; that profile has
+// no layout, and its touches are not acted on. Only when all five profiles
+// have a program is it profile 0.
 func (c *Config) DesktopProfile() byte {
 	if c.Desktop != nil {
 		return *c.Desktop.KB7
 	}
+	claimed := c.claimed()
 	best := -1
-	program := map[byte]bool{}
 	for _, p := range c.Profiles {
-		if p.SwitchWhenRunning != "" {
-			program[p.Number] = true
-		} else if best < 0 || int(p.Number) < best {
+		if !claimed[p.Number] && (best < 0 || int(p.Number) < best) {
 			best = int(p.Number)
 		}
 	}
@@ -464,7 +470,7 @@ func (c *Config) DesktopProfile() byte {
 		return byte(best)
 	}
 	for n := byte(0); n <= maxProfile; n++ {
-		if !program[n] {
+		if !claimed[n] {
 			return n
 		}
 	}

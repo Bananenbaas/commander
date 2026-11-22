@@ -128,8 +128,9 @@ func (l *loop) idle(ctx context.Context, d time.Duration) {
 
 // noteStarts sets the states of the kb7 profile of every game whose program
 // was not running at the last poll and is now (or is at the first poll) to
-// their start values, and marks in the trace a game's program that was
-// running at the last poll and is not now.
+// their start values, and marks in the trace the program of a game with a kb7
+// profile that was running at the last poll and is not now; only such a game
+// can cause a switch.
 func (l *loop) noteStarts(running map[string]bool) {
 	for _, g := range l.cfg.Games {
 		n := g.Program
@@ -138,8 +139,10 @@ func (l *loop) noteStarts(running map[string]bool) {
 		}
 		if !running[n] && l.wasRunning[n] {
 			l.wasRunning[n] = false // marked once, also when two games share it
-			l.ended, l.endedAt = n, l.now()
-			l.trace.Mark(fmt.Sprintf("program %s ended", n))
+			if g.KB7 != nil {
+				l.ended, l.endedAt = n, l.now()
+				l.trace.Mark(fmt.Sprintf("program %s ended", n))
+			}
 		}
 	}
 	for _, g := range l.cfg.Games {

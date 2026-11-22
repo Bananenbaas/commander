@@ -96,7 +96,7 @@ func TestGamesErrors(t *testing.T) {
 	}{
 		{"no name", nil, map[string]string{"a.toml": "program = \"A.exe\"\n"}, []string{"games/a.toml", "name is required"}},
 		{"no program", nil, map[string]string{"a.toml": "name = \"A\"\n"}, []string{"games/a.toml", "program is required"}},
-		{"desktop with program", nil, map[string]string{"desktop.toml": "program = \"A.exe\"\n[devices]\nkb7 = 0\n"}, []string{"desktop", "program"}},
+		{"desktop with program", nil, map[string]string{"desktop.toml": "program = \"A.exe\"\n[devices]\nkb7 = 0\n"}, []string{"games/desktop.toml: the desktop game has no program"}},
 		{"desktop without kb7", nil, map[string]string{"desktop.toml": "name = \"Home\"\n"}, []string{"kb7 is required"}},
 		{"kb7 too high", nil, map[string]string{"a.toml": "name = \"A\"\nprogram = \"A.exe\"\n[devices]\nkb7 = 5\n"}, []string{"kb7 must be 0 to 4"}},
 		{"unknown key", nil, map[string]string{"a.toml": "name = \"A\"\nprogram = \"A.exe\"\ncolour = 1\n"}, []string{"games/a.toml", "unknown key"}},
@@ -290,5 +290,70 @@ func TestChooseLegacyFolder(t *testing.T) {
 	}
 	if p, g := c.Choose(nil); p != 0 || g != nil {
 		t.Errorf("idle: got %d, %v, want 0, nil", p, g)
+	}
+}
+
+func TestDesktopProfileSkipsProfilesGamesClaim(t *testing.T) {
+	dir := folder(t, map[string]string{
+		"desktop.toml": "profile = 2\n",
+		"sc.toml":      "profile = 1\n",
+	})
+	gamesDir(t, dir, map[string]string{"sc.toml": "name = \"SC\"\nprogram = \"SC.exe\"\n[devices]\nkb7 = 1\n"})
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.DesktopProfile(); got != 2 {
+		t.Fatalf("desktop profile %d, want 2", got)
+	}
+}
+
+func TestGamesFilesClaimingAllFiveProfilesAreRefused(t *testing.T) {
+	dir := folder(t, map[string]string{"p0.toml": "profile = 0\n"})
+	games := map[string]string{}
+	for n := range 5 {
+		games[fmt.Sprintf("g%d.toml", n)] = fmt.Sprintf("name = \"G%d\"\nprogram = \"P%d.exe\"\n[devices]\nkb7 = %d\n", n, n, n)
+	}
+	gamesDir(t, dir, games)
+	if _, err := Load(dir); err == nil {
+		t.Fatal("games naming all five profiles without a desktop game must be refused")
+	}
+}
+
+func TestGamesFilesSortIgnoringCase(t *testing.T) {
+	dir := folder(t, map[string]string{"desktop.toml": desktopTOML})
+	gamesDir(t, dir, map[string]string{
+		"Zed.toml":  "name = \"Zed\"\nprogram = \"Zed.exe\"\n",
+		"apex.toml": "name = \"Apex\"\nprogram = \"Apex.exe\"\n",
+	})
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Games) != 2 || c.Games[0].Name != "Apex" || c.Games[1].Name != "Zed" {
+		t.Fatalf("games: %+v", c.Games)
+	}
+}
+
+func TestTwoDesktopGameFilesAreRefused(t *testing.T) {
+	dir := folder(t, map[string]string{"desktop.toml": desktopTOML})
+	gamesDir(t, dir, map[string]string{"desktop.toml": gameDesktop})
+	gdir := filepath.Join(dir, "games")
+	write(t, gdir, "Desktop.toml", gameDesktop)
+	entries, err := os.ReadDir(gdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) < 2 {
+		t.Skip("case-insensitive file system")
+	}
+	_, err = Load(dir)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, w := range []string{"games/Desktop.toml", "games/desktop.toml"} {
+		if !strings.Contains(err.Error(), w) {
+			t.Errorf("error %q lacks %q", err, w)
+		}
 	}
 }

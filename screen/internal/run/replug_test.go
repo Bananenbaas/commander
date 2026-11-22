@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Bananenbaas/commander/screen/internal/device"
+	"github.com/Bananenbaas/commander/screen/internal/layout"
 	"github.com/Bananenbaas/commander/screen/internal/procs"
 	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
@@ -263,6 +264,29 @@ func TestProgramEndIsMarked(t *testing.T) {
 		want := []string{"program game.exe ended", "switching to profile 0, 0ms after game.exe was seen ending"}
 		if !slices.Equal(tr.marks, want) {
 			t.Errorf("marks %q, want %q", tr.marks, want)
+		}
+	})
+}
+
+// A game without a kb7 profile cannot cause a switch, so its end is not marked.
+func TestProgramEndWithoutProfileIsNotMarked(t *testing.T) {
+	test(t, func(h *harness) {
+		cfg := &layout.Config{
+			Profiles: []layout.Profile{{Number: 0}},
+			Games:    []layout.Game{{Name: "Game", Program: game}},
+			Desktop:  &layout.Game{Name: "Desktop", KB7: kb7(0)},
+		}
+		h.onPoll[1] = func() { h.running[game] = true }
+		h.onPoll[2] = func() { h.running[game] = false }
+		h.onPoll[3] = h.cancel
+		tr := &traceLog{h: h}
+		d := h.deps()
+		d.Trace = tr
+		if err := Run(h.ctx, cfg, d); err != nil {
+			h.t.Fatalf("Run: %v", err)
+		}
+		if len(tr.marks) != 0 {
+			t.Errorf("marks %q, want none", tr.marks)
 		}
 	})
 }

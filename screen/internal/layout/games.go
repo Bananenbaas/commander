@@ -57,18 +57,31 @@ func loadGames(dir string, profiles []Profile) (games []Game, desktop *Game, err
 				names = append(names, e.Name())
 			}
 		}
-		sort.Strings(names)
+		sort.Slice(names, func(i, j int) bool {
+			a, b := strings.ToLower(names[i]), strings.ToLower(names[j])
+			if a != b {
+				return a < b
+			}
+			return names[i] < names[j]
+		})
 	} else if serr != nil && !os.IsNotExist(serr) {
 		return nil, nil, serr
 	}
 
 	byProgram := map[string]string{} // program key -> file label
 	byName := map[string]string{}    // lower-case name -> file label
+	desktopLabel := ""
 	for _, fn := range names {
 		label := gamesFolder + "/" + fn
 		g, err := loadGame(filepath.Join(gdir, fn), label, strings.EqualFold(fn, desktopGameFile))
 		if err != nil {
 			return nil, nil, err
+		}
+		if g.Program == "" {
+			if desktopLabel != "" {
+				return nil, nil, fmt.Errorf("%s and %s are both the desktop game; keep one", desktopLabel, label)
+			}
+			desktopLabel = label
 		}
 		if prev, ok := byName[strings.ToLower(g.Name)]; ok {
 			return nil, nil, fmt.Errorf("%s and %s both use the name %q", prev, label, g.Name)
