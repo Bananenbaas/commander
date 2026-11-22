@@ -115,6 +115,12 @@ How the window is built:
 | Native Windows controls | No new dependency at all | Cannot carry this style; looks like stock Windows |
 | Fyne | A full toolkit | Needs cgo |
 
+Chosen binding: `github.com/wailsapp/go-webview2` (MIT): it builds without
+cgo and, without the `native_webview2loader` build tag, uses the WebView2
+runtime installed in Windows instead of loading an embedded Microsoft DLL
+from memory. A probe on the owner's machine (2026-11-22, runtime 157) opened
+a window, passed a message from the page to Go and closed cleanly.
+
 Chosen by the owner: WebView2. The owner also wants the door to Gio kept
 open: the window talks to Go through a narrow, fixed set of calls (below), so
 switching later means rebuilding the screens, not Commander.
@@ -140,9 +146,18 @@ How lighting is edited: **simple first, the layers behind "Advanced"**
 ### The window and the tray
 
 - The tray icon stays, with its menu. A new first item, **Open Commander**,
-  opens the window; so does a double click on the icon. Closing the window
-  leaves Commander running in the tray.
-- The window lives in the same process as the tray and the supervisor.
+  opens the window; so does a left click on the icon (the right click keeps
+  the menu). Closing the window leaves Commander running in the tray. A
+  second Open Commander brings the open window to the front.
+- **The window is a process of its own** (chosen by the owner,
+  2026-11-22): Open Commander starts `commander.exe` again in window mode,
+  and that process talks to the running Commander over a named pipe that
+  only the signed-in user can open. The Go binding to WebView2 ends the
+  process with `os.Exit` on most WebView2 errors, so in the Commander
+  process itself a failing window would drop the keyboard without the clean
+  stop (held keys, stored lighting). In a process of its own, a failing or
+  closed window never touches the keyboard. The window process ends when
+  its window is closed or when Commander quits.
 - Tray items that are settings (Start with Windows, Check for updates) also
   appear on the window's Settings page; both stay in step.
 - When the WebView2 runtime is missing, Open Commander shows a message box
@@ -321,8 +336,9 @@ A reference mock-up approved by the owner was made during the design; it used
 
 ### The narrow set of calls
 
-The window's pages talk to Go only through these calls (names indicative),
-so a later move to another toolkit replaces the pages and keeps these:
+The window's pages talk to Commander only through these calls (names
+indicative), carried over the named pipe, so a later move to another toolkit
+replaces the window process and keeps these:
 
 - `state()`: devices with their capabilities and connection, game profiles,
   the run state; plus a push when any of these change.
