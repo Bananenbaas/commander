@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 // Command commander runs the loop of kb7screen run for one configuration
-// folder with an icon in the Windows notification area, whose menu reloads
-// the configuration, applies the buttons, switches starting with Windows,
-// offers and installs updates from the project's releases and quits cleanly.
+// folder with an icon in the Windows notification area, whose menu opens
+// Commander's window, reloads the configuration, applies the buttons,
+// switches starting with Windows, offers and installs updates from the
+// project's releases and quits cleanly. commander.exe --window is that
+// window, a process of its own that connects to the running Commander.
 // It is built only for Windows, as a program without a console window:
 //
 //	go build -ldflags=-H=windowsgui ./cmd/commander
@@ -72,18 +74,27 @@ type startArgs struct {
 	// updatedFrom is the version this Commander replaced, set only by an
 	// update's restart (--updated-from).
 	updatedFrom string
+	// window is set by --window: run Commander's window, which connects to
+	// the Commander already running. It takes no other argument.
+	window bool
 }
 
 // parseStart reads the arguments: an optional folder and an optional
-// --updated-from <version>, in either order. Without a folder it uses the one
-// the settings remember (read with saved only then). A second folder, an
-// unknown flag or --updated-from without a value gives errBadArgs; no folder
+// --updated-from <version>, in either order, or --window on its own. Without
+// a folder it uses the one the settings remember (read with saved only then,
+// and never for --window). A second folder, an unknown flag, --updated-from
+// without a value or --window with anything else gives errBadArgs; no folder
 // from either gives errNoFolder.
 func parseStart(args []string, saved func() (string, error)) (startArgs, error) {
 	var st startArgs
 	folders := 0
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
+		case a == "--window":
+			if len(args) != 1 {
+				return startArgs{}, errBadArgs
+			}
+			return startArgs{window: true}, nil
 		case a == "--updated-from":
 			if i+1 >= len(args) || st.updatedFrom != "" {
 				return startArgs{}, errBadArgs

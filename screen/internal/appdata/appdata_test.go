@@ -168,6 +168,36 @@ func TestLogPath(t *testing.T) {
 	}
 }
 
+func TestWindowPaths(t *testing.T) {
+	_, local := setDirs(t)
+	if got, want := WindowLogPath(), filepath.Join(local, "Commander", "window.log"); got != want {
+		t.Errorf("WindowLogPath = %q, want %q", got, want)
+	}
+	if got, want := WebView2Dir(), filepath.Join(local, "Commander", "WebView2"); got != want {
+		t.Errorf("WebView2Dir = %q, want %q", got, want)
+	}
+}
+
+func TestOpenWindowLog(t *testing.T) {
+	setDirs(t)
+	w, err := OpenWindowLog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintln(w, "window line")
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	lines := readLines(t, WindowLogPath())
+	if len(lines) != 1 || !strings.HasSuffix(lines[0], " window line") {
+		t.Fatalf("window log = %q", lines)
+	}
+	checkStamped(t, lines)
+	if _, err := os.Stat(LogPath()); !os.IsNotExist(err) {
+		t.Errorf("the window log wrote to commander.log too: %v", err)
+	}
+}
+
 func readLines(t *testing.T, path string) []string {
 	t.Helper()
 	f, err := os.Open(path)

@@ -179,6 +179,13 @@ func TestParseStart(t *testing.T) {
 		{[]string{`D:\cfg`, "--updated-from"}, saved(`E:\old`, nil), startArgs{}, errBadArgs},
 		{[]string{"--nope", "a"}, saved(`E:\old`, nil), startArgs{}, errBadArgs},
 		{[]string{"--updated-from", "v1.0.0", "--updated-from", "v2.0.0"}, saved(`E:\old`, nil), startArgs{}, errBadArgs},
+		// The window process needs no folder and never reads the settings.
+		{[]string{"--window"}, saved("", broken), startArgs{window: true}, nil},
+		{[]string{"--window", `D:\cfg`}, saved(`E:\old`, nil), startArgs{}, errBadArgs},
+		{[]string{`D:\cfg`, "--window"}, saved(`E:\old`, nil), startArgs{}, errBadArgs},
+		{[]string{"--window", "--updated-from", "v1.0.0"}, saved(`E:\old`, nil), startArgs{}, errBadArgs},
+		{[]string{"--updated-from", "v1.0.0", "--window"}, saved(`E:\old`, nil), startArgs{}, errBadArgs},
+		{[]string{"--window", "--window"}, saved(`E:\old`, nil), startArgs{}, errBadArgs},
 	}
 	for _, c := range cases {
 		got, err := parseStart(c.args, c.load)

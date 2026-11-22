@@ -133,18 +133,34 @@ func updateItems(ctx context.Context, u *updater, logf func(string, ...any)) []t
 // checks at once.
 func toggleCheckUpdates(ctx context.Context, u *updater, logf func(string, ...any)) {
 	on, err := appdata.LoadCheckUpdates()
+	if err != nil {
+		logf("Check for updates not changed: %v", err)
+	} else {
+		err = setCheckUpdates(!on, func() { u.check(ctx, false) }, logf)
+	}
+	if err != nil {
+		messageBox("Check for updates was not changed:\n\n"+err.Error(), windows.MB_ICONWARNING)
+	}
+}
+
+// setCheckUpdates switches automatic checks on or off; switching them on
+// from off runs checkNow. The menu and the window both use it; the menu's
+// tick reads the settings each time.
+func setCheckUpdates(on bool, checkNow func(), logf func(string, ...any)) error {
+	was, err := appdata.LoadCheckUpdates()
 	if err == nil {
-		err = appdata.SaveCheckUpdates(!on)
+		err = appdata.SaveCheckUpdates(on)
 	}
 	if err != nil {
 		logf("Check for updates not changed: %v", err)
-		messageBox("Check for updates was not changed:\n\n"+err.Error(), windows.MB_ICONWARNING)
-		return
+		return err
 	}
-	if on {
+	switch {
+	case on && !was:
+		logf("Check for updates switched on")
+		checkNow()
+	case !on && was:
 		logf("Check for updates switched off")
-		return
 	}
-	logf("Check for updates switched on")
-	u.check(ctx, false)
+	return nil
 }

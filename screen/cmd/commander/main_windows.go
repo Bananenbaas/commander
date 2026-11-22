@@ -21,6 +21,7 @@ import (
 
 	"github.com/Bananenbaas/commander/screen/internal/appdata"
 	"github.com/Bananenbaas/commander/screen/internal/autostart"
+	"github.com/Bananenbaas/commander/screen/internal/control"
 	"github.com/Bananenbaas/commander/screen/internal/icon"
 	"github.com/Bananenbaas/commander/screen/internal/run"
 	"github.com/Bananenbaas/commander/screen/internal/supervisor"
@@ -41,6 +42,14 @@ func main() {
 // commander runs Commander and returns the exit code: 0 after a clean stop,
 // 1 when it could not start or not stop cleanly.
 func commander(args []string) int {
+	// The window process (--window) comes first: it takes no lock, starts
+	// no supervisor and no tray, and has a log of its own. The settings
+	// are read only for a start without a folder.
+	parsed, parseErr := parseStart(args, appdata.LoadFolder)
+	if parseErr == nil && parsed.window {
+		return windowMain()
+	}
+
 	logw, logErr := appdata.OpenLog()
 	out := io.Discard
 	if logErr == nil {
@@ -51,7 +60,7 @@ func commander(args []string) int {
 	logf := log.New(out, "", 0).Printf
 	logf("Commander %s starts", version)
 
-	parsed, err := parseStart(args, appdata.LoadFolder)
+	err := parseErr
 	dir, fromArg := parsed.dir, parsed.fromArg
 	if errors.Is(err, errBadArgs) {
 		logf("unusable arguments: %q", args)
@@ -74,6 +83,8 @@ func commander(args []string) int {
 	var tr *tray.Tray
 	var cancel context.CancelFunc
 	var crashOnce sync.Once
+	// svc is set before Serve starts, so OnState sees it.
+	var svc *control.Service
 	// crash ends Commander after a panic: it logs it with the stack, takes
 	// the tray icon away if it can and exits with 1. It is for panics on the
 	// goroutine that runs Serve, where the process cannot go on; OnState
@@ -111,6 +122,9 @@ func commander(args []string) int {
 				tr.Balloon(b.title, b.text)
 			}
 			prev = st
+			// SetState returns at once; the window gets the state as an
+			// event, or reads it when it connects.
+			svc.SetState(st)
 		},
 	}
 	// After an update the old Commander may still be giving back the locks.
@@ -182,11 +196,17 @@ func commander(args []string) int {
 		<-trayUp
 		tr.BalloonAction(title, text, onClick)
 	}, sup.Stop, logf)
+	// The window: a listener on the user's pipe, served one window at a
+	// time. Without the listener the tray works as before.
+	svc = control.New(controlDeps(updCtx, exe, dir, upd, logf))
+	win := newWindowServer(svc, exe, logf)
+	go win.serve()
 	tr, err = tray.Run(ctx, tray.Options{
 		Icon:       normal,
 		FailedIcon: failed,
 		Tip:        tipFor(prev),
-		Items:      menu(sup, dir, exe, logf, updateItems(updCtx, upd, logf)),
+		Items:      menu(sup, dir, exe, logf, win.ctl.open, updateItems(updCtx, upd, logf)),
+		OnClick:    win.ctl.open,
 		OnEndSession: func() {
 			// The Windows session ends: stop cleanly, but not longer than
 			// Windows waits. An upload in progress is not cut short; when
@@ -202,6 +222,7 @@ func commander(args []string) int {
 		},
 	})
 	if err != nil {
+		win.stop()
 		sup.Close()
 		logf("cannot show the tray icon: %v", err)
 		messageBox("Commander cannot show its icon in the notification area:\n\n"+err.Error(), windows.MB_ICONWARNING)
@@ -244,6 +265,9 @@ func commander(args []string) int {
 		sup.Stop()
 		<-served
 	}
+	// The window process sees its connection end and closes. This does not
+	// wait for a window call that is still running.
+	win.stop()
 	// Serve has given back the locks by now, so for a moment another
 	// Commander or kb7screen run can take the keyboard while this icon is
 	// still in the notification area. That is harmless: this one no longer
@@ -273,10 +297,15 @@ func commander(args []string) int {
 	return 0
 }
 
-// menu builds the tray menu; updates are the items for updates, put after
-// Start with Windows.
-func menu(sup *supervisor.Supervisor, dir, exe string, logf func(string, ...any), updates []tray.Item) []tray.Item {
+// menu builds the tray menu; openWindow is what Open Commander runs, and
+// updates are the items for updates, put after Start with Windows.
+func menu(sup *supervisor.Supervisor, dir, exe string, logf func(string, ...any), openWindow func(), updates []tray.Item) []tray.Item {
 	items := []tray.Item{
+		{Label: "Open Commander", OnClick: func() {
+			logf("Open Commander chosen")
+			openWindow()
+		}},
+		{Separator: true},
 		{Label: "Reload configuration", OnClick: func() {
 			logf("Reload configuration chosen")
 			sup.Reload()
@@ -310,6 +339,10 @@ func menu(sup *supervisor.Supervisor, dir, exe string, logf func(string, ...any)
 	}...)
 }
 
+// errNoExe means os.Executable failed, so nothing that needs the program's
+// own path can be done.
+var errNoExe = errors.New("Commander cannot find its own program file")
+
 // toggleAutostart switches starting with Windows on or off.
 func toggleAutostart(exe, dir string, logf func(string, ...any)) {
 	if exe == "" {
@@ -317,23 +350,38 @@ func toggleAutostart(exe, dir string, logf func(string, ...any)) {
 		return
 	}
 	on, err := autostart.Enabled(exe)
-	if err == nil {
-		if on {
-			err = autostart.Disable()
-		} else {
-			err = autostart.Enable(exe, dir)
-		}
+	if err != nil {
+		logf("Start with Windows not changed: %v", err)
+	} else {
+		err = setAutostart(exe, dir, !on, logf)
+	}
+	if err != nil {
+		messageBox("Start with Windows was not changed:\n\n"+err.Error(), windows.MB_ICONWARNING)
+	}
+}
+
+// setAutostart switches starting with Windows on, with dir, or off. The menu
+// and the window both use it; the menu's tick reads the registry each time.
+func setAutostart(exe, dir string, on bool, logf func(string, ...any)) error {
+	if exe == "" {
+		return errNoExe
+	}
+	var err error
+	if on {
+		err = autostart.Enable(exe, dir)
+	} else {
+		err = autostart.Disable()
 	}
 	if err != nil {
 		logf("Start with Windows not changed: %v", err)
-		messageBox("Start with Windows was not changed:\n\n"+err.Error(), windows.MB_ICONWARNING)
-		return
+		return err
 	}
 	if on {
-		logf("Start with Windows switched off")
-	} else {
 		logf("Start with Windows switched on: %s", autostart.Command(exe, dir))
+	} else {
+		logf("Start with Windows switched off")
 	}
+	return nil
 }
 
 // openPath opens a folder or file the way Explorer does; a failure is shown.

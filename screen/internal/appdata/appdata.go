@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 // Package appdata keeps Commander's own files: the settings in
-// %APPDATA%\Commander\settings.toml and the log in
-// %LOCALAPPDATA%\Commander\commander.log.
+// %APPDATA%\Commander\settings.toml, the log in
+// %LOCALAPPDATA%\Commander\commander.log and the window's log next to it.
 package appdata
 
 import (
@@ -201,7 +201,29 @@ func LogPath() string {
 // again at most once a minute; when the file cannot be opened again, the next
 // Write tries once more. The writer is safe for concurrent use.
 func OpenLog() (io.WriteCloser, error) {
-	path := LogPath()
+	return openLogAt(LogPath())
+}
+
+// WindowLogPath is the path of the window process's log file.
+func WindowLogPath() string {
+	return filepath.Join(localDir(), appName, "window.log")
+}
+
+// OpenWindowLog opens the log of the window process (commander.exe
+// --window), %LOCALAPPDATA%\Commander\window.log, which works and rotates
+// as OpenLog does. The window has a log of its own so that two processes
+// never write and rotate the same file.
+func OpenWindowLog() (io.WriteCloser, error) {
+	return openLogAt(WindowLogPath())
+}
+
+// WebView2Dir is the folder WebView2 keeps the window's data in.
+func WebView2Dir() string {
+	return filepath.Join(localDir(), appName, "WebView2")
+}
+
+// openLogAt opens the log at path for appending; see OpenLog.
+func openLogAt(path string) (io.WriteCloser, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("opening the log: %w", err)
 	}
