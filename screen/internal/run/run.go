@@ -131,9 +131,9 @@ type Deps struct {
 	// is in use; nil: no mixer, nothing of it is written. See Run.
 	Audio Audio
 	// Trace keeps the keyboard's recent traffic (device.Trace); nil: none.
-	// Run asks for it to be written to the log with the replug advice, and
-	// marks in it a program of switch_when_running seen ending and the
-	// switch that follows.
+	// Run asks for it to be written to the log with the replug advice, tells
+	// it when the keyboard confirmed a switch, and marks in it a program of
+	// switch_when_running seen ending and the switch that follows.
 	Trace Trace
 }
 
@@ -143,6 +143,9 @@ type Trace interface {
 	Dump(reason string)
 	// Mark puts text into the record.
 	Mark(text string)
+	// Answered says the keyboard confirmed a switch: a later failure is a
+	// new episode.
+	Answered()
 }
 
 // noTrace is the Trace used without one.
@@ -150,6 +153,7 @@ type noTrace struct{}
 
 func (noTrace) Dump(string) {}
 func (noTrace) Mark(string) {}
+func (noTrace) Answered()   {}
 
 // Resume is a profile an earlier Run left the keyboard on.
 //
@@ -712,6 +716,9 @@ func (l *loop) switchTo(ctx context.Context, p byte, how int) bool {
 	}
 	if err == nil {
 		l.failures = 0
+		if how != switchNone {
+			l.trace.Answered()
+		}
 	}
 	return true
 }

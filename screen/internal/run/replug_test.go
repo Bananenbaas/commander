@@ -174,12 +174,14 @@ func TestReplugAskedAgainAfterRecovery(t *testing.T) {
 // traceLog is a Trace that notes, in the harness's messages, every request
 // to write the trace, and keeps the markers.
 type traceLog struct {
-	h     *harness
-	marks []string
+	h        *harness
+	marks    []string
+	answered int
 }
 
 func (t *traceLog) Dump(reason string) { t.h.logf("trace dump: %s", reason) }
 func (t *traceLog) Mark(text string)   { t.marks = append(t.marks, text) }
+func (t *traceLog) Answered()          { t.answered++ }
 
 // tracedRun runs testConfig with a traceLog and returns it.
 func tracedRun(h *harness) *traceLog {
@@ -261,6 +263,41 @@ func TestProgramEndIsMarked(t *testing.T) {
 		want := []string{"program game.exe ended", "switching to profile 0, 0ms after game.exe was seen ending"}
 		if !slices.Equal(tr.marks, want) {
 			t.Errorf("marks %q, want %q", tr.marks, want)
+		}
+	})
+}
+
+// Only a switch the keyboard confirmed ends the trace's episode.
+func TestConfirmedSwitchesEndTheTraceEpisode(t *testing.T) {
+	test(t, func(h *harness) {
+		h.switchErr = func(n int) error {
+			if n == 2 {
+				return unconfirmed
+			}
+			return nil
+		}
+		h.onPoll[1] = func() { h.running[game] = true }
+		h.onPoll[2] = func() { h.running[game] = false }
+		h.onPoll[3] = h.cancel
+		tr := tracedRun(h)
+		h.want("poll", "open", "notify", "fresh 0",
+			"poll", "switch 2",
+			"poll", "switch 0",
+			"poll", "close")
+		if tr.answered != 2 {
+			t.Errorf("episode ended %d times, want 2: by the first two switches, not the unconfirmed one", tr.answered)
+		}
+	})
+}
+
+// Enabled notifications and an unconfirmed switch do not end the episode.
+func TestFailedSwitchDoesNotEndTheTraceEpisode(t *testing.T) {
+	test(t, func(h *harness) {
+		h.switchErr = func(int) error { return unconfirmed }
+		h.onPoll[1] = h.cancel
+		tr := tracedRun(h)
+		if tr.answered != 0 {
+			t.Errorf("episode ended %d times, want 0", tr.answered)
 		}
 	})
 }
