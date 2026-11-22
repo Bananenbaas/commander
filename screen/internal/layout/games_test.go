@@ -219,3 +219,76 @@ func TestGamesFromLayoutsComeAfterFilesByProfile(t *testing.T) {
 		t.Fatalf("order %v, want %v", got, want)
 	}
 }
+
+func testGames() []Game {
+	two, three := byte(2), byte(3)
+	return []Game{
+		{Name: "A", Program: "a.exe", KB7: &two},
+		{Name: "B", Program: "b.exe"},
+		{Name: "C", Program: "c.exe", KB7: &three},
+	}
+}
+
+func TestStartOrder(t *testing.T) {
+	g := testGames()
+	run := func(names ...string) map[string]bool {
+		m := map[string]bool{}
+		for _, n := range names {
+			m[n] = true
+		}
+		return m
+	}
+	tests := []struct {
+		name    string
+		prev    []string
+		running map[string]bool
+		want    []string
+	}{
+		{"same poll uses games order", nil, run("b.exe", "a.exe"), []string{"a.exe", "b.exe"}},
+		{"new program goes in front", []string{"a.exe"}, run("a.exe", "c.exe"), []string{"c.exe", "a.exe"}},
+		{"stopped programs drop out", []string{"c.exe", "a.exe"}, run("a.exe"), []string{"a.exe"}},
+		{"nothing running", []string{"a.exe"}, run(), nil},
+	}
+	for _, tc := range tests {
+		got := StartOrder(tc.prev, tc.running, g)
+		if len(got) != len(tc.want) || (len(got) > 0 && !reflect.DeepEqual(got, tc.want)) {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestChoose(t *testing.T) {
+	zero := byte(0)
+	g := testGames()
+	c := &Config{Games: g, Desktop: &Game{Name: "Desktop", KB7: &zero}}
+	tests := []struct {
+		name  string
+		order []string
+		want  byte
+		game  *Game
+	}{
+		{"nothing running", nil, 0, nil},
+		{"most recent game with a profile", []string{"c.exe", "a.exe"}, 3, &g[2]},
+		{"game without kb7 does not switch", []string{"b.exe", "a.exe"}, 2, &g[0]},
+		{"only a game without kb7", []string{"b.exe"}, 0, nil},
+	}
+	for _, tc := range tests {
+		p, got := c.Choose(tc.order)
+		if p != tc.want || got != tc.game && (got == nil || tc.game == nil || got.Name != tc.game.Name) {
+			t.Errorf("%s: got %d, %v; want %d, %v", tc.name, p, got, tc.want, tc.game)
+		}
+	}
+}
+
+func TestChooseLegacyFolder(t *testing.T) {
+	c, err := Load(folder(t, map[string]string{"desktop.toml": desktopTOML, "sc.toml": scTOML}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := c.Choose([]string{"Game.exe"}); p != 1 {
+		t.Errorf("running: got %d, want 1", p)
+	}
+	if p, g := c.Choose(nil); p != 0 || g != nil {
+		t.Errorf("idle: got %d, %v, want 0, nil", p, g)
+	}
+}

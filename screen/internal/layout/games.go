@@ -153,3 +153,39 @@ func loadGame(path, label string, isDesktop bool) (*Game, error) {
 	g.Program = *raw.Program
 	return g, nil
 }
+
+// StartOrder returns the programs of games that run now, most recently
+// started first. prev is the previous result; programs in running but
+// not in prev started since, and go in front, among themselves in the
+// order of games. Programs no longer running drop out.
+func StartOrder(prev []string, running map[string]bool, games []Game) []string {
+	was := map[string]bool{}
+	for _, p := range prev {
+		was[p] = true
+	}
+	var order []string
+	for _, g := range games {
+		if g.Program != "" && running[g.Program] && !was[g.Program] {
+			order = append(order, g.Program)
+		}
+	}
+	for _, p := range prev {
+		if running[p] {
+			order = append(order, p)
+		}
+	}
+	return order
+}
+
+// Choose returns the KB7 profile to show and the game that decided it
+// (nil for Desktop): the first program in order whose game has KB7 set.
+func (c *Config) Choose(order []string) (profile byte, g *Game) {
+	for _, p := range order {
+		for i := range c.Games {
+			if c.Games[i].Program == p && c.Games[i].KB7 != nil {
+				return *c.Games[i].KB7, &c.Games[i]
+			}
+		}
+	}
+	return c.DesktopProfile(), nil
+}
