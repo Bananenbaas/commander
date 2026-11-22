@@ -19,24 +19,6 @@ func fixedWriter(dir string) *writer {
 	return w
 }
 
-func layoutLossless(data []byte) bool {
-	f, err := layout.DecodeFile(data)
-	if err != nil {
-		return false
-	}
-	out, err := f.Encode()
-	return err == nil && string(out) == string(data)
-}
-
-func gameLossless(data []byte) bool {
-	g, err := layout.DecodeGameFile(data)
-	if err != nil {
-		return false
-	}
-	out, err := g.Encode()
-	return err == nil && string(out) == string(data)
-}
-
 func mustWrite(t *testing.T, path string, data []byte) {
 	t.Helper()
 	if err := os.WriteFile(path, data, 0o644); err != nil {

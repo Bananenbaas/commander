@@ -491,13 +491,33 @@ func saveLedger(save func() error) error {
 // renderAll renders every button, sorted per profile by page and position,
 // and refuses layouts that need more pictures than there are slots.
 func renderAll(cfg *layout.Config) (map[byte][]job, error) {
+	jobs, n, err := renderJobs(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if n > ledger.MaxSlot {
+		return nil, fmt.Errorf("the layouts hold %d different pictures and there are %d slots: %w", n, ledger.MaxSlot, ledger.ErrNoSlot)
+	}
+	return jobs, nil
+}
+
+// CheckPictures renders every button of cfg and returns the number of
+// different pictures, or an error naming the button that does not render.
+func CheckPictures(cfg *layout.Config) (int, error) {
+	_, n, err := renderJobs(cfg)
+	return n, err
+}
+
+// renderJobs renders every button, sorted per profile by page and position,
+// and counts the different pictures.
+func renderJobs(cfg *layout.Config) (map[byte][]job, int, error) {
 	jobs := map[byte][]job{}
 	hashes := map[string]bool{}
 	for _, p := range cfg.Profiles {
 		for _, b := range p.Buttons {
 			data, err := render(b)
 			if err != nil {
-				return nil, fmt.Errorf("%s: page %d position %d: %w", filepath.Base(p.File), b.Page, b.Position, err)
+				return nil, 0, fmt.Errorf("%s: page %d position %d: %w", filepath.Base(p.File), b.Page, b.Position, err)
 			}
 			h := picture.Hash(data)
 			hashes[h] = true
@@ -512,10 +532,7 @@ func renderAll(cfg *layout.Config) (map[byte][]job, error) {
 			return js[i].o.Position < js[j].o.Position
 		})
 	}
-	if len(hashes) > ledger.MaxSlot {
-		return nil, fmt.Errorf("the layouts hold %d different pictures and there are %d slots: %w", len(hashes), ledger.MaxSlot, ledger.ErrNoSlot)
-	}
-	return jobs, nil
+	return jobs, len(hashes), nil
 }
 
 // render returns the encoded picture of a button.
