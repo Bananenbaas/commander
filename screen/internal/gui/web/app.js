@@ -305,8 +305,12 @@
       if (app.page !== page) {
         app.page = page;
         main.scrollTop = 0;
-        if (page === "updates" && !app.update) {
-          loadUpdate();
+        // Fetched anew on every visit: the tray menu and the automatic
+        // check change them while the window is open.
+        if (page === "settings") {
+          loadSettings("settings");
+        } else if (page === "updates") {
+          loadUpdate("updates");
         }
         render();
       }
@@ -478,13 +482,42 @@
     return gamePage(gameName(g), when, g.kb7);
   }
 
+  // settingsGen and updateGen count the answers that set app.settings and
+  // app.update, so a fetch that was overtaken by a newer answer is ignored.
+  var settingsGen = 0;
+  var updateGen = 0;
+
+  function setSettings(result) {
+    if (result && typeof result === "object") {
+      settingsGen += 1;
+      app.settings = result;
+      app.settingsError = "";
+      applyTheme();
+    }
+  }
+
+  // loadSettings fetches the settings. With onPage, the answer counts only
+  // while that page is still open.
+  function loadSettings(onPage) {
+    var gen = settingsGen;
+    return call("settings").then(function (result) {
+      if ((onPage && app.page !== onPage) || gen !== settingsGen) {
+        return;
+      }
+      setSettings(result);
+      render();
+    }, function (err) {
+      if ((onPage && app.page !== onPage) || gen !== settingsGen) {
+        return;
+      }
+      app.settingsError = err.message;
+      render();
+    });
+  }
+
   function saveSetting(key, args) {
     run(key, "saveSettings", args, function (result) {
-      if (result && typeof result === "object") {
-        app.settings = result;
-        app.settingsError = "";
-        applyTheme();
-      }
+      setSettings(result);
       setNote(key, "Saved", false);
     });
   }
@@ -594,16 +627,26 @@
 
   function setUpdate(result) {
     if (result && typeof result === "object") {
+      updateGen += 1;
       app.update = result;
       app.updateError = "";
     }
   }
 
-  function loadUpdate() {
+  // loadUpdate fetches what is on offer. With onPage, the answer counts
+  // only while that page is still open.
+  function loadUpdate(onPage) {
+    var gen = updateGen;
     call("update").then(function (result) {
+      if ((onPage && app.page !== onPage) || gen !== updateGen) {
+        return;
+      }
       setUpdate(result);
       render();
     }, function (err) {
+      if ((onPage && app.page !== onPage) || gen !== updateGen) {
+        return;
+      }
       app.updateError = err.message;
       render();
     });
@@ -713,14 +756,7 @@
   }, function (err) {
     app.stateError = err.message;
   });
-  var gotSettings = call("settings").then(function (result) {
-    if (result && typeof result === "object") {
-      app.settings = result;
-      applyTheme();
-    }
-  }, function (err) {
-    app.settingsError = err.message;
-  });
+  var gotSettings = loadSettings("");
   Promise.all([gotState, gotSettings]).then(function () {
     app.started = true;
     render();
