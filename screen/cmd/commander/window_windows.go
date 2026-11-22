@@ -10,6 +10,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os/exec"
+	"path/filepath"
+	"runtime/debug"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/wailsapp/go-webview2/webviewloader"
@@ -27,6 +32,61 @@ import (
 
 // acceptRetry is the wait after a failed Accept before the next one.
 const acceptRetry = time.Second
+
+// asfwAny lets any process take the foreground (ASFW_ANY).
+const asfwAny = 0xFFFFFFFF
+
+var (
+	user32                       = windows.NewLazySystemDLL("user32.dll")
+	procAllowSetForegroundWindow = user32.NewProc("AllowSetForegroundWindow")
+)
+
+// allowForeground lets the window process pid bring its window to the
+// front. Windows refuses SetForegroundWindow to a background process unless
+// the process the user is working with (Commander, after a click on its
+// icon or menu) allows it first. pid 0 (unknown) allows any process.
+func allowForeground(pid uint32, logf func(string, ...any)) {
+	if pid == 0 {
+		pid = asfwAny
+	}
+	if r, _, err := procAllowSetForegroundWindow.Call(uintptr(pid)); r == 0 {
+		logf("the window may not come to the front: %v", err)
+	}
+}
+
+// clientPID is the process ID at the other end of the pipe connection c, 0
+// when it cannot be read.
+func clientPID(c io.ReadWriteCloser) uint32 {
+	sc, ok := c.(syscall.Conn)
+	if !ok {
+		return 0
+	}
+	raw, err := sc.SyscallConn()
+	if err != nil {
+		return 0
+	}
+	var pid uint32
+	if err := raw.Control(func(fd uintptr) {
+		if windows.GetNamedPipeClientProcessId(windows.Handle(fd), &pid) != nil {
+			pid = 0
+		}
+	}); err != nil {
+		return 0
+	}
+	return pid
+}
+
+// startWindow starts commander.exe --window in the program's folder and
+// lets it come to the front.
+func startWindow(exe string, logf func(string, ...any)) error {
+	cmd := exec.Command(exe, "--window")
+	cmd.Dir = filepath.Dir(exe)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	allowForeground(uint32(cmd.Process.Pid), logf)
+	return cmd.Process.Release()
+}
 
 // webviewRuntime is the version of the installed WebView2 runtime; "" or an
 // error means there is none. It never ends the process.
@@ -79,7 +139,9 @@ func windowMain() int {
 		messageBox(notRunningText, windows.MB_ICONINFORMATION)
 	default:
 		logf("window failed: %v", err)
-		messageBox("Commander's window could not be opened:\n\n"+err.Error(), windows.MB_ICONWARNING)
+		// The runtime is there, so this is most likely WebView2 failing to
+		// start; reinstalling it is the usual cure.
+		messageBox(openFailedText+err.Error()+"\n\n"+webviewRepairText, windows.MB_ICONWARNING)
 	}
 	return 1
 }
@@ -87,93 +149,146 @@ func windowMain() int {
 // windowServer is the tray process's side of the window: the pipe it
 // listens on, the connection it serves and the control service behind it.
 type windowServer struct {
-	ln   *pipe.Listener // nil when listening failed
-	err  error          // why ln is nil
 	svc  *control.Service
 	conn windowConn
 	ctl  *windowCtl
 	logf func(string, ...any)
-	done chan struct{} // closed when the accept loop has returned
+
+	mu      sync.Mutex
+	ln      *pipe.Listener // nil until listening works
+	stopped bool           // stop was called: no new listener
+	loops   sync.WaitGroup // the running accept loop
 }
 
-// newWindowServer listens on the user's pipe. A failure is logged and kept:
-// the tray goes on, and Open Commander says why there is no window.
+// newWindowServer listens on the user's pipe. A failure is logged and the
+// tray goes on; Open Commander tries to listen again before it says why
+// there is no window (after an update's restart the old Commander may still
+// have held the pipe).
 func newWindowServer(svc *control.Service, exe string, logf func(string, ...any)) *windowServer {
-	ws := &windowServer{svc: svc, logf: logf, done: make(chan struct{})}
-	name, err := pipe.Name()
-	if err == nil {
-		ws.ln, err = pipe.Listen(name)
-	}
-	if err != nil {
-		ws.err = err
-		logf("the window cannot be offered: %v", err)
-	}
+	ws := &windowServer{svc: svc, logf: logf}
 	ws.ctl = &windowCtl{
 		connected: ws.conn.connected,
-		show:      svc.Show,
-		runtime:   webviewRuntime,
+		show: func() {
+			allowForeground(ws.conn.livePID(), logf)
+			svc.Show()
+		},
+		runtime: webviewRuntime,
 		start: func() error {
-			if ws.err != nil {
-				return fmt.Errorf("Commander cannot listen for its window: %w", ws.err)
+			if err := ws.listen(); err != nil {
+				logf("the window cannot be offered: %v", err)
+				return fmt.Errorf("Commander cannot listen for its window: %w", err)
 			}
 			if exe == "" {
-				return errors.New("Commander cannot find its own program file")
+				return errNoExe
 			}
 			logf("starting the window")
-			return startProgram(exe, []string{"--window"})
+			return startWindow(exe, logf)
 		},
-		tell: func(text string) { messageBox(text, windows.MB_ICONINFORMATION) },
+		tell: func(text string) {
+			messageBox(text, windows.MB_ICONINFORMATION|windows.MB_SETFOREGROUND|windows.MB_TOPMOST)
+		},
+	}
+	// The accept loop uses ws.ctl, so it starts only now.
+	if err := ws.listen(); err != nil {
+		logf("the window cannot be offered yet: %v", err)
 	}
 	return ws
 }
 
-// serve accepts window connections until stop, serving one at a time; a
-// second one while a window is connected is closed at once.
-func (ws *windowServer) serve() {
-	defer close(ws.done)
-	if ws.ln == nil {
+// listen makes sure the pipe is listened on and its accept loop runs; it
+// does nothing when that is already so.
+func (ws *windowServer) listen() error {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	if ws.ln != nil {
+		return nil
+	}
+	if ws.stopped {
+		return errors.New("Commander is stopping")
+	}
+	name, err := pipe.Name()
+	if err != nil {
+		return err
+	}
+	ln, err := pipe.Listen(name)
+	if err != nil {
+		return err
+	}
+	ws.ln = ln
+	ws.loops.Add(1)
+	go ws.serve(ln)
+	return nil
+}
+
+// serve accepts window connections on ln until it is closed, serving one at
+// a time; a second one while a window is connected is closed at once.
+func (ws *windowServer) serve(ln *pipe.Listener) {
+	defer ws.loops.Done()
+	for ws.acceptOne(ln) {
+	}
+}
+
+// acceptOne accepts and starts serving one connection; false means ln is
+// closed. A panic is logged and the loop goes on accepting.
+func (ws *windowServer) acceptOne(ln *pipe.Listener) (more bool) {
+	defer func() {
+		if v := recover(); v != nil {
+			ws.logf("window accept loop: panic: %v\n%s", v, debug.Stack())
+			more = true
+		}
+	}()
+	c, err := ln.Accept()
+	if errors.Is(err, pipe.ErrClosed) {
+		return false
+	}
+	if err != nil {
+		ws.logf("window connection not accepted: %v", err)
+		time.Sleep(acceptRetry)
+		return true
+	}
+	sc := &servedConn{ReadWriteCloser: c, wc: &ws.conn, pid: clientPID(c)}
+	if !ws.conn.take(sc) {
+		ws.logf("a second window connection was closed: a window is already connected")
+		c.Close()
+		return true
+	}
+	ws.ctl.attached()
+	ws.logf("window connected (process %d)", sc.pid)
+	go ws.serveConn(sc)
+	return true
+}
+
+// serveConn serves one window until its connection ends. bridge.Serve
+// guards the handlers it runs on its own goroutines; this guards Serve
+// itself, so a panic there closes the connection instead of Commander.
+func (ws *windowServer) serveConn(sc *servedConn) {
+	defer sc.Close()
+	defer func() {
+		if v := recover(); v != nil {
+			ws.logf("window connection: panic: %v\n%s", v, debug.Stack())
+		}
+	}()
+	if err := bridge.Serve(context.Background(), sc, ws.svc.Handle, ws.svc.Events()); err != nil {
+		ws.logf("window connection ended: %v", err)
 		return
 	}
-	for {
-		c, err := ws.ln.Accept()
-		if errors.Is(err, pipe.ErrClosed) {
-			return
-		}
-		if err != nil {
-			ws.logf("window connection not accepted: %v", err)
-			time.Sleep(acceptRetry)
-			continue
-		}
-		sc := &servedConn{ReadWriteCloser: c, wc: &ws.conn}
-		if !ws.conn.take(sc) {
-			ws.logf("a second window connection was closed: a window is already connected")
-			c.Close()
-			continue
-		}
-		ws.ctl.attached()
-		ws.logf("window connected")
-		go func() {
-			err := bridge.Serve(context.Background(), sc, ws.svc.Handle, ws.svc.Events())
-			sc.Close()
-			if err != nil {
-				ws.logf("window connection ended: %v", err)
-			} else {
-				ws.logf("window disconnected")
-			}
-		}()
-	}
+	ws.logf("window disconnected")
 }
 
 // stop closes the listener and the live connection, so the window process
 // sees its connection end and closes, and stops the control service. It does
 // not wait for calls still running (a question box may be open).
 func (ws *windowServer) stop() {
-	if ws.ln != nil {
-		if err := ws.ln.Close(); err != nil {
+	ws.mu.Lock()
+	ws.stopped = true
+	ln := ws.ln
+	ws.mu.Unlock()
+	if ln != nil {
+		if err := ln.Close(); err != nil {
 			ws.logf("closing the window pipe: %v", err)
 		}
-		<-ws.done
 	}
+	ws.loops.Wait()
 	ws.conn.closeAll()
 	ws.svc.Close()
 }

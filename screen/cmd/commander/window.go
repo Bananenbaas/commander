@@ -17,7 +17,12 @@ const (
 	webviewMissingText = "Commander's window needs the Microsoft Edge WebView2 Runtime, which is not installed. " +
 		"Download it from https://developer.microsoft.com/microsoft-edge/webview2/ and open Commander again."
 	startFailedText = "Commander's window could not be started: "
-	notRunningText  = "Commander is not running. Start Commander first."
+	// openFailedText and webviewRepairText are the window process's box
+	// when WebView2 is installed but the window still cannot be opened.
+	openFailedText    = "Commander's window could not be opened: "
+	webviewRepairText = "If this keeps happening, install the Microsoft Edge WebView2 Runtime again from " +
+		"https://developer.microsoft.com/microsoft-edge/webview2/ and open Commander again."
+	notRunningText = "Commander is not running. Start Commander first."
 )
 
 // windowCtl decides what Open Commander and the left click on the tray icon
@@ -122,6 +127,17 @@ func (wc *windowConn) connected() bool {
 	return wc.live != nil
 }
 
+// livePID is the process ID of the live connection's window, 0 when none
+// is live or the ID could not be read.
+func (wc *windowConn) livePID() uint32 {
+	wc.mu.Lock()
+	defer wc.mu.Unlock()
+	if sc, ok := wc.live.(*servedConn); ok {
+		return sc.pid
+	}
+	return 0
+}
+
 // closeAll closes the live connection and refuses any later one.
 func (wc *windowConn) closeAll() {
 	wc.mu.Lock()
@@ -139,6 +155,7 @@ func (wc *windowConn) closeAll() {
 type servedConn struct {
 	io.ReadWriteCloser
 	wc   *windowConn
+	pid  uint32 // the window process, 0 when unknown
 	once sync.Once
 }
 

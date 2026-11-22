@@ -199,3 +199,25 @@ func TestWindowConnCloseAll(t *testing.T) {
 		t.Fatal("a connection was taken after closeAll")
 	}
 }
+
+func TestWindowConnLivePID(t *testing.T) {
+	var wc windowConn
+	if pid := wc.livePID(); pid != 0 {
+		t.Fatalf("livePID = %d with no connection, want 0", pid)
+	}
+	c := &servedConn{ReadWriteCloser: &fakeConn{}, wc: &wc, pid: 4242}
+	wc.take(c)
+	if pid := wc.livePID(); pid != 4242 {
+		t.Fatalf("livePID = %d, want 4242", pid)
+	}
+	c.Close()
+	if pid := wc.livePID(); pid != 0 {
+		t.Fatalf("livePID = %d after the close, want 0", pid)
+	}
+}
+
+func TestWebviewRepairTextHasLink(t *testing.T) {
+	if !strings.Contains(webviewRepairText, "https://developer.microsoft.com/microsoft-edge/webview2/") {
+		t.Errorf("webviewRepairText = %q, want the download link", webviewRepairText)
+	}
+}

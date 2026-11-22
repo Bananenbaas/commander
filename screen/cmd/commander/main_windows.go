@@ -200,7 +200,6 @@ func commander(args []string) int {
 	// time. Without the listener the tray works as before.
 	svc = control.New(controlDeps(updCtx, exe, dir, upd, logf))
 	win := newWindowServer(svc, exe, logf)
-	go win.serve()
 	tr, err = tray.Run(ctx, tray.Options{
 		Icon:       normal,
 		FailedIcon: failed,
@@ -212,6 +211,9 @@ func commander(args []string) int {
 			// Windows waits. An upload in progress is not cut short; when
 			// the session goes on after all, Commander has stopped.
 			sessionEnd.Store(true)
+			// The window is not stopped here: its pipe breaks when
+			// Commander ends, and the window process gets its own end of
+			// the session.
 			logf("the Windows session ends: stopping")
 			sup.Stop()
 			select {
