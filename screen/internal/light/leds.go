@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
+	"github.com/Bananenbaas/commander/screen/internal/action"
 )
 
 // NumLEDs is the number of slots in the LED table; 94 of them drive something.

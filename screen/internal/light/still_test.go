@@ -5,7 +5,7 @@ package light
 import (
 	"testing"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
+	"github.com/Bananenbaas/commander/screen/internal/action"
 )
 
 func TestStillStates(t *testing.T) {

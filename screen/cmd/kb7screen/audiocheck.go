@@ -7,7 +7,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/audio"
+	"github.com/Bananenbaas/commander/screen/internal/audio"
 )
 
 // audioSeconds is how long the audio command follows the changes.

@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/runlock"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/supervisor"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/update"
+	"github.com/Bananenbaas/commander/screen/internal/runlock"
+	"github.com/Bananenbaas/commander/screen/internal/supervisor"
+	"github.com/Bananenbaas/commander/screen/internal/update"
 )
 
 const (

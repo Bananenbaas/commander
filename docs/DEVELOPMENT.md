@@ -1,6 +1,6 @@
 # Development notes
 
-Working conventions for KB7 Unleashed (`kb7-commander`). For how captures are
+Working conventions for KB7 Unleashed (`commander`, until 2026-11-22 `kb7-commander`). For how captures are
 made, see [`CAPTURE-GUIDE.md`](CAPTURE-GUIDE.md); for what is known about the
 protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 [`../CONTRIBUTING.md`](../CONTRIBUTING.md).
@@ -111,6 +111,12 @@ names `commander-windows-amd64.exe` and `SHA256SUMS.txt`, the `sha256sum` line
 format with plain file names, the `vMAJOR.MINOR.PATCH[-pre]` tag scheme, and
 deleting `<exe>.old` and `<exe>.new` at start. Changing any of them breaks
 updates for installed Commanders.
+
+The repository was renamed from `kb7-commander` to `commander` on 2026-11-22.
+Commanders up to v0.1.0-beta.5 ask the old name for releases and reach the
+new one through GitHub's redirect. That redirect ends if a repository named
+`kb7-commander` is ever created again under the same account, so that name
+must stay unused.
 
 ## Known gaps and pitfalls
 

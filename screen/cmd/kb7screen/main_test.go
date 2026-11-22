@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/apply"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/action"
+	"github.com/Bananenbaas/commander/screen/internal/apply"
+	"github.com/Bananenbaas/commander/screen/internal/light"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 func TestParseArgs(t *testing.T) {

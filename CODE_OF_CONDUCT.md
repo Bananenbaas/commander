@@ -67,7 +67,7 @@ Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the maintainer of this project, GitHub user
 [@Bananenbaas](https://github.com/Bananenbaas). Reports can be sent privately
 through GitHub's **Report a vulnerability** form on
-<https://github.com/Bananenbaas/kb7-commander> (it is a private channel and may
+<https://github.com/Bananenbaas/commander> (it is a private channel and may
 be used for conduct reports as well), or through GitHub's own
 ["Report abuse"](https://github.com/contact/report-abuse) tools if you would
 rather not contact the maintainer directly.

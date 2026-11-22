@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/picture"
+	"github.com/Bananenbaas/commander/screen/internal/layout"
+	"github.com/Bananenbaas/commander/screen/internal/picture"
 )
 
 func TestRenderButtonMatchesWhatApplySends(t *testing.T) {

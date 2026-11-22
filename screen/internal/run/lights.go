@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/keyboard"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/action"
+	"github.com/Bananenbaas/commander/screen/internal/device"
+	"github.com/Bananenbaas/commander/screen/internal/keyboard"
+	"github.com/Bananenbaas/commander/screen/internal/layout"
+	"github.com/Bananenbaas/commander/screen/internal/light"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 // quiet is how long after notifications are enabled no lighting frame is

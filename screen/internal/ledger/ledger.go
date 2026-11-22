@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 // MaxSlot is the highest picture slot. Slots 9-15 were seen taking uploads

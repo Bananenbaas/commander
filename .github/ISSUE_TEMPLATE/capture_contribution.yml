@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Captures are the bottleneck in Phase 0, so thank you. Follow
-        [`docs/CAPTURE-GUIDE.md`](https://github.com/Bananenbaas/kb7-commander/blob/main/docs/CAPTURE-GUIDE.md):
+        [`docs/CAPTURE-GUIDE.md`](https://github.com/Bananenbaas/commander/blob/main/docs/CAPTURE-GUIDE.md):
         one action per capture, every scenario twice, no typing while recording.
 
         **Raw captures are never published.** Keep the files on your own machine

@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/ledger"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 func TestClearLaunchers(t *testing.T) {

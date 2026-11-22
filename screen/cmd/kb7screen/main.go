@@ -20,17 +20,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/access"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/apply"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/keyboard"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/keys"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/picture"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/request"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/runlock"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/supervisor"
+	"github.com/Bananenbaas/commander/screen/internal/access"
+	"github.com/Bananenbaas/commander/screen/internal/action"
+	"github.com/Bananenbaas/commander/screen/internal/apply"
+	"github.com/Bananenbaas/commander/screen/internal/keyboard"
+	"github.com/Bananenbaas/commander/screen/internal/keys"
+	"github.com/Bananenbaas/commander/screen/internal/layout"
+	"github.com/Bananenbaas/commander/screen/internal/ledger"
+	"github.com/Bananenbaas/commander/screen/internal/picture"
+	"github.com/Bananenbaas/commander/screen/internal/request"
+	"github.com/Bananenbaas/commander/screen/internal/runlock"
+	"github.com/Bananenbaas/commander/screen/internal/supervisor"
 )
 
 // version is set at release builds with -ldflags "-X main.version=...".

@@ -2,7 +2,7 @@
 
 package light
 
-import "github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+import "github.com/Bananenbaas/commander/screen/internal/proto"
 
 // Still renders s as a still picture for the keyboard's stored lighting: at
 // t = 0, without presses and with every state at its start value, not scaled

@@ -1,4 +1,4 @@
-module github.com/Bananenbaas/kb7-commander/screen
+module github.com/Bananenbaas/commander/screen
 
 go 1.27
 

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/ledger"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 // stored16 is the 0x16 table the fake holds before anything is applied: the

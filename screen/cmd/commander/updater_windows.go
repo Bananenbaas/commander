@@ -12,9 +12,9 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/appdata"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/tray"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/update"
+	"github.com/Bananenbaas/commander/screen/internal/appdata"
+	"github.com/Bananenbaas/commander/screen/internal/tray"
+	"github.com/Bananenbaas/commander/screen/internal/update"
 )
 
 // newUpdater returns the updater that talks to GitHub and shows its

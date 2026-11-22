@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/runlock"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/supervisor"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/update"
+	"github.com/Bananenbaas/commander/screen/internal/runlock"
+	"github.com/Bananenbaas/commander/screen/internal/supervisor"
+	"github.com/Bananenbaas/commander/screen/internal/update"
 )
 
 // note is one balloon the updater asked for.
@@ -51,7 +51,7 @@ func (f *fakeUI) releaseCalls() int {
 func beta2() update.Release {
 	return update.Release{
 		Tag:  "v0.1.0-beta.2",
-		Page: "https://github.com/Bananenbaas/kb7-commander/releases/tag/v0.1.0-beta.2",
+		Page: "https://github.com/Bananenbaas/commander/releases/tag/v0.1.0-beta.2",
 		Assets: []update.Asset{
 			{Name: update.ExeAsset, URL: "https://example.invalid/exe"},
 			{Name: update.SumsAsset, URL: "https://example.invalid/sums"},

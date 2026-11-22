@@ -16,12 +16,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/keyboard"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/picture"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/device"
+	"github.com/Bananenbaas/commander/screen/internal/keyboard"
+	"github.com/Bananenbaas/commander/screen/internal/layout"
+	"github.com/Bananenbaas/commander/screen/internal/ledger"
+	"github.com/Bananenbaas/commander/screen/internal/picture"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 // fakeKB models the keyboard: a 0x29 and a 0x25 table per profile, the

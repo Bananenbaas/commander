@@ -9,10 +9,10 @@ import (
 	"slices"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/audio"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/keyboard"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/audio"
+	"github.com/Bananenbaas/commander/screen/internal/device"
+	"github.com/Bananenbaas/commander/screen/internal/keyboard"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 // Session is the system volume or one program's volume.

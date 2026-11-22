@@ -12,9 +12,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/apply"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/picture"
+	"github.com/Bananenbaas/commander/screen/internal/apply"
+	"github.com/Bananenbaas/commander/screen/internal/layout"
+	"github.com/Bananenbaas/commander/screen/internal/picture"
 )
 
 const (

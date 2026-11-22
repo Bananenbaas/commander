@@ -15,13 +15,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/apply"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/audio"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/request"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/run"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/runlock"
+	"github.com/Bananenbaas/commander/screen/internal/apply"
+	"github.com/Bananenbaas/commander/screen/internal/audio"
+	"github.com/Bananenbaas/commander/screen/internal/layout"
+	"github.com/Bananenbaas/commander/screen/internal/ledger"
+	"github.com/Bananenbaas/commander/screen/internal/request"
+	"github.com/Bananenbaas/commander/screen/internal/run"
+	"github.com/Bananenbaas/commander/screen/internal/runlock"
 )
 
 const testPoll = 50 * time.Millisecond

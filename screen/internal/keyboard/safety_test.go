@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/device"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 // tickSpy advances the clock by step on every read and answers each with the

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 var _ Device = (*Fake)(nil)

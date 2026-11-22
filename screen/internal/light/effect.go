@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
+	"github.com/Bananenbaas/commander/screen/internal/action"
 )
 
 // Layer holds one colour per LED with straight (not premultiplied) alpha.

@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/procs"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/action"
+	"github.com/Bananenbaas/commander/screen/internal/device"
+	"github.com/Bananenbaas/commander/screen/internal/layout"
+	"github.com/Bananenbaas/commander/screen/internal/procs"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 const confirmPos = 12 // a tap of A that needs the finger to stay down

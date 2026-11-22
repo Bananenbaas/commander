@@ -16,7 +16,7 @@ import (
 
 const (
 	// ReleasesURL lists the newest releases of the project.
-	ReleasesURL = "https://api.github.com/repos/Bananenbaas/kb7-commander/releases?per_page=20"
+	ReleasesURL = "https://api.github.com/repos/Bananenbaas/commander/releases?per_page=20"
 	// MaxSize is the largest body Commander accepts for a download.
 	MaxSize = 64 << 20
 

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
+	"github.com/Bananenbaas/commander/screen/internal/action"
 )
 
 // Event is one press or release of a key on the KB7. A held key repeats its

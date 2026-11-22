@@ -67,7 +67,7 @@ Chosen by the owner: ask first (not update by itself), and the first approach.
 
 ### Finding the newest release
 
-`GET https://api.github.com/repos/Bananenbaas/kb7-commander/releases?per_page=20`
+`GET https://api.github.com/repos/Bananenbaas/commander/releases?per_page=20`
 over HTTPS, without authentication (60 requests an hour per address is far
 more than one a day needs). Drafts are skipped. Each release's tag is read as
 a semantic version: `v`, then `MAJOR.MINOR.PATCH`, then optionally `-` and

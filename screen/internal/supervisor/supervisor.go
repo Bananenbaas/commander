@@ -32,17 +32,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/access"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/apply"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/audio"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/keys"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/procs"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/request"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/run"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/runlock"
+	"github.com/Bananenbaas/commander/screen/internal/access"
+	"github.com/Bananenbaas/commander/screen/internal/action"
+	"github.com/Bananenbaas/commander/screen/internal/apply"
+	"github.com/Bananenbaas/commander/screen/internal/audio"
+	"github.com/Bananenbaas/commander/screen/internal/keys"
+	"github.com/Bananenbaas/commander/screen/internal/layout"
+	"github.com/Bananenbaas/commander/screen/internal/light"
+	"github.com/Bananenbaas/commander/screen/internal/procs"
+	"github.com/Bananenbaas/commander/screen/internal/request"
+	"github.com/Bananenbaas/commander/screen/internal/run"
+	"github.com/Bananenbaas/commander/screen/internal/runlock"
 )
 
 // Phase is what the supervisor is doing.

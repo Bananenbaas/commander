@@ -8,8 +8,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/procs"
+	"github.com/Bananenbaas/commander/screen/internal/device"
+	"github.com/Bananenbaas/commander/screen/internal/procs"
 )
 
 // A profile chosen on the keyboard by hand, which the keyboard is known to

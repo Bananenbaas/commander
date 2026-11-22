@@ -7,9 +7,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/procs"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/device"
+	"github.com/Bananenbaas/commander/screen/internal/procs"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 // semaphore is how Windows reports a control write the keyboard does not

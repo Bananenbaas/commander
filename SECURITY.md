@@ -16,7 +16,7 @@ untrusted binary input (capture files) and will eventually talk to USB devices.
 ## How to report
 
 Use GitHub's private reporting: **Security → Report a vulnerability** on
-<https://github.com/Bananenbaas/kb7-commander>. That keeps the report between
+<https://github.com/Bananenbaas/commander>. That keeps the report between
 you and the maintainer until it is resolved.
 
 Please include:

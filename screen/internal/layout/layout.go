@@ -15,9 +15,9 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/action"
+	"github.com/Bananenbaas/commander/screen/internal/light"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 // Mode says how a button's action is carried out.

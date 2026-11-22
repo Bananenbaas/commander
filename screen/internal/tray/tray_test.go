@@ -10,7 +10,7 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/icon"
+	"github.com/Bananenbaas/commander/screen/internal/icon"
 )
 
 func units(s string) int { return len(utf16.Encode([]rune(s))) }

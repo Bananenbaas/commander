@@ -6,6 +6,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- The repository is now `Bananenbaas/commander` (it was `kb7-commander`).
+  Commander asks the new name for updates; older versions keep working
+  through GitHub's redirect. The Go module path follows the new name.
+
 ## [0.1.0-beta.5] - 2026-11-19
 
 ### Added

@@ -17,7 +17,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/icon"
+	"github.com/Bananenbaas/commander/screen/internal/icon"
 )
 
 func main() {

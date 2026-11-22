@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: How to make a capture
-    url: https://github.com/Bananenbaas/kb7-commander/blob/main/docs/CAPTURE-GUIDE.md
+    url: https://github.com/Bananenbaas/commander/blob/main/docs/CAPTURE-GUIDE.md
     about: Wireshark/USBPcap setup, naming scheme and capture discipline. Read this before reporting a protocol finding.
   - name: Privacy or hardware-safety report
-    url: https://github.com/Bananenbaas/kb7-commander/security/advisories/new
+    url: https://github.com/Bananenbaas/commander/security/advisories/new
     about: Leaked keystrokes, or a command that could brick a device. Report these privately, not in a public issue.

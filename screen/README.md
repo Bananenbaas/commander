@@ -16,7 +16,7 @@ The design and the measurements behind it are in
 ## Download
 
 Ready-built executables are on the
-[releases page](https://github.com/Bananenbaas/kb7-commander/releases):
+[releases page](https://github.com/Bananenbaas/commander/releases):
 
 | File | What |
 |---|---|

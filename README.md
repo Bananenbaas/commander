@@ -1,11 +1,11 @@
 # KB7 Unleashed: Beyond Swarm II
 
-[![CI](https://github.com/Bananenbaas/kb7-commander/actions/workflows/ci.yml/badge.svg)](https://github.com/Bananenbaas/kb7-commander/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Bananenbaas/kb7-commander?include_prereleases&sort=semver)](https://github.com/Bananenbaas/kb7-commander/releases)
+[![CI](https://github.com/Bananenbaas/commander/actions/workflows/ci.yml/badge.svg)](https://github.com/Bananenbaas/commander/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Bananenbaas/commander?include_prereleases&sort=semver)](https://github.com/Bananenbaas/commander/releases)
 [![License: GPL v2+](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Go 1.27+](https://img.shields.io/github/go-mod/go-version/Bananenbaas/kb7-commander?filename=screen%2Fgo.mod)](https://go.dev/dl/)
-[![VirusTotal: scanned per release](https://img.shields.io/badge/VirusTotal-scanned%20per%20release-394EFF?logo=virustotal&logoColor=white)](https://github.com/Bananenbaas/kb7-commander/releases)
+[![Go 1.27+](https://img.shields.io/github/go-mod/go-version/Bananenbaas/commander?filename=screen%2Fgo.mod)](https://go.dev/dl/)
+[![VirusTotal: scanned per release](https://img.shields.io/badge/VirusTotal-scanned%20per%20release-394EFF?logo=virustotal&logoColor=white)](https://github.com/Bananenbaas/commander/releases)
 
 An open-source project to unlock the full potential of the **Turtle Beach
 Command Series KB7**.
@@ -46,7 +46,7 @@ was measured, is in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 ## Download
 
 Ready-built executables are on the
-[releases page](https://github.com/Bananenbaas/kb7-commander/releases):
+[releases page](https://github.com/Bananenbaas/commander/releases):
 `commander-windows-amd64.exe` (the tray program),
 `kb7screen-windows-amd64.exe` and `kb7screen-linux-amd64` (the command line).
 They are built from this repository by GitHub Actions. Each release lists the
@@ -63,8 +63,8 @@ Pure Python (3.10+), no dependencies. Reads Windows USBPcap and Linux usbmon
 captures (`.pcap` / `.pcapng`).
 
 ```sh
-git clone https://github.com/Bananenbaas/kb7-commander.git
-cd kb7-commander
+git clone https://github.com/Bananenbaas/commander.git
+cd commander
 
 python -m kb7tools summary capture.pcapng            # devices, interfaces, HID reports, traffic
 python -m kb7tools dump capture.pcapng -d <vid>:<pid> # transfers with hex payload

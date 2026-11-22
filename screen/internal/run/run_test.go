@@ -13,14 +13,14 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/device"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/keyboard"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/keys"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/layout"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/light"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/procs"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/action"
+	"github.com/Bananenbaas/commander/screen/internal/device"
+	"github.com/Bananenbaas/commander/screen/internal/keyboard"
+	"github.com/Bananenbaas/commander/screen/internal/keys"
+	"github.com/Bananenbaas/commander/screen/internal/layout"
+	"github.com/Bananenbaas/commander/screen/internal/light"
+	"github.com/Bananenbaas/commander/screen/internal/procs"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 // The tests run inside a synctest bubble: time is virtual, so polls two

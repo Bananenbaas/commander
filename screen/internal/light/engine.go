@@ -5,8 +5,8 @@ package light
 import (
 	"time"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/action"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/action"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 // Limits on the presses an Engine keeps for the effects.

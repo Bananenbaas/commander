@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 func mustAssign(t *testing.T, l *Ledger, o Owner, hash string, wantSlot byte, wantUpload bool) {

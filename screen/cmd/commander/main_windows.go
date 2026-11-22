@@ -19,12 +19,12 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/appdata"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/autostart"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/icon"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/run"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/supervisor"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/tray"
+	"github.com/Bananenbaas/commander/screen/internal/appdata"
+	"github.com/Bananenbaas/commander/screen/internal/autostart"
+	"github.com/Bananenbaas/commander/screen/internal/icon"
+	"github.com/Bananenbaas/commander/screen/internal/run"
+	"github.com/Bananenbaas/commander/screen/internal/supervisor"
+	"github.com/Bananenbaas/commander/screen/internal/tray"
 )
 
 // endSessionWait is the longest wait for the clean stop when the Windows

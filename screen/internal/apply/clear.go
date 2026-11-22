@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Bananenbaas/kb7-commander/screen/internal/ledger"
-	"github.com/Bananenbaas/kb7-commander/screen/internal/proto"
+	"github.com/Bananenbaas/commander/screen/internal/ledger"
+	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 // Kinds and types of the buttons Swarm II makes for launching things, as
