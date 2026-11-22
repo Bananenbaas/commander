@@ -70,9 +70,6 @@ const (
 
 	// dialTimeout is how long Run waits for Commander's pipe.
 	dialTimeout = 5 * time.Second
-	// maxQueue is the most lines waiting for the window thread; beyond it
-	// the oldest are dropped.
-	maxQueue = 1024
 )
 
 // background is the page's background, #080c18, shown before the page
@@ -165,7 +162,7 @@ type window struct {
 	ready      bool // the page can take messages
 
 	mu     sync.Mutex
-	queue  []string
+	queue  lineQueue
 	posted bool // a wmFlush is on its way
 	gone   atomic.Bool
 }
@@ -333,6 +330,8 @@ func (w *window) embed() error {
 	wv.WebResourceRequestedCallback = func(req *edge.ICoreWebView2WebResourceRequest, args *edge.ICoreWebView2WebResourceRequestedEventArgs) {
 		w.serve(req, args)
 	}
+	// Camera, microphone, location and every other permission: no.
+	wv.SetGlobalPermission(edge.CoreWebView2PermissionStateDeny)
 	w.wv = wv
 
 	w.embedding = true
@@ -344,6 +343,9 @@ func (w *window) embed() error {
 		return fmt.Errorf("gui: WebView2 has no view: %w", err)
 	}
 	w.view = view
+	if err := refuseNewWindows(view); err != nil {
+		return err
+	}
 	if err := w.settings(); err != nil {
 		return err
 	}
@@ -405,7 +407,7 @@ func (w *window) pump() {
 		if m.Event == "show" && !w.gone.Load() {
 			procPostMessage.Call(w.hwnd, wmShow, 0, 0)
 		}
-		w.enqueue(EventLine(m))
+		w.enqueue(EventLine(m), false)
 	}
 	if !w.gone.Load() {
 		procPostMessage.Call(w.hwnd, wmClose, 0, 0)
@@ -418,7 +420,7 @@ func (w *window) fromPage(msg string) {
 		setDarkTitleBar(w.hwnd, dark)
 		return
 	}
-	go func() { w.enqueue(Relay(w.ctx, w.client, msg)) }()
+	go func() { w.enqueue(Relay(w.ctx, w.client, msg), true) }()
 }
 
 // serve answers a request of the page from the embedded files (window
@@ -428,14 +430,16 @@ func (w *window) serve(req *edge.ICoreWebView2WebResourceRequest, args *edge.ICo
 	if uri, err := req.GetUri(); err == nil {
 		status, ctype, body = Resource(uri)
 	}
+	// A request left unanswered would go to the network: fail closed.
 	resp, err := newResponse(w.wv.Environment(), body, status, reasonPhrase(status), responseHeaders(ctype))
 	if err != nil {
-		w.opts.logf("window: making a response: %v", err)
-		return
+		w.opts.logf("window: WebView2: making a response: %v", err)
+		os.Exit(1)
 	}
 	defer resp.Release()
 	if err := args.PutResponse(resp); err != nil {
-		w.opts.logf("window: answering a request: %v", err)
+		w.opts.logf("window: WebView2: answering a request: %v", err)
+		os.Exit(1)
 	}
 }
 
@@ -457,9 +461,9 @@ func newResponse(env *edge.ICoreWebView2Environment, body []byte, status int, re
 	}
 	var stream unsafe.Pointer // IStream, or nil for no body
 	if len(body) > 0 {
-		s, _, e := procSHCreateMemStream.Call(uintptr(unsafe.Pointer(&body[0])), uintptr(len(body)))
+		s, _, _ := procSHCreateMemStream.Call(uintptr(unsafe.Pointer(&body[0])), uintptr(len(body)))
 		if s == 0 {
-			return nil, fmt.Errorf("making the body stream: %w", e)
+			return nil, errors.New("SHCreateMemStream failed")
 		}
 		stream = *(*unsafe.Pointer)(unsafe.Pointer(&s))
 		// The response holds its own reference to the stream.
@@ -485,6 +489,62 @@ func newResponse(env *edge.ICoreWebView2Environment, body []byte, status int, re
 	return resp, nil
 }
 
+// newWindowRequestedVtbl is the vtable of the handler that refuses new
+// windows: IUnknown, then Invoke.
+var newWindowRequestedVtbl = [4]uintptr{
+	syscall.NewCallback(comQueryInterface),
+	syscall.NewCallback(comAddRef),
+	syscall.NewCallback(comRelease1),
+	syscall.NewCallback(newWindowRequested),
+}
+
+// comHandler is a COM object made in Go. It lives in a package variable, so
+// it outlives every use by WebView2; reference counting is not needed.
+type comHandler struct{ vtbl *[4]uintptr }
+
+var newWindowHandler = &comHandler{vtbl: &newWindowRequestedVtbl}
+
+func comQueryInterface(this *comHandler, _ uintptr, out **comHandler) uintptr {
+	if out != nil {
+		*out = this
+	}
+	return 0
+}
+
+func comAddRef(*comHandler) uintptr   { return 1 }
+func comRelease1(*comHandler) uintptr { return 1 }
+
+// comObject is any COM interface pointer: its first word is the vtable.
+type comObject struct{ vtbl *[11]uintptr }
+
+// newWindowRequested refuses a new window: put_Handled(TRUE) without a
+// NewWindow means the request is dropped and no window opens. The slots of
+// ICoreWebView2NewWindowRequestedEventArgs: IUnknown (0-2), get_Uri,
+// put_NewWindow, get_NewWindow, put_Handled (6).
+func newWindowRequested(_ *comHandler, _ uintptr, args *comObject) uintptr {
+	if args != nil {
+		syscall.SyscallN(args.vtbl[6], uintptr(unsafe.Pointer(args)), 1)
+	}
+	return 0
+}
+
+// refuseNewWindows registers the handler on ICoreWebView2::add_NewWindowRequested
+// (slot 44: IUnknown 0-2, then GetSettings ... Stop at 43), so window.open,
+// target=_blank and modified clicks never create a window that would load
+// pages outside the resource filter.
+func refuseNewWindows(view *edge.ICoreWebView2) error {
+	vtbl := *(**[45]uintptr)(unsafe.Pointer(view))
+	var token int64
+	hr, _, _ := syscall.SyscallN(vtbl[44],
+		uintptr(unsafe.Pointer(view)),
+		uintptr(unsafe.Pointer(newWindowHandler)),
+		uintptr(unsafe.Pointer(&token)))
+	if int32(hr) < 0 {
+		return fmt.Errorf("gui: refusing new windows: %w", syscall.Errno(hr))
+	}
+	return nil
+}
+
 // comRelease calls IUnknown::Release on a COM object.
 func comRelease(obj unsafe.Pointer) {
 	vtbl := *(**[3]uintptr)(obj)
@@ -492,13 +552,10 @@ func comRelease(obj unsafe.Pointer) {
 }
 
 // enqueue queues a line for the page and wakes the window thread (any
-// goroutine).
-func (w *window) enqueue(line string) {
+// goroutine). answer marks the answer to a call, which is never dropped.
+func (w *window) enqueue(line string, answer bool) {
 	w.mu.Lock()
-	if len(w.queue) >= maxQueue {
-		w.queue = w.queue[1:]
-	}
-	w.queue = append(w.queue, line)
+	w.queue.push(line, answer)
 	wake := !w.posted
 	w.posted = true
 	w.mu.Unlock()
@@ -519,8 +576,7 @@ func (w *window) drain() {
 		return
 	}
 	w.mu.Lock()
-	lines := w.queue
-	w.queue = nil
+	lines := w.queue.take()
 	w.posted = false
 	w.mu.Unlock()
 	for _, line := range lines {

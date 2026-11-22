@@ -12,6 +12,12 @@
 // "__theme" with args "dark" or "light" is answered by the window itself: it
 // sets the colour of the title bar and is never forwarded.
 //
+// The pages never open windows and never load anything from outside the
+// embedded files, and the window process refuses both: every new window
+// request (window.open, target=_blank, modified clicks) is dropped, every
+// request is answered from the embedded files (403 for any other origin),
+// and every permission request is denied.
+//
 // Note: the WebView2 binding echoes every message the page posts back to the
 // page, so the page must ignore incoming messages that carry "call".
 package gui
