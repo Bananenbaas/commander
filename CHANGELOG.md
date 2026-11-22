@@ -7,7 +7,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- Commander's window: "Open Commander" in the tray menu (also first in it) and
+- Commander's window: "Open Commander", first in the tray menu, and
   a left click on the icon open it. It shows the KB7 (profiles on the
   keyboard; the Buttons, Lighting, Mixer and Profile tabs only say "Comes in
   a later version." for now), the desktop and game profiles (read-only),

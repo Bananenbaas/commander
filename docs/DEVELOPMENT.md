@@ -31,9 +31,10 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 | `screen/internal/update/` | Commander updates: release versions, picking the update from GitHub's release list, `SHA256SUMS.txt`, the checked download (no Windows calls; the swap and restart are in `cmd/commander`) |
 | `screen/internal/appdata/` | Settings (`%APPDATA%\Commander\settings.toml`) and the log (`%LOCALAPPDATA%\Commander\commander.log`) |
 | `screen/internal/bridge/` | The line protocol between Commander and its window: one JSON object per line (calls, answers, events) over any byte stream |
-| `screen/internal/pipe/` | The per-user named pipe `\.\pipe\Commander-<SID>` between Commander and its window: only the signed-in user can open it, remote clients are rejected, and the dialling side checks that the pipe's owner is the user |
+| `screen/internal/pipe/` | The per-user named pipe `\\.\pipe\Commander-<SID>` between Commander and its window: only the signed-in user can open it, remote clients are rejected, and the dialling side checks that the pipe's owner is the user |
 | `screen/internal/control/` | Answers the window's calls (state, settings, updates) and turns what happens in Commander into events; no window code and no Windows code |
-| `screen/internal/gui/` | The window: `commander.exe --window` shows the embedded page (`web/`) in a WebView2 control and relays its calls to Commander over the pipe; nothing outside the embedded files is loaded, new windows and permission requests are refused, DevTools only in `dev` builds |
+| `screen/internal/gui/` | The window: `commander.exe --window` shows the embedded page (`web/`) in a WebView2 control and relays its calls to Commander over the pipe; nothing outside the embedded files is loaded, new windows, dropped files and permission requests are refused, only messages from the embedded page are relayed, DevTools only in `dev` builds |
+| `screen/internal/startenv/` | Records the five `WEBVIEW2_*` environment variables before the WebView2 binding's package init sets them, so the tray can put them back and the programs it starts from a KB7 button do not inherit them |
 | `screen/internal/icon/` | The helmet icon: the generator (`gen/`), the ICO and the Windows resource with the DPI manifest; `helmet-256.png` is the reference render |
 | `screen/cmd/commander/` | Commander, the windowless tray program; design in `docs/design/commander-tray.md` |
 | `docs/PROTOCOL.md` | Protocol knowledge base, with status tags |
