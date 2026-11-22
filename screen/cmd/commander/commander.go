@@ -13,10 +13,10 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"unicode/utf16"
 
+	"github.com/Bananenbaas/commander/screen/internal/control"
 	"github.com/Bananenbaas/commander/screen/internal/keyboard"
 	"github.com/Bananenbaas/commander/screen/internal/run"
 	"github.com/Bananenbaas/commander/screen/internal/runlock"
@@ -48,8 +48,6 @@ const (
 	// buttons starts.
 	applyingTitle = "Applying buttons and lighting"
 	applyingText  = "Keep the keyboard plugged in; it does not type while pictures upload."
-	// replugTip is the tooltip while the keyboard does not answer.
-	replugTip = "the keyboard does not answer, unplug and replug it"
 )
 
 // errNoFolder means Commander was not told which folder to use.
@@ -136,40 +134,7 @@ func heldMessage(err error) (msg string, ok bool) {
 
 // tipFor is the tooltip for st, cut to the tooltip limit.
 func tipFor(st supervisor.State) string {
-	var what string
-	switch st.Phase {
-	case supervisor.Starting:
-		what = "starting"
-	case supervisor.Running:
-		switch {
-		case st.Run.Waiting == "keyboard":
-			what = "waiting for the keyboard"
-		case st.Run.Waiting == "Swarm II":
-			what = "waiting for Swarm II to close"
-		case st.Run.Waiting == run.WaitReplug:
-			what = replugTip
-		case st.Run.Waiting != "":
-			what = "waiting for " + st.Run.Waiting
-		case st.Run.Name != "":
-			what = st.Run.Name
-		case st.Run.Profile >= 0:
-			what = fmt.Sprintf("profile %d", st.Run.Profile)
-		default:
-			what = "starting"
-		}
-	case supervisor.Applying:
-		what = "applying buttons…"
-	case supervisor.Failed:
-		what = "error"
-		if st.Err != "" {
-			what += ": " + st.Err
-		}
-	case supervisor.Stopped:
-		what = "stopped"
-	default:
-		what = st.Phase.String()
-	}
-	return cutTip(tipPrefix + what)
+	return cutTip(tipPrefix + control.StatusText(st))
 }
 
 // cutTip cuts s to maxTip UTF-16 units, ending it with an ellipsis when it
