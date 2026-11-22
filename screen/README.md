@@ -61,6 +61,8 @@ commander.exe D:\path\to\config-folder
 Commander remembers the folder in its settings, so after that it can be started
 without an argument. Right-click the icon for the menu:
 
+- **Open Commander**: opens Commander's window (see below). A left click on
+  the icon does the same.
 - **Reload configuration**: the running program reads the folder again.
 - **Apply buttons**: puts the layouts on the keyboard for you. Commander pauses
   its own run for the moment, applies, and starts it again.
@@ -97,9 +99,40 @@ on and a balloon says why. Commander must be in a folder you can write to; in
 does not start properly, rename `<name>.exe.old` back to `<name>.exe`. The
 requests to GitHub carry no more than a `User-Agent` of `Commander/<version>`.
 
+### The window
+
+**Open Commander**, or a left click on the icon, opens Commander's window. Only
+one window exists at a time: opening it again brings the open one to the
+front. Closing the window changes nothing for Commander or the keyboard, and
+quitting Commander closes it.
+
+The sidebar lists the desktop profile and your game profiles (the one
+that is active is marked), the KB7 (connected or not, with the profile it
+shows) and Commander's own pages. Today the window shows and does these:
+
+- **KB7**: the profiles on the keyboard as chips. The tabs Buttons, Lighting,
+  Mixer and Profile say "Comes in a later version."; keep editing the TOML
+  files for those until then.
+- **Desktop and each game**: what the profile is, when it switches, and what
+  each device does, read-only.
+- **Settings**: Start with Windows, Check for updates automatically, the theme
+  (Follow Windows, Light or Dark) and buttons that open the configuration
+  folder and the log.
+- **Updates**: the version, Check now, and Update when a newer one is found.
+
+The window needs the Microsoft Edge WebView2 Runtime. Windows 11 has it; if
+it is missing, Commander says so and where to get it
+(https://developer.microsoft.com/microsoft-edge/webview2/). The window is a
+separate process (`commander.exe --window`, started for you) so a problem in
+it never stops the keyboard. It loads nothing from the internet, opens no
+other windows and refuses permission requests; only you, signed in on this
+Windows account, can reach Commander from it. Its own data is in
+`%LOCALAPPDATA%\Commander\WebView2` and its log is
+`%LOCALAPPDATA%\Commander\window.log`.
+
 Settings are in `%APPDATA%\Commander\settings.toml`. The log is
 `%LOCALAPPDATA%\Commander\commander.log`; it is moved to `commander.log.1`
-once it passes 1 MB.
+once it passes 1 MB, as is `window.log`.
 
 Only one program owns the keyboard per user: a second Commander, or a `run`
 while Commander runs, refuses to start. `apply` and `restore` refuse while
@@ -113,7 +146,8 @@ terminal.
 The check on the real desktop (icon, menu, Start with Windows) has passed;
 see "Desktop check" in `docs/design/commander-tray.md`. Updates are covered by
 unit tests only so far; their desktop check is still to be done (see
-`docs/design/commander-update.md`).
+`docs/design/commander-update.md`). The same holds for the window (see
+`docs/design/commander-gui.md`).
 
 ## Build
 

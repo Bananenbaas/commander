@@ -30,6 +30,10 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 | `screen/internal/autostart/` | Start with Windows (the per-user Run key) |
 | `screen/internal/update/` | Commander updates: release versions, picking the update from GitHub's release list, `SHA256SUMS.txt`, the checked download (no Windows calls; the swap and restart are in `cmd/commander`) |
 | `screen/internal/appdata/` | Settings (`%APPDATA%\Commander\settings.toml`) and the log (`%LOCALAPPDATA%\Commander\commander.log`) |
+| `screen/internal/bridge/` | The line protocol between Commander and its window: one JSON object per line (calls, answers, events) over any byte stream |
+| `screen/internal/pipe/` | The per-user named pipe `\.\pipe\Commander-<SID>` between Commander and its window: only the signed-in user can open it, remote clients are rejected, and the dialling side checks that the pipe's owner is the user |
+| `screen/internal/control/` | Answers the window's calls (state, settings, updates) and turns what happens in Commander into events; no window code and no Windows code |
+| `screen/internal/gui/` | The window: `commander.exe --window` shows the embedded page (`web/`) in a WebView2 control and relays its calls to Commander over the pipe; nothing outside the embedded files is loaded, new windows and permission requests are refused, DevTools only in `dev` builds |
 | `screen/internal/icon/` | The helmet icon: the generator (`gen/`), the ICO and the Windows resource with the DPI manifest; `helmet-256.png` is the reference render |
 | `screen/cmd/commander/` | Commander, the windowless tray program; design in `docs/design/commander-tray.md` |
 | `docs/PROTOCOL.md` | Protocol knowledge base, with status tags |
@@ -48,11 +52,15 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
   line so it does not become the package comment.
 - **Dependencies**: the Python toolkit `kb7tools` is **stdlib only**. No
   pyshark or tshark dependency; Python 3.10 is the minimum. `kb7screen` (Go
-  1.27) uses `golang.org/x/sys`, `golang.org/x/image` and
-  `github.com/BurntSushi/toml`, and nothing that needs cgo: it must build with
+  1.27) uses `golang.org/x/sys`, `golang.org/x/image`,
+  `github.com/BurntSushi/toml` and `github.com/wailsapp/go-webview2` (for the
+  window; never with its `native_webview2loader` tag, which needs cgo or a
+  bundled DLL), and nothing that needs cgo: it must build with
   `CGO_ENABLED=0`. It bundles the Barlow Condensed SemiBold font with its SIL
   Open Font License in `screen/internal/picture/fonts/`; a published
-  executable must come with that `OFL.txt`.
+  executable must come with that `OFL.txt`, and with
+  `screen/THIRD-PARTY-NOTICES.txt` (the licences of the libraries built in;
+  update it when a dependency changes).
 - **No deployment pipeline**: CI runs the tests and nothing else.
 
 ## Invariants

@@ -47,6 +47,7 @@ jobs:
           # with them, as the SIL Open Font License asks.
           cp ../LICENSE ../dist/LICENSE.txt
           cp internal/picture/fonts/OFL.txt ../dist/OFL-BarlowCondensed.txt
+          cp THIRD-PARTY-NOTICES.txt ../dist/THIRD-PARTY-NOTICES.txt
 
       - name: Checksums
         working-directory: dist
@@ -97,7 +98,8 @@ jobs:
             echo "\`Get-FileHash <file> -Algorithm SHA256\` (PowerShell) or \`sha256sum <file>\`."
             echo
             echo "\`LICENSE.txt\` is the licence of this software (GPL-2.0-or-later);"
-            echo "\`OFL-BarlowCondensed.txt\` is the licence of the title font built into the executables."
+            echo "\`OFL-BarlowCondensed.txt\` is the licence of the title font built into the executables;"
+            echo "\`THIRD-PARTY-NOTICES.txt\` has the licences of the libraries built into them."
             if [ -s virustotal.md ]; then
               echo
               echo "## VirusTotal"
@@ -118,4 +120,4 @@ jobs:
           gh release create "${TAG}" ${pre} --verify-tag \
             --title "${TAG}" --notes-file notes.md \
             dist/kb7screen-windows-amd64.exe dist/commander-windows-amd64.exe \
-            dist/kb7screen-linux-amd64 dist/SHA256SUMS.txt dist/LICENSE.txt dist/OFL-BarlowCondensed.txt
+            dist/kb7screen-linux-amd64 dist/SHA256SUMS.txt dist/LICENSE.txt dist/OFL-BarlowCondensed.txt dist/THIRD-PARTY-NOTICES.txt

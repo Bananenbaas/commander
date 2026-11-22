@@ -7,6 +7,17 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Commander's window: "Open Commander" in the tray menu (also first in it) and
+  a left click on the icon open it. It shows the KB7 (profiles on the
+  keyboard; the Buttons, Lighting, Mixer and Profile tabs only say "Comes in
+  a later version." for now), the desktop and game profiles (read-only),
+  Settings (Start with Windows, check for updates, theme, open the folder and
+  the log) and Updates (check now, install). It needs the Microsoft Edge
+  WebView2 Runtime, which Windows 11 has; without it Commander says so. It
+  runs as a separate process (`commander.exe --window`) and keeps its log in
+  `%LOCALAPPDATA%\Commander\window.log`.
+- `THIRD-PARTY-NOTICES.txt` is published with each release: the licences of
+  the libraries built into the executables.
 - Game profiles: a `games/` folder in the configuration folder holds one file
   per game with its program and the KB7 profile to show while it runs, and
   `games/desktop.toml` sets the desktop profile. `switch_when_running` in a
