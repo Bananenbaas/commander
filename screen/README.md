@@ -25,6 +25,7 @@ Ready-built executables are on the
 | `kb7screen-linux-amd64` | the command line for Linux (not yet run on a keyboard) |
 | `SHA256SUMS.txt` | the SHA-256 of each file |
 | `LICENSE.txt`, `OFL-BarlowCondensed.txt` | the licences of the program and of its built-in font |
+| `THIRD-PARTY-NOTICES.txt` | the licences of the libraries built into the executables |
 
 Rename them as you like, for example to `commander.exe` and `kb7screen.exe`;
 the examples below use those names. Check a download against its SHA-256 with
@@ -107,14 +108,15 @@ front. Closing the window changes nothing for Commander or the keyboard, and
 quitting Commander closes it.
 
 The sidebar lists the desktop profile and your game profiles (the one
-that is active is marked), the KB7 (connected or not, with the profile it
-shows) and Commander's own pages. Today the window shows and does these:
+that is active is marked), the KB7 (connected or not) and Commander's
+own pages. The top of the window shows the profile the keyboard is on. Today the window shows and does these:
 
-- **KB7**: the profiles on the keyboard as chips. The tabs Buttons, Lighting,
+- **KB7**: the profiles on the keyboard as chips; the one it is on is
+  highlighted. The tabs Buttons, Lighting,
   Mixer and Profile say "Comes in a later version."; keep editing the TOML
   files for those until then.
-- **Desktop and each game**: what the profile is, when it switches, and what
-  each device does, read-only.
+- **Desktop and each game**: when the profile switches and which KB7 profile
+  it uses (only the KB7 is listed today), read-only.
 - **Settings**: Start with Windows, Check for updates automatically, the theme
   (Follow Windows, Light or Dark) and buttons that open the configuration
   folder and the log.
@@ -819,4 +821,6 @@ Barlow Condensed SemiBold under the SIL Open Font License; its licence text is
 in `internal/picture/fonts/OFL.txt`. The font is built into the executable, so
 whoever publishes a `kb7screen` or Commander executable must ship that
 `OFL.txt` with it, for example next to the executable in the same archive; the
-releases do so as `OFL-BarlowCondensed.txt`.
+releases do so as `OFL-BarlowCondensed.txt`. The libraries built into the
+executables have their own licences, collected in `THIRD-PARTY-NOTICES.txt`
+(next to this file); the releases ship it too.
