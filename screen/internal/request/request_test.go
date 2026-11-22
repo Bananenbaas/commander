@@ -120,9 +120,22 @@ func TestSendHeldError(t *testing.T) {
 
 func TestSendTaken(t *testing.T) {
 	dir := t.TempDir()
+	// The taker polls until it has taken the request, as the loop does: a
+	// single Take could run before Send has written the file on a slow
+	// machine, and the request would then never be taken.
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
-		time.Sleep(300 * time.Millisecond)
-		Take(dir)
+		for {
+			if _, ok, _ := Take(dir); ok {
+				return
+			}
+			select {
+			case <-done:
+				return
+			case <-time.After(20 * time.Millisecond):
+			}
+		}
 	}()
 	taken, err := Send(dir, Reload, 5*time.Second, held(true))
 	if err != nil || !taken {
