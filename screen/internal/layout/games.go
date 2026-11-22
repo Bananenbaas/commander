@@ -70,6 +70,10 @@ func loadGames(dir string, profiles []Profile) (games []Game, desktop *Game, err
 		if err != nil {
 			return nil, nil, err
 		}
+		if prev, ok := byName[strings.ToLower(g.Name)]; ok {
+			return nil, nil, fmt.Errorf("%s and %s both use the name %q", prev, label, g.Name)
+		}
+		byName[strings.ToLower(g.Name)] = label
 		if g.Program == "" {
 			desktop = g
 			continue
@@ -78,10 +82,6 @@ func loadGames(dir string, profiles []Profile) (games []Game, desktop *Game, err
 			return nil, nil, fmt.Errorf("%s and %s both name the program %q", prev, label, g.Program)
 		}
 		byProgram[programKey(g.Program)] = label
-		if prev, ok := byName[strings.ToLower(g.Name)]; ok {
-			return nil, nil, fmt.Errorf("%s and %s both use the name %q", prev, label, g.Name)
-		}
-		byName[strings.ToLower(g.Name)] = label
 		games = append(games, *g)
 	}
 
@@ -90,8 +90,13 @@ func loadGames(dir string, profiles []Profile) (games []Game, desktop *Game, err
 		if p.SwitchWhenRunning == "" {
 			continue
 		}
+		layoutFile := filepath.Base(p.File)
 		if prev, ok := byProgram[programKey(p.SwitchWhenRunning)]; ok {
-			return nil, nil, fmt.Errorf("%s: switch_when_running %q is also the program of %s; remove one of them", filepath.Base(p.File), p.SwitchWhenRunning, prev)
+			return nil, nil, fmt.Errorf("%s: switch_when_running %q is also the program of %s; remove one of them", layoutFile, p.SwitchWhenRunning, prev)
+		}
+		// A game built from a layout is named after its program.
+		if prev, ok := byName[strings.ToLower(p.SwitchWhenRunning)]; ok {
+			return nil, nil, fmt.Errorf("%s: switch_when_running %q is also the name of %s; rename the game", layoutFile, p.SwitchWhenRunning, prev)
 		}
 		fromLayouts = append(fromLayouts, p)
 	}

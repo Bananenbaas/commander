@@ -108,6 +108,13 @@ func TestGamesErrors(t *testing.T) {
 			"a.toml": "name = \"Game\"\nprogram = \"A.exe\"\n",
 			"b.toml": "name = \"game\"\nprogram = \"B.exe\"\n",
 		}, []string{"games/a.toml", "games/b.toml"}},
+		{"layout program is a game's name", map[string]string{"o.toml": "profile = 1\nswitch_when_running = \"Other.exe\"\n"}, map[string]string{
+			"x.toml": "name = \"Other.exe\"\nprogram = \"x.exe\"\n",
+		}, []string{"o.toml", "games/x.toml"}},
+		{"game named like the desktop", nil, map[string]string{
+			"desktop.toml": gameDesktop,
+			"a.toml":       "name = \"Desktop\"\nprogram = \"A.exe\"\n",
+		}, []string{"games/a.toml", "games/desktop.toml"}},
 		{"layout program in a game", map[string]string{"sc.toml": swLayout}, map[string]string{
 			"star.toml": "name = \"SC\"\nprogram = \"StarCitizen.exe\"\n",
 		}, []string{"sc.toml", "games/star.toml"}},
@@ -190,5 +197,25 @@ func TestGamesDesktopLiftsTheFiveProgramRule(t *testing.T) {
 	}
 	if c.Desktop == nil || c.DesktopProfile() != 0 || len(c.Games) != 5 {
 		t.Fatalf("desktop %+v games %+v", c.Desktop, c.Games)
+	}
+}
+
+func TestGamesFromLayoutsComeAfterFilesByProfile(t *testing.T) {
+	dir := folder(t, map[string]string{
+		"desktop.toml": desktopTOML,
+		"p3.toml":      "profile = 3\nswitch_when_running = \"Three.exe\"\n",
+		"p1.toml":      "profile = 1\nswitch_when_running = \"One.exe\"\n",
+	})
+	gamesDir(t, dir, map[string]string{"zz.toml": "name = \"Zed\"\nprogram = \"Zed.exe\"\n"})
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, g := range c.Games {
+		got = append(got, g.Name)
+	}
+	if want := []string{"Zed", "One.exe", "Three.exe"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("order %v, want %v", got, want)
 	}
 }
