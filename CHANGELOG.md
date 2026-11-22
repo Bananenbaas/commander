@@ -12,6 +12,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
   the downloads. It follows the visitor's light or dark setting and has a
   switch. The `Pages` workflow publishes it to GitHub Pages when `site/`
   changes on `main`.
+- Diagnostics: Commander keeps the keyboard's recent traffic in memory (kinds
+  of call, report IDs, lengths, durations and errors; never payloads or key
+  presses) and writes it to its log when the keyboard stops answering, to
+  show what came before a hang.
 
 ## [0.1.0-beta.6] - 2026-11-22
 

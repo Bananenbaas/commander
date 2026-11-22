@@ -119,6 +119,30 @@ new one through GitHub's redirect. That redirect ends if a repository named
 `kb7-commander` is ever created again under the same account, so that name
 must stay unused.
 
+## Diagnostics
+
+Commander keeps a trace of the calls made to the keyboard in memory
+(`device.Trace`, a ring of 512 entries, wrapped around every keyboard the
+supervisor opens). Each entry holds the time, the kind of call (set feature,
+get feature, stream write, stream read, input read), the report ID or the
+first two bytes of a stream frame, the length, how long the call took and
+its error. It never holds a payload or a key press: of input reports only the
+report ID is kept, plus the first three bytes of the notification (`0x03`)
+and touch (`0x33`) reports. Stream and input calls that go alike are
+collapsed into one entry with their count, their shortest and longest
+duration and the time of the first and last, so the ring covers minutes of a
+lighting stream. Markers note the opening and closing of the keyboard and a
+`switch_when_running` program seen ending, with the time until the switch
+that follows.
+
+The trace is written to Commander's log, one line per entry with times in ms
+before the moment it is written (`trace -1234ms set 0x06 4B 3ms ok`), after a
+header line with the failures per kind and how long ago the last successful
+set and get feature and the opening were. That happens when `run` first
+reports that the keyboard does not answer, and at the first set or get
+feature that times out after one that succeeded; once per episode, not again
+until a control transfer has succeeded.
+
 ## Known gaps and pitfalls
 
 - **USBPcap control-transfer layout: checked, and it bit us once.** USBPcap
