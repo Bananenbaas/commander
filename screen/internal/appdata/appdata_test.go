@@ -406,3 +406,49 @@ func TestLogConcurrent(t *testing.T) {
 	}
 	checkStamped(t, lines)
 }
+
+func TestThemeDefaultAndSave(t *testing.T) {
+	setDirs(t)
+	if got, err := LoadTheme(); err != nil || got != "system" {
+		t.Fatalf("LoadTheme = %q, %v; want \"system\", nil", got, err)
+	}
+	if err := SaveFolder(`C:\cfg`); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveCheckUpdates(true); err != nil {
+		t.Fatal(err)
+	}
+	for _, th := range []string{"dark", "light", "system"} {
+		if err := SaveTheme(th); err != nil {
+			t.Fatalf("SaveTheme(%q): %v", th, err)
+		}
+		if got, err := LoadTheme(); err != nil || got != th {
+			t.Fatalf("LoadTheme = %q, %v; want %q", got, err, th)
+		}
+	}
+	if err := SaveTheme("dark"); err != nil {
+		t.Fatal(err)
+	}
+	if dir, _ := LoadFolder(); dir != `C:\cfg` {
+		t.Errorf("folder = %q, want it kept", dir)
+	}
+	if on, _ := LoadCheckUpdates(); !on {
+		t.Error("check_updates was lost")
+	}
+	path, _ := settingsPath()
+	raw, _ := os.ReadFile(path)
+	if !strings.Contains(string(raw), `theme = "dark"`) {
+		t.Errorf("settings file lacks theme = \"dark\":\n%s", raw)
+	}
+}
+
+func TestThemeRefusesUnknown(t *testing.T) {
+	setDirs(t)
+	err := SaveTheme("purple")
+	if err == nil || !strings.Contains(err.Error(), "purple") {
+		t.Fatalf("SaveTheme(purple) = %v, want an error naming the value", err)
+	}
+	if got, _ := LoadTheme(); got != "system" {
+		t.Errorf("LoadTheme = %q after a refused save, want system", got)
+	}
+}

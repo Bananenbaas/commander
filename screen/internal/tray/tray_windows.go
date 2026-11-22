@@ -23,18 +23,13 @@ const (
 	wmClose           = 0x0010
 	wmQueryEndSession = 0x0011
 	wmEndSession      = 0x0016
-	wmContextMenu     = 0x007B
 	wmTimer           = 0x0113
-	wmLButtonUp       = 0x0202
-	wmRButtonUp       = 0x0205
 	wmUser            = 0x0400
 	wmApp             = 0x8000
 
 	wmTray   = wmApp + 1 // notification-area callback
 	wmUpdate = wmApp + 2 // SetTip, SetFailed or Balloon left something to apply
 
-	ninSelect           = wmUser + 0
-	ninKeySelect        = wmUser + 1
 	ninBalloonHide      = wmUser + 3
 	ninBalloonTimeout   = wmUser + 4
 	ninBalloonUserClick = wmUser + 5
@@ -155,6 +150,7 @@ type Tray struct {
 	// Owned by the window thread.
 	items          []Item
 	onEnd          func()
+	onClick        func()
 	icon, failIcon uintptr
 	class          *uint16
 	inst           uintptr
@@ -195,11 +191,12 @@ func Run(ctx context.Context, o Options) (*Tray, error) {
 	}
 	procOnce.Do(func() { wndProc = syscall.NewCallback(windowProc) })
 	t := &Tray{
-		done:  make(chan struct{}),
-		shown: make(chan struct{}),
-		items: append([]Item(nil), o.Items...),
-		onEnd: o.OnEndSession,
-		tip:   o.Tip,
+		done:    make(chan struct{}),
+		shown:   make(chan struct{}),
+		items:   append([]Item(nil), o.Items...),
+		onEnd:   o.OnEndSession,
+		onClick: o.OnClick,
+		tip:     o.Tip,
 	}
 	setup := make(chan error, 1)
 	go t.thread(o.Icon, failed, setup)
@@ -506,15 +503,18 @@ func windowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			t.clicks.forget()
 			return 0
 		}
-		if t.v4 {
-			if event == wmContextMenu || event == ninSelect || event == ninKeySelect {
+		switch clickAction(t.v4, event, t.onClick != nil) {
+		case actionMenu:
+			if t.v4 {
 				// Version 4 passes the anchor point in wParam.
 				t.showMenu(int32(int16(wParam)), int32(int16(wParam>>16)))
+			} else {
+				var p point
+				procGetCursorPos.Call(uintptr(unsafe.Pointer(&p)))
+				t.showMenu(p.x, p.y)
 			}
-		} else if event == wmRButtonUp || event == wmLButtonUp {
-			var p point
-			procGetCursorPos.Call(uintptr(unsafe.Pointer(&p)))
-			t.showMenu(p.x, p.y)
+		case actionClick:
+			go t.onClick()
 		}
 		return 0
 	case wmUpdate:

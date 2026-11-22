@@ -60,6 +60,7 @@ func settingsPath() (string, error) {
 type settings struct {
 	Folder       string `toml:"folder"`
 	CheckUpdates bool   `toml:"check_updates"`
+	Theme        string `toml:"theme"`
 }
 
 // load reads the settings. found is false when there is no file yet; a file
@@ -100,6 +101,36 @@ func LoadCheckUpdates() (bool, error) {
 		return false, err
 	}
 	return s.CheckUpdates, nil
+}
+
+// LoadTheme returns the theme of the window: "system", "light" or "dark".
+// It is "system" when there are no settings or the key is missing.
+func LoadTheme() (string, error) {
+	s, _, err := load()
+	if err != nil {
+		return "", err
+	}
+	if s.Theme == "" {
+		return "system", nil
+	}
+	return s.Theme, nil
+}
+
+// SaveTheme remembers the theme of the window, which is "system", "light" or
+// "dark", and keeps the other settings. A settings file that cannot be read
+// is an error and is left alone.
+func SaveTheme(theme string) error {
+	switch theme {
+	case "system", "light", "dark":
+	default:
+		return fmt.Errorf("unknown theme %q", theme)
+	}
+	s, _, err := load()
+	if err != nil {
+		return err
+	}
+	s.Theme = theme
+	return save(s)
 }
 
 // SaveFolder remembers dir as the configuration folder and keeps the other

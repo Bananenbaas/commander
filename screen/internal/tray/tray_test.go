@@ -283,3 +283,43 @@ func TestPickICORejectsBadData(t *testing.T) {
 		}
 	}
 }
+
+func TestClickAction(t *testing.T) {
+	const (
+		ctxMenu = 0x007B
+		lUp     = 0x0202
+		rUp     = 0x0205
+		sel     = 0x0400
+		keySel  = 0x0401
+		other   = 0x0200
+	)
+	tests := []struct {
+		name  string
+		v4    bool
+		event uintptr
+		on    bool
+		want  action
+	}{
+		{"v4 context menu", true, ctxMenu, false, actionMenu},
+		{"v4 context menu with OnClick", true, ctxMenu, true, actionMenu},
+		{"v4 select without OnClick", true, sel, false, actionMenu},
+		{"v4 select with OnClick", true, sel, true, actionClick},
+		{"v4 key select without OnClick", true, keySel, false, actionMenu},
+		{"v4 key select with OnClick", true, keySel, true, actionClick},
+		{"v4 left up is not an event", true, lUp, true, actionNone},
+		{"v4 right up is not an event", true, rUp, true, actionNone},
+		{"v4 other", true, other, true, actionNone},
+		{"old right up", false, rUp, false, actionMenu},
+		{"old right up with OnClick", false, rUp, true, actionMenu},
+		{"old left up without OnClick", false, lUp, false, actionMenu},
+		{"old left up with OnClick", false, lUp, true, actionClick},
+		{"old context menu is not an event", false, ctxMenu, true, actionNone},
+		{"old select is not an event", false, sel, true, actionNone},
+		{"old other", false, other, true, actionNone},
+	}
+	for _, tc := range tests {
+		if got := clickAction(tc.v4, tc.event, tc.on); got != tc.want {
+			t.Errorf("%s: clickAction = %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}

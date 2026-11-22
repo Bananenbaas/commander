@@ -40,6 +40,46 @@ type Options struct {
 	// session is then called off, the tray stays and Done stays open, so
 	// whatever OnEndSession stopped must be restarted or ended by the caller.
 	OnEndSession func()
+	// OnClick, when set, runs on a goroutine of its own when the icon is
+	// clicked with the left button, instead of opening the menu. The right
+	// click still opens the menu. Unset, both open the menu.
+	OnClick func()
+}
+
+// Notification events of the tray icon.
+const (
+	wmContextMenu = 0x007B
+	wmLButtonUp   = 0x0202
+	wmRButtonUp   = 0x0205
+	ninSelect     = 0x0400 + 0
+	ninKeySelect  = 0x0400 + 1
+)
+
+type action int
+
+const (
+	actionNone  action = iota // ignore the event
+	actionMenu                // open the menu
+	actionClick               // run Options.OnClick
+)
+
+// clickAction says what a notification event of the icon asks for. With
+// version 4 of the notification protocol (v4) the left click arrives as
+// NIN_SELECT or NIN_KEYSELECT and the right click as WM_CONTEXTMENU; before
+// it as WM_LBUTTONUP and WM_RBUTTONUP.
+func clickAction(v4 bool, event uintptr, hasOnClick bool) action {
+	left, right := event == wmLButtonUp, event == wmRButtonUp
+	if v4 {
+		left = event == ninSelect || event == ninKeySelect
+		right = event == wmContextMenu
+	}
+	switch {
+	case left && hasOnClick:
+		return actionClick
+	case left || right:
+		return actionMenu
+	}
+	return actionNone
 }
 
 // Limits of the NOTIFYICONDATAW text fields in UTF-16 units, without the
