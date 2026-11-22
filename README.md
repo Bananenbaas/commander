@@ -29,19 +29,45 @@ The end goal is to turn the KB7 into a fully programmable hardware platform.
 
 ## Status
 
-**First pre-release out: `v0.1.0-beta.1`.** `kb7screen` and Commander drive
-the keyboard on Windows without Swarm II: own buttons on the touchscreen with
-their actions, and layered RGB lighting that reacts to key presses. Swarm II
-is still needed for firmware updates. The Linux build passes its tests but has
-not been run on a keyboard yet. What is known about the protocol, and how it
-was measured, is in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+**Pre-releases are out** (the newest is on the
+[releases page](https://github.com/Bananenbaas/commander/releases)).
+`kb7screen` and Commander drive the keyboard on Windows without Swarm II.
+Swarm II is still needed for firmware updates. The Linux build passes its
+tests but has not been run on a keyboard yet. What is known about the
+protocol, and how it was measured, is in
+[`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+
+What works in the released builds:
+
+- Own buttons on all three touchscreen pages, with pictures, titles and
+  actions (key combinations, sequences with pauses, programs, websites).
+- Layered RGB lighting that reacts to key presses, and stored lighting per
+  profile for when nothing streams.
+- The keyboard's volume mixer page shows and controls the programs that play
+  sound in Windows, on every output device.
+- Profile names, and switching to a profile while a program runs.
+- Commander, the tray program: keeps it all running, starts with Windows and
+  updates itself from the releases, after asking.
+
+On `main`, for the next release:
+
+- Game profiles: one file per game with its program and the profile to show
+  while it runs.
+- The first part of Commander's window. It shows the keyboard's profiles and
+  the game profiles, and holds the settings and updates. Setting up buttons
+  and lighting in the window comes in later parts; until then that is done in
+  the configuration files. The design is in
+  [`docs/design/commander-gui.md`](docs/design/commander-gui.md).
+
+Not there yet: dashboards and widgets on the touchscreen, animations, the
+media controls of the volume page, and devices other than the KB7.
 
 | Phase | Goal | State |
 |---|---|---|
 | 0 | USB captures of Swarm II ↔ KB7, one action per capture | ongoing, per new feature |
 | 1 | Analysis toolkit (`kb7cap`) and protocol notes | ready |
-| 2 | Safe replay: device info → RGB → button layout → image upload → touch input | done on Windows: buttons, pictures, touches, profile switching, lighting stream |
-| 3 | Programs built on it: `kb7screen`, Commander; later dashboards, plugins, a settings window | first pre-release |
+| 2 | Safe replay: device info → RGB → button layout → image upload → touch input | done on Windows: buttons, pictures, touches, profile switching, lighting, mixer, profile names |
+| 3 | Programs built on it: `kb7screen`, Commander and its window; later dashboards, plugins, more devices | pre-releases; the window is being built in parts |
 
 ## Download
 
@@ -94,8 +120,10 @@ pictures and titles on the KB7's touchscreen buttons and carries out their
 actions on the PC, without Swarm II: key combinations, sequences with pauses,
 programs, websites. It also streams layered RGB lighting: waves, breathing,
 ripples from key presses, and keys that light up with an on/off state.
+It drives the volume mixer page from Windows and switches profiles per game.
 Commander is its tray program for Windows: it keeps it running, reloads the
-configuration and starts with Windows. See
+configuration, starts with Windows, updates itself and has a window for the
+settings. See
 [`screen/README.md`](screen/README.md).
 
 ## Contributing
