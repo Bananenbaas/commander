@@ -141,8 +141,11 @@ func Serve(ctx context.Context, conn io.ReadWriteCloser, h Handler, events <-cha
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				defer func() { <-slots }()
-				_ = out.send(answer(ctx, h, m))
+				ans := answer(ctx, h, m)
+				// Free the slot before the answer goes out, so a caller
+				// that has its answer can always make the next call.
+				<-slots
+				_ = out.send(ans)
 			}()
 		}
 	}()
