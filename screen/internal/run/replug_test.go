@@ -5,6 +5,7 @@ package run
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Bananenbaas/commander/screen/internal/device"
@@ -167,5 +168,99 @@ func TestReplugAskedAgainAfterRecovery(t *testing.T) {
 			Status{Profile: -1, Waiting: "keyboard"}, Status{Profile: -1, Waiting: WaitReplug}, Status{Profile: 0},
 			Status{Profile: -1, Waiting: "keyboard"}, Status{Profile: -1, Waiting: WaitReplug}, Status{Profile: 0})
 		h.wantLogged(2, replugMsg)
+	})
+}
+
+// traceLog is a Trace that notes, in the harness's messages, every request
+// to write the trace, and keeps the markers.
+type traceLog struct {
+	h     *harness
+	marks []string
+}
+
+func (t *traceLog) Dump(reason string) { t.h.logf("trace dump: %s", reason) }
+func (t *traceLog) Mark(text string)   { t.marks = append(t.marks, text) }
+
+// tracedRun runs testConfig with a traceLog and returns it.
+func tracedRun(h *harness) *traceLog {
+	tr := &traceLog{h: h}
+	d := h.deps()
+	d.Trace = tr
+	if err := Run(h.ctx, testConfig(), d); err != nil {
+		h.t.Fatalf("Run: %v", err)
+	}
+	return tr
+}
+
+// wantDumpsAfterReplug checks that the trace is asked for n times, each
+// right after the replug advice.
+func (h *harness) wantDumpsAfterReplug(n int) {
+	h.t.Helper()
+	h.mu.Lock()
+	msgs := slices.Clone(h.msgs)
+	h.mu.Unlock()
+	dumps := 0
+	for i, m := range msgs {
+		if !strings.HasPrefix(m, "trace dump: ") {
+			continue
+		}
+		dumps++
+		if i == 0 || msgs[i-1] != replugMsg {
+			h.t.Errorf("trace asked for after %q, want after the replug advice", msgs[max(i-1, 0)])
+		}
+		if want := "trace dump: the keyboard does not answer: 3 failed connects or switches in a row"; m != want {
+			h.t.Errorf("got %q, want %q", m, want)
+		}
+	}
+	if dumps != n {
+		h.t.Errorf("trace asked for %d times, want %d; messages: %q", dumps, n, msgs)
+	}
+}
+
+// The trace is written with the replug advice, once however long the
+// keyboard keeps failing.
+func TestReplugWritesTheTrace(t *testing.T) {
+	test(t, func(h *harness) {
+		h.notifyErr = func(n int) error {
+			if n < 6 {
+				return semaphore
+			}
+			return nil
+		}
+		h.onPoll[7] = h.cancel
+		tracedRun(h)
+		h.wantLogged(1, replugMsg)
+		h.wantDumpsAfterReplug(1)
+	})
+}
+
+// After the keyboard answered, a new run of failures writes it again.
+func TestReplugWritesTheTraceOncePerEpisode(t *testing.T) {
+	test(t, func(h *harness) {
+		h.notifyErr = func(n int) error {
+			if n < 3 || (n >= 4 && n < 7) {
+				return semaphore
+			}
+			return nil
+		}
+		h.onPoll[4] = func() { h.push(failure(fmt.Errorf("%w: reading input", device.ErrDisconnected))) }
+		h.onPoll[9] = h.cancel
+		tracedRun(h)
+		h.wantDumpsAfterReplug(2)
+	})
+}
+
+// A program of switch_when_running seen ending is marked in the trace, and
+// so is the switch that follows, with the time in between.
+func TestProgramEndIsMarked(t *testing.T) {
+	test(t, func(h *harness) {
+		h.onPoll[1] = func() { h.running[game] = true }
+		h.onPoll[2] = func() { h.running[game] = false }
+		h.onPoll[3] = h.cancel
+		tr := tracedRun(h)
+		want := []string{"program game.exe ended", "switching to profile 0, 0ms after game.exe was seen ending"}
+		if !slices.Equal(tr.marks, want) {
+			t.Errorf("marks %q, want %q", tr.marks, want)
+		}
 	})
 }

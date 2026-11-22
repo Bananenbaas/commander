@@ -128,14 +128,18 @@ func (l *loop) idle(ctx context.Context, d time.Duration) {
 
 // noteStarts sets the states of the profiles whose program was not running
 // at the last poll and is now (or is at the first poll) to their start
-// values.
+// values, and marks in the trace a program that was running at the last poll
+// and is not now.
 func (l *loop) noteStarts(running map[string]bool) {
-	if l.eng == nil {
-		return
-	}
 	for _, p := range l.switchers {
-		if running[p.SwitchWhenRunning] && !l.wasRunning[p.SwitchWhenRunning] {
+		n := p.SwitchWhenRunning
+		if l.eng != nil && running[n] && !l.wasRunning[n] {
 			l.eng.Start(p.Number)
+		}
+		if !running[n] && l.wasRunning[n] {
+			l.wasRunning[n] = false // marked once, also when two profiles share it
+			l.ended, l.endedAt = n, l.now()
+			l.trace.Mark(fmt.Sprintf("program %s ended", n))
 		}
 	}
 	for _, p := range l.switchers {

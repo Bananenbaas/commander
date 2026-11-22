@@ -130,7 +130,26 @@ type Deps struct {
 	// Audio is shown on the keyboard's volume mixer page while the keyboard
 	// is in use; nil: no mixer, nothing of it is written. See Run.
 	Audio Audio
+	// Trace keeps the keyboard's recent traffic (device.Trace); nil: none.
+	// Run asks for it to be written to the log with the replug advice, and
+	// marks in it a program of switch_when_running seen ending and the
+	// switch that follows.
+	Trace Trace
 }
+
+// Trace is a record of the keyboard's recent traffic.
+type Trace interface {
+	// Dump writes the record to the log, saying why.
+	Dump(reason string)
+	// Mark puts text into the record.
+	Mark(text string)
+}
+
+// noTrace is the Trace used without one.
+type noTrace struct{}
+
+func (noTrace) Dump(string) {}
+func (noTrace) Mark(string) {}
 
 // Resume is a profile an earlier Run left the keyboard on.
 //
@@ -193,6 +212,10 @@ type loop struct {
 	resume   *Resume               // used by the first connect, then nil
 	failures int                   // connects and switches that failed in a row
 	assumed  bool                  // the keyboard did not confirm the switch to the active profile
+
+	trace   Trace
+	ended   string    // the switch_when_running program last seen ending, until the switch that follows
+	endedAt time.Time // when it was seen ending
 
 	// Lighting; eng is nil without it.
 	eng        *light.Engine
@@ -342,6 +365,10 @@ func newLoop(cfg *layout.Config, d Deps) (*loop, error) {
 	if l.logf == nil {
 		l.logf = func(string, ...any) {}
 	}
+	l.trace = d.Trace
+	if l.trace == nil {
+		l.trace = noTrace{}
+	}
 	profiles := append([]layout.Profile(nil), cfg.Profiles...)
 	sort.SliceStable(profiles, func(i, j int) bool { return profiles[i].Number < profiles[j].Number })
 	l.names = append([]string(nil), procs.Swarm...)
@@ -430,6 +457,7 @@ func (l *loop) failed() {
 	l.failures++
 	if l.failures == replugAfter {
 		l.logf("the keyboard does not answer; unplug it and plug it back in")
+		l.trace.Dump(fmt.Sprintf("the keyboard does not answer: %d failed connects or switches in a row", l.failures))
 	}
 }
 
@@ -657,6 +685,10 @@ const (
 func (l *loop) switchTo(ctx context.Context, p byte, how int) bool {
 	if !l.release(ctx) {
 		return false
+	}
+	if l.ended != "" && how != switchNone {
+		l.trace.Mark(fmt.Sprintf("switching to profile %d, %dms after %s was seen ending", p, l.now().Sub(l.endedAt).Milliseconds(), l.ended))
+		l.ended = ""
 	}
 	var err error
 	switch how {
