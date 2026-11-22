@@ -286,6 +286,32 @@ func TestToFileOff(t *testing.T) {
 	}
 }
 
+func TestFromFileNoLayers(t *testing.T) {
+	_, ok, reason := FromFile(&layout.FileLight{})
+	if ok || reason != "This lighting has no layers, so it opens in Advanced." {
+		t.Fatalf("got ok %v, reason %q", ok, reason)
+	}
+	_, ok, _ = FromFile(&layout.FileLight{FPS: 30, Layers: []map[string]any{}})
+	if ok {
+		t.Fatal("empty layer list fits the simple view")
+	}
+}
+
+func TestToFileUnknownBaseKeepsExtras(t *testing.T) {
+	l := ToFile(Simple{
+		Base:      "sparkle",
+		Highlight: &Highlight{Keys: []string{"W"}, Color: "#FF0000"},
+		States:    []State{{Name: "caps", Keys: []string{"CapsLock"}, Color: "#00FF00"}},
+	})
+	want := []map[string]any{
+		{"effect": "fixed", "keys": []string{"W"}, "color": "#FF0000"},
+		{"effect": "state", "name": "caps", "keys": []string{"CapsLock"}, "color": "#00FF00"},
+	}
+	if l == nil || !reflect.DeepEqual(l.Layers, want) {
+		t.Fatalf("got %#v, want %#v", l, want)
+	}
+}
+
 func TestToFileEmpty(t *testing.T) {
 	if l := ToFile(Simple{}); l != nil {
 		t.Fatalf("got %#v, want nil", l)

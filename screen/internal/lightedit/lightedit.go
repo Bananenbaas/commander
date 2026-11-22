@@ -137,6 +137,10 @@ func FromFile(l *layout.FileLight) (s Simple, ok bool, reason string) {
 	if l.FPS != 0 && l.FPS != light.DefaultFPS {
 		return Simple{}, false, "The frame rate is changed, which the simple view has no control for."
 	}
+	if len(l.Layers) == 0 {
+		// The simple view would save this as no lighting at all.
+		return Simple{}, false, "This lighting has no layers, so it opens in Advanced."
+	}
 	last := -1
 	for _, m := range l.Layers {
 		if reason := readLayer(&s, m, &last); reason != "" {
@@ -309,7 +313,9 @@ func checkOthers(e string, m map[string]any) string {
 
 // ToFile builds the [light] table for s, bottom first in the pattern order;
 // settings at their default are left out, and so are a zero Speed or Period
-// and an empty Direction. Colours are written upper case. A Simple with
+// and an empty Direction. Colours are written upper case. A Base other than
+// the four named ones writes no base layer, as "" does, and the ripple,
+// highlighted keys and key states are written all the same. A Simple with
 // nothing in it returns nil (no [light]).
 func ToFile(s Simple) *layout.FileLight {
 	var layers []map[string]any
