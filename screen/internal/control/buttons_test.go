@@ -323,3 +323,74 @@ func pngFile(t *testing.T, w, h int) []byte {
 	}
 	return buf.Bytes()
 }
+
+const richProfile = `
+profile = 0
+
+[light]
+fps = 30
+
+[[light.layer]]
+effect = "state"
+name = "gear"
+toggle = "N"
+start = "on"
+keys = ["N"]
+color = "#30E070"
+
+[[button]]
+page = 1
+position = 0
+title = "Gear"
+label = "GEAR"
+color = "#30e070"
+symbol = "symbols/star.png"
+action = ["N", "wait 200ms"]
+state = "gear"
+confirm = "hold 700ms"
+
+[[button]]
+page = 1
+position = 1
+title = "Boost"
+action = ["LShift"]
+mode = "hold"
+
+[[button]]
+page = 1
+position = 2
+title = "Lights"
+state = "gear"
+`
+
+func TestSaveUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "symbols"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "symbols", "star.png"), pngFile(t, 8, 8), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "rich.toml"), []byte(richProfile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := &counts{}
+	d := (&fake{}).deps(dir)
+	d.Reload = func() { c.reload++ }
+	d.Apply = func() { c.apply++ }
+	s := newService(t, d)
+
+	p := profileCall(t, s)
+	if !reflect.DeepEqual(p["states"], []any{"gear"}) {
+		t.Errorf("states: %v", p["states"])
+	}
+	m := call(t, s, "saveDeviceProfile", saveArgs(t, p, p["version"].(string), nil))
+	if m["ok"] != true || m["change"] != "none" || c.apply+c.reload != 0 {
+		t.Fatalf("answer: %v %+v", m, *c)
+	}
+	// Saved once, the same buttons read back the same.
+	again := profileCall(t, s)
+	if !reflect.DeepEqual(again["buttons"], p["buttons"]) || again["version"] != m["version"] {
+		t.Errorf("buttons changed by a save:\n%v\n%v", p["buttons"], again["buttons"])
+	}
+}

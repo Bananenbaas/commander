@@ -225,7 +225,7 @@ func loadFile(dir, path string, data []byte) (*Profile, error) {
 			return nil, fmt.Errorf("%s: button %d: page and position are required", name, i+1)
 		}
 		where := fmt.Sprintf("%s: page %d position %d", name, *rb.Page, *rb.Position)
-		b, err := buildButton(dir, rb)
+		b, err := buildButton(dir, rb, false)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", where, err)
 		}
@@ -347,7 +347,7 @@ func checkState(states []string, name string) error {
 	return fieldErr("state", fmt.Errorf("state %q is not declared by any light layer of this layout", name))
 }
 
-func buildButton(dir string, rb rawButton) (Button, error) {
+func buildButton(dir string, rb rawButton, preview bool) (Button, error) {
 	b := Button{Page: *rb.Page, Position: *rb.Position, Title: rb.Title, Label: rb.Label, Color: defaultColor, State: rb.State}
 	if b.Page < 1 || b.Page > 3 {
 		return b, fieldErr("position", fmt.Errorf("page must be 1 to 3"))
@@ -386,6 +386,9 @@ func buildButton(dir string, rb rawButton) (Button, error) {
 		if b.Picture, err = resolveFile(dir, "picture", rb.Picture); err != nil {
 			return b, fieldErr("picture", err)
 		}
+	}
+	if preview {
+		return b, nil
 	}
 	if len(rb.Action) == 0 && rb.State == "" {
 		return b, fieldErr("action", fmt.Errorf("action must hold at least one step"))
@@ -440,6 +443,18 @@ func fieldErr(field string, err error) *FieldError {
 	return &FieldError{Field: field, Step: -1, Err: err}
 }
 
+// PreviewButton builds what a button's picture shows (position, title, label,
+// colour, symbol and picture, the files resolved against dir) with the rules
+// of Load. Its steps, mode, state and confirm are not looked at, so a button
+// that is still being made can be drawn. It returns nil or a *FieldError.
+func PreviewButton(dir string, b FileButton) (Button, error) {
+	page, pos := b.Page, b.Position
+	return buildButton(dir, rawButton{
+		Page: &page, Position: &pos,
+		Title: b.Title, Label: b.Label, Color: b.Color, Symbol: b.Symbol, Picture: b.Picture,
+	}, true)
+}
+
 // CheckButton checks one button as Load would, against the light states
 // the profile declares (nil = no [light]). It returns nil or a *FieldError.
 func CheckButton(dir string, b FileButton, states []string) error {
@@ -449,7 +464,7 @@ func CheckButton(dir string, b FileButton, states []string) error {
 		Title: b.Title, Label: b.Label, Color: b.Color, Symbol: b.Symbol, Picture: b.Picture,
 		Action: b.Action, Mode: b.Mode, State: b.State, Confirm: b.Confirm,
 	}
-	built, err := buildButton(dir, rb)
+	built, err := buildButton(dir, rb, false)
 	if err != nil {
 		return err
 	}

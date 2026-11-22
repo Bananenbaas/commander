@@ -118,20 +118,9 @@ func SaveButtons(dir string, slot byte, base string, buttons []layout.FileButton
 	if err != nil {
 		return Result{}, err
 	}
-	var saved *layoutFile
-	for i := range layouts {
-		if layouts[i].file != nil && layouts[i].file.Profile == int(slot) {
-			saved = &layouts[i]
-			break
-		}
-	}
-	if saved == nil {
-		// A file that does not decode may be the one; then its error is
-		// the one to show.
-		if _, err := layout.Load(abs); err != nil {
-			return Result{}, otherFile(err)
-		}
-		return Result{}, fmt.Errorf("There is no layout for profile %d.", int(slot)+1)
+	saved, err := pickLayout(abs, layouts, slot)
+	if err != nil {
+		return Result{}, err
 	}
 	if Version(saved.data) != base {
 		return Result{}, ErrChanged
@@ -221,6 +210,39 @@ func SaveButtons(dir string, slot byte, base string, buttons []layout.FileButton
 	}
 	res.Version = Version(data)
 	return res, nil
+}
+
+// LayoutFile returns the name (relative to dir) and the bytes of the layout
+// file of KB7 profile slot (0-4), the file SaveButtons replaces.
+func LayoutFile(dir string, slot byte) (rel string, data []byte, err error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", nil, err
+	}
+	layouts, err := readLayouts(abs)
+	if err != nil {
+		return "", nil, err
+	}
+	l, err := pickLayout(abs, layouts, slot)
+	if err != nil {
+		return "", nil, err
+	}
+	return l.rel, l.data, nil
+}
+
+// pickLayout finds the layout of slot among layouts. When none decodes for
+// it, a file that does not decode may be the one, and then its error is the
+// one to show.
+func pickLayout(abs string, layouts []layoutFile, slot byte) (*layoutFile, error) {
+	for i := range layouts {
+		if layouts[i].file != nil && layouts[i].file.Profile == int(slot) {
+			return &layouts[i], nil
+		}
+	}
+	if _, err := layout.Load(abs); err != nil {
+		return nil, otherFile(err)
+	}
+	return nil, fmt.Errorf("There is no layout for profile %d.", int(slot)+1)
 }
 
 // layoutFile is one layout file of the folder; file is nil when it does

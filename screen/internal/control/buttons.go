@@ -8,11 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"image/color"
 	"image/png"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -182,23 +178,15 @@ func kb7Slot(device string, profile int) (byte, error) {
 
 // layoutOf reads the layout file of KB7 profile slot from dir.
 func layoutOf(dir string, slot byte) ([]byte, *layout.File, error) {
-	entries, err := os.ReadDir(dir)
+	_, data, err := store.LayoutFile(dir, slot)
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".toml") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil {
-			return nil, nil, err
-		}
-		if f, err := layout.DecodeFile(data); err == nil && f.Profile == int(slot) {
-			return data, f, nil
-		}
+	f, err := layout.DecodeFile(data)
+	if err != nil {
+		return nil, nil, err
 	}
-	return nil, nil, fmt.Errorf("There is no layout for profile %d.", int(slot)+1)
+	return data, f, nil
 }
 
 type deviceProfileOut struct {
@@ -339,30 +327,13 @@ func (s *Service) renderButton(args json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("renderButton: %w", err)
 	}
-	// Only what the picture shows is checked: a button being made has no
-	// steps yet, and its state is not looked at.
-	check := fb
-	check.Action, check.Mode, check.State, check.Confirm = []string{"A"}, "", "", ""
-	if err := layout.CheckButton(s.d.Dir, check, nil); err != nil {
+	b, err := layout.PreviewButton(s.d.Dir, fb)
+	if err != nil {
 		var fe *layout.FieldError
 		if errors.As(err, &fe) {
 			return nil, fmt.Errorf("renderButton: %s: %w", fe.Field, err)
 		}
 		return nil, fmt.Errorf("renderButton: %w", err)
-	}
-	b := layout.Button{Page: fb.Page, Position: fb.Position, Title: fb.Title, Label: fb.Label, Color: defaultColor}
-	if fb.Color != "" {
-		c, err := parseColor(fb.Color)
-		if err != nil {
-			return nil, fmt.Errorf("renderButton: color: %w", err)
-		}
-		b.Color = c
-	}
-	if fb.Symbol != "" {
-		b.Symbol = filepath.Join(s.d.Dir, filepath.FromSlash(fb.Symbol))
-	}
-	if fb.Picture != "" {
-		b.Picture = filepath.Join(s.d.Dir, filepath.FromSlash(fb.Picture))
 	}
 	img, err := apply.RenderButton(b)
 	if err != nil {
@@ -392,23 +363,4 @@ func (s *Service) importPicture(args json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("importPicture: %w", err)
 	}
 	return map[string]string{"path": rel}, nil
-}
-
-// defaultColor is the colour of a button that sets none, as in layout.
-var defaultColor = color.NRGBA{R: 0x00, G: 0xAA, B: 0xFF, A: 0xFF}
-
-// parseColor reads #RRGGBB or #RRGGBBAA, which layout.CheckButton has checked.
-func parseColor(s string) (color.NRGBA, error) {
-	h, ok := strings.CutPrefix(s, "#")
-	if !ok || (len(h) != 6 && len(h) != 8) {
-		return color.NRGBA{}, fmt.Errorf("color must be #RRGGBB or #RRGGBBAA, got %q", s)
-	}
-	v, err := strconv.ParseUint(h, 16, 32)
-	if err != nil {
-		return color.NRGBA{}, fmt.Errorf("color must be #RRGGBB or #RRGGBBAA, got %q", s)
-	}
-	if len(h) == 6 {
-		v = v<<8 | 0xFF
-	}
-	return color.NRGBA{R: byte(v >> 24), G: byte(v >> 16), B: byte(v >> 8), A: byte(v)}, nil
 }
