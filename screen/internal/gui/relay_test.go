@@ -186,3 +186,44 @@ func TestFromApp(t *testing.T) {
 		}
 	}
 }
+
+func TestPickOf(t *testing.T) {
+	cases := []struct {
+		raw string
+		id  int64
+		ok  bool
+	}{
+		{`{"id":7,"call":"__pickPicture"}`, 7, true},
+		{`{"id":8,"call":"__pickPicture","args":null}`, 8, true},
+		{`{"id":9,"call":"__theme","args":"dark"}`, 0, false},
+		{`{"id":1,"call":"state"}`, 0, false},
+		{`{"id":1,"call":"__pickPictures"}`, 0, false},
+		{`{"id":1}`, 0, false},
+		{`{`, 0, false},
+		{``, 0, false},
+	}
+	for _, c := range cases {
+		id, ok := pickOf(c.raw)
+		if id != c.id || ok != c.ok {
+			t.Errorf("pickOf(%s) = %d %v, want %d %v", c.raw, id, ok, c.id, c.ok)
+		}
+	}
+}
+
+func TestPathLine(t *testing.T) {
+	for _, p := range []string{``, `C:\Pictures\a.png`, `C:\odd "name"\b.png`} {
+		var got struct {
+			ID     int64 `json:"id"`
+			Result struct {
+				Path string `json:"path"`
+			} `json:"result"`
+		}
+		line := pathLine(5, p)
+		if err := json.Unmarshal([]byte(line), &got); err != nil {
+			t.Fatalf("pathLine(%q) = %s: %v", p, line, err)
+		}
+		if got.ID != 5 || got.Result.Path != p {
+			t.Errorf("pathLine(%q) = %s", p, line)
+		}
+	}
+}

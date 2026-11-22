@@ -122,3 +122,35 @@ func themeOf(raw string) (dark, ok bool) {
 func fromApp(source string) bool {
 	return strings.HasPrefix(source, AppOrigin+"/")
 }
+
+// pickCall is the call the window answers itself with the file dialog.
+const pickCall = "__pickPicture"
+
+// pickOf reports whether raw is the "__pickPicture" call and its page id.
+func pickOf(raw string) (id int64, ok bool) {
+	var pc struct {
+		ID   int64  `json:"id"`
+		Call string `json:"call"`
+	}
+	if json.Unmarshal([]byte(raw), &pc) != nil || pc.Call != pickCall {
+		return 0, false
+	}
+	return pc.ID, true
+}
+
+// pathLine is the answer to a "__pickPicture" call; an empty path means the
+// player cancelled.
+func pathLine(id int64, path string) string {
+	b, err := json.Marshal(struct {
+		ID     int64 `json:"id"`
+		Result struct {
+			Path string `json:"path"`
+		} `json:"result"`
+	}{ID: id, Result: struct {
+		Path string `json:"path"`
+	}{path}})
+	if err != nil {
+		return errorLine(id, "bad result")
+	}
+	return string(b)
+}

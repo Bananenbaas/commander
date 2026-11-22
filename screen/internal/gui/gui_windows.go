@@ -441,6 +441,15 @@ func (w *window) fromPage(msg string) {
 		setDarkTitleBar(w.hwnd, dark)
 		return
 	}
+	if id, ok := pickOf(msg); ok {
+		path, err := w.pickPicture()
+		if err != nil {
+			w.enqueue(errorLine(id, err.Error()), true)
+			return
+		}
+		w.enqueue(pathLine(id, path), true)
+		return
+	}
 	go func() { w.enqueue(Relay(w.ctx, w.client, msg), true) }()
 }
 
