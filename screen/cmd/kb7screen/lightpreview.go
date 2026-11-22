@@ -12,24 +12,18 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
-	"time"
 
-	"github.com/Bananenbaas/commander/screen/internal/action"
 	"github.com/Bananenbaas/commander/screen/internal/layout"
 	"github.com/Bananenbaas/commander/screen/internal/light"
 	"github.com/Bananenbaas/commander/screen/internal/proto"
 )
 
 const (
-	lightFrames   = 80                    // 4 s at 20 fps
-	lightStep     = 50 * time.Millisecond // one frame
-	lightDelay    = 5                     // 1/100 s per frame
-	lightCell     = 40                    // pixels per key unit
-	lightSquare   = 34                    // pixels per LED square
-	lightRound    = 3                     // corner rounding in pixels
-	lightMargin   = 30                    // pixels around the outer LEDs
-	lightPressGap = 100 * time.Millisecond
+	lightDelay  = 5  // 1/100 s per frame
+	lightCell   = 40 // pixels per key unit
+	lightSquare = 34 // pixels per LED square
+	lightRound  = 3  // corner rounding in pixels
+	lightMargin = 30 // pixels around the outer LEDs
 )
 
 var lightBoard = color.RGBA{R: 0x1A, G: 0x1A, B: 0x1A, A: 0xFF}
@@ -69,14 +63,6 @@ func (c lightCanvas) pixel(pt light.Point) (x, y int) {
 		lightMargin + int(math.Round((pt.Y-c.minY)*lightCell))
 }
 
-// lightEvent is a key event or a state flip at a time of the simulation.
-type lightEvent struct {
-	at   time.Duration
-	key  action.Key
-	down bool
-	flip string // when set, flip this state instead of pressing a key
-}
-
 func doLightPreview(c command, stdout io.Writer) error {
 	cfg, err := layout.Load(c.config)
 	if err != nil {
@@ -107,40 +93,10 @@ func doLightPreview(c command, stdout io.Writer) error {
 	return nil
 }
 
-// lightScript lists what the simulation does: W at 0.5 s, Space at 1.5 s and,
-// at 2.5 s, the toggle of every state (or a flip for a state without one).
-func lightScript(stack *light.Stack) []lightEvent {
-	ev := []lightEvent{
-		{at: 500 * time.Millisecond, key: action.W, down: true},
-		{at: 600 * time.Millisecond, key: action.W},
-		{at: 1500 * time.Millisecond, key: action.Space, down: true},
-		{at: 1600 * time.Millisecond, key: action.Space},
-	}
-	const t = 2500 * time.Millisecond
-	for _, s := range stack.States() {
-		if s.Toggle == nil || len(s.Toggle.Keys) == 0 {
-			ev = append(ev, lightEvent{at: t, flip: s.Name})
-			continue
-		}
-		for _, k := range s.Toggle.Keys {
-			ev = append(ev, lightEvent{at: t, key: k, down: true})
-		}
-		for _, k := range s.Toggle.Keys {
-			ev = append(ev, lightEvent{at: t + lightPressGap, key: k})
-		}
-	}
-	sort.SliceStable(ev, func(i, j int) bool { return ev[i].at < ev[j].at })
-	return ev
-}
-
 // renderLightGIF runs the engine on a fixed clock and draws one frame per
 // step from the payload the keyboard would receive.
 func renderLightGIF(p byte, stack *light.Stack) *gif.GIF {
-	t0 := time.Unix(1_000_000, 0)
-	e := light.NewEngine(map[byte]*light.Stack{p: stack}, t0)
-	e.Start(p)
-	e.SetActive(p)
-	e.SetBrightness(100)
+	frames := light.Frames(stack)
 
 	var leds []int
 	for i := 0; i < light.NumLEDs; i++ {
@@ -151,21 +107,8 @@ func renderLightGIF(p byte, stack *light.Stack) *gif.GIF {
 	cv := newLightCanvas()
 	w, h := cv.w, cv.h
 
-	script := lightScript(stack)
-	next := 0
 	var colours [][]color.RGBA
-	for k := 0; k < lightFrames; k++ {
-		at := time.Duration(k) * lightStep
-		for next < len(script) && script[next].at <= at {
-			ev := script[next]
-			next++
-			if ev.flip != "" {
-				e.Flip(p, ev.flip)
-			} else {
-				e.Key(ev.key, ev.down, t0.Add(ev.at))
-			}
-		}
-		pl := e.Payload(t0.Add(at))
+	for _, pl := range frames {
 		cols := make([]color.RGBA, len(leds))
 		for n, i := range leds {
 			r, gr, b := ledColour(pl, i)

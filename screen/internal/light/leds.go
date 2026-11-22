@@ -167,6 +167,29 @@ func Pos(led int) (Point, bool) {
 	return table[led].pos, true
 }
 
+// LEDInfo is one LED of the KB7 as the window draws it.
+type LEDInfo struct {
+	Index int
+	X, Y  float64 // key units, as Pos
+	Name  string  // the name ResolveLEDs takes for it alone: the key name (action.KeyName) or the extra name
+}
+
+// LEDs lists every mapped LED, by index.
+func LEDs() []LEDInfo {
+	var out []LEDInfo
+	for i := 0; i < NumLEDs; i++ {
+		if !mapped[i] {
+			continue
+		}
+		name := table[i].name
+		if name == "" {
+			name = action.KeyName(table[i].key)
+		}
+		out = append(out, LEDInfo{Index: i, X: table[i].pos.X, Y: table[i].pos.Y, Name: name})
+	}
+	return out
+}
+
 // ResolveLEDs turns names into a sorted list of distinct LED indices. A name is
 // a key name as action.ParseKey takes it, one of Fn, Menu, PrevTrack,
 // NextTrack, GameMode, ProfileCycle, MicOff, RGBButton, Wrist1 to Wrist10, or a

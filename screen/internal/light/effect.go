@@ -59,7 +59,7 @@ type Spec struct {
 var registry = map[string]Spec{}
 
 // reserved names are layer-level keys in the configuration, not settings.
-var reserved = map[string]bool{"effect": true, "keys": true}
+var reserved = map[string]bool{"effect": true, "keys": true, "enabled": true}
 
 // Register adds an effect. It panics on mistakes in the Spec, such as a name
 // that is already taken or a default that does not parse, since those are

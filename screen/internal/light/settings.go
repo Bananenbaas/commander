@@ -76,7 +76,7 @@ func parseValues(s Spec, raw map[string]any) (Values, error) {
 	sort.Strings(names)
 	for _, n := range names {
 		if !declared[n] {
-			return nil, fmt.Errorf("%s: unknown setting %q", s.Name, n)
+			return nil, forSetting(n, fmt.Errorf("%s: unknown setting %q", s.Name, n))
 		}
 	}
 	v := Values{}
@@ -85,7 +85,7 @@ func parseValues(s Spec, raw map[string]any) (Values, error) {
 		switch {
 		case given:
 		case st.Required:
-			return nil, fmt.Errorf("%s: %s: required but not given", s.Name, st.Name)
+			return nil, forSetting(st.Name, fmt.Errorf("%s: %s: required but not given", s.Name, st.Name))
 		case st.Default != nil:
 			r = st.Default
 		default:
@@ -93,7 +93,7 @@ func parseValues(s Spec, raw map[string]any) (Values, error) {
 		}
 		val, err := st.parse(r)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", s.Name, err)
+			return nil, forSetting(st.Name, fmt.Errorf("%s: %w", s.Name, err))
 		}
 		v[st.Name] = val
 	}

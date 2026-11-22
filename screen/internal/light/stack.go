@@ -3,6 +3,7 @@
 package light
 
 import (
+	"errors"
 	"fmt"
 	"image/color"
 	"strings"
@@ -60,12 +61,13 @@ func Build(c Config) (*Stack, error) {
 		n := i + 1
 		sl, err := buildLayer(lc)
 		if err != nil {
-			return nil, fmt.Errorf("layer %d: %w", n, err)
+			return nil, newLayerError(n, err)
 		}
 		if st, ok := sl.effect.(interface{ State() StateDef }); ok {
 			d := st.State()
 			if prev, dup := stateLayer[d.Name]; dup {
-				return nil, fmt.Errorf("layer %d: state %q is already declared by layer %d", n, d.Name, prev)
+				return nil, &LayerError{Layer: n, Setting: "name",
+					Err: fmt.Errorf("state %q is already declared by layer %d", d.Name, prev)}
 			}
 			stateLayer[d.Name] = n
 			s.states = append(s.states, d)
@@ -75,23 +77,73 @@ func Build(c Config) (*Stack, error) {
 	return s, nil
 }
 
+// LayerError is a Build error tied to one layer (1-based, bottom first)
+// and, when it concerns one, a setting. Error is the text Build has always
+// returned, such as "layer 2: wave: colors: needs at least two colours".
+type LayerError struct {
+	Layer   int
+	Setting string // "" when the error is not about one setting ("effect" and "keys" count as settings here)
+	Err     error
+}
+
+func (e *LayerError) Error() string { return fmt.Sprintf("layer %d: %v", e.Layer, e.Err) }
+func (e *LayerError) Unwrap() error { return e.Err }
+
+// settingError marks an error from buildLayer as concerning one setting.
+type settingError struct {
+	setting string
+	err     error
+}
+
+func (e *settingError) Error() string { return e.err.Error() }
+func (e *settingError) Unwrap() error { return e.err }
+
+func forSetting(setting string, err error) error {
+	return &settingError{setting: setting, err: err}
+}
+
+func newLayerError(n int, err error) *LayerError {
+	le := &LayerError{Layer: n, Err: err}
+	var se *settingError
+	if errors.As(err, &se) {
+		le.Setting = se.setting
+	}
+	return le
+}
+
+// newSetting finds the setting a New error is about: the error's text reads
+// "[effect: ]setting: ..." when it is about one.
+func newSetting(spec Spec, err error) string {
+	text := strings.TrimPrefix(err.Error(), spec.Name+": ")
+	first, _, ok := strings.Cut(text, ": ")
+	if !ok {
+		return ""
+	}
+	for _, st := range spec.Settings {
+		if st.Name == first {
+			return first
+		}
+	}
+	return ""
+}
+
 func buildLayer(lc LayerConfig) (stackLayer, error) {
 	spec, ok := registry[strings.ToLower(lc.Effect)]
 	if !ok {
-		return stackLayer{}, fmt.Errorf("unknown effect %q", lc.Effect)
+		return stackLayer{}, forSetting("effect", fmt.Errorf("unknown effect %q", lc.Effect))
 	}
 	var sl stackLayer
 	if len(lc.Keys) > 0 {
 		leds, err := ResolveLEDs(lc.Keys)
 		if err != nil {
-			return stackLayer{}, fmt.Errorf("%s: keys: %w", spec.Name, err)
+			return stackLayer{}, forSetting("keys", fmt.Errorf("%s: keys: %w", spec.Name, err))
 		}
 		sl.mask = new([NumLEDs]bool)
 		for _, l := range leds {
 			sl.mask[l] = true
 		}
 	} else if spec.NeedsKeys {
-		return stackLayer{}, fmt.Errorf("%s: keys: required but not given", spec.Name)
+		return stackLayer{}, forSetting("keys", fmt.Errorf("%s: keys: required but not given", spec.Name))
 	}
 	v, err := parseValues(spec, lc.Settings)
 	if err != nil {
@@ -99,7 +151,7 @@ func buildLayer(lc LayerConfig) (stackLayer, error) {
 	}
 	sl.effect, err = spec.New(v)
 	if err != nil {
-		return stackLayer{}, fmt.Errorf("%s: %w", spec.Name, err)
+		return stackLayer{}, forSetting(newSetting(spec, err), fmt.Errorf("%s: %w", spec.Name, err))
 	}
 	if sl.effect == nil {
 		return stackLayer{}, fmt.Errorf("%s: made no effect", spec.Name)
