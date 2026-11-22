@@ -124,7 +124,7 @@ var running = supervisor.State{Phase: supervisor.Running, Run: run.Status{Profil
 
 func TestStateCall(t *testing.T) {
 	dir := writeFolder(t)
-	s := New((&fake{}).deps(dir))
+	s := newService(t, (&fake{}).deps(dir))
 	s.SetState(running)
 	m := call(t, s, "state", "")
 	if m["version"] != "1.2.3" || m["phase"] != "running" || m["status"] != "SC" || m["failed"] != false || m["error"] != "" {
@@ -160,7 +160,7 @@ func TestStateCall(t *testing.T) {
 }
 
 func TestStateNotConnectedWhileWaiting(t *testing.T) {
-	s := New((&fake{}).deps(writeFolder(t)))
+	s := newService(t, (&fake{}).deps(writeFolder(t)))
 	s.SetState(supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: -1, Waiting: "keyboard"}})
 	kb := call(t, s, "state", "")["keyboard"].(map[string]any)
 	if kb["connected"] != false || kb["waiting"] != "keyboard" {
@@ -171,7 +171,7 @@ func TestStateNotConnectedWhileWaiting(t *testing.T) {
 func TestStateWithLoadError(t *testing.T) {
 	d := (&fake{}).deps(t.TempDir())
 	d.Load = func(string) (*layout.Config, error) { return nil, os.ErrNotExist }
-	s := New(d)
+	s := newService(t, d)
 	s.SetState(supervisor.State{Phase: supervisor.Failed, Run: run.Status{Profile: -1}, Err: "boom"})
 	m := call(t, s, "state", "")
 	if m["loadError"] == "" || m["failed"] != true || m["error"] != "boom" {
@@ -186,7 +186,7 @@ func TestStateWithLoadError(t *testing.T) {
 }
 
 func TestStateEventOnSetState(t *testing.T) {
-	s := New((&fake{}).deps(writeFolder(t)))
+	s := newService(t, (&fake{}).deps(writeFolder(t)))
 	s.SetState(running)
 	select {
 	case msg := <-s.Events():
@@ -207,19 +207,35 @@ func TestStateEventOnSetState(t *testing.T) {
 	}
 }
 
-func drain(s *Service) (last bridge.Message) {
-	for len(s.Events()) > 0 {
-		last = <-s.Events()
+func newService(t *testing.T, d Deps) *Service {
+	t.Helper()
+	s := New(d)
+	t.Cleanup(s.Close)
+	return s
+}
+
+// waitState reads events until a state event whose data contains want arrives.
+func waitState(t *testing.T, s *Service, want string) bridge.Message {
+	t.Helper()
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case m := <-s.Events():
+			if m.Event == "state" && strings.Contains(string(m.Data), want) {
+				return m
+			}
+		case <-timeout:
+			t.Fatalf("no state event containing %s", want)
+		}
 	}
-	return last
 }
 
 func TestSetStateNeverBlocks(t *testing.T) {
-	s := New((&fake{}).deps(writeFolder(t)))
+	s := newService(t, (&fake{}).deps(writeFolder(t)))
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < 100; i++ {
-			s.SetState(supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: i % 5}})
+			s.SetState(supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: i % 5, Name: "last"}})
 			s.Show()
 		}
 		close(done)
@@ -229,25 +245,71 @@ func TestSetStateNeverBlocks(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("blocked")
 	}
-	if last := drain(s); last.Event != "show" {
-		t.Errorf("last event %q", last.Event)
+	// Nobody read: the queue holds at most its capacity, and the newest
+	// state still arrives.
+	if n := len(s.Events()); n > eventBuffer {
+		t.Errorf("%d queued", n)
 	}
+	waitState(t, s, `"name":"last"`)
 }
 
 func TestLatestStateKept(t *testing.T) {
-	s := New((&fake{}).deps(writeFolder(t)))
+	s := newService(t, (&fake{}).deps(writeFolder(t)))
 	for i := 0; i < 50; i++ {
 		s.SetState(supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 1, Name: "n" + string(rune('A'+i%26))}})
 	}
-	last := drain(s)
-	if !strings.Contains(string(last.Data), `"name":"nX"`) { // i = 49 -> 'A'+23
-		t.Errorf("latest state lost: %s", last.Data)
+	waitState(t, s, `"name":"nX"`) // i = 49 -> 'A'+23
+}
+
+func TestSetStateReturnsWhileLoadBlocks(t *testing.T) {
+	release := make(chan struct{})
+	d := (&fake{}).deps(writeFolder(t))
+	d.Load = func(dir string) (*layout.Config, error) {
+		<-release
+		return layout.Load(dir)
+	}
+	s := newService(t, d)
+	start := time.Now()
+	for i := 0; i < 5; i++ {
+		s.SetState(supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 1, Name: "s" + string(rune('0'+i))}})
+	}
+	if el := time.Since(start); el > 200*time.Millisecond {
+		t.Errorf("SetState took %v", el)
+	}
+	close(release)
+	m := waitState(t, s, `"name":"s4"`)
+	if m.Event != "state" {
+		t.Fatal("not a state event")
+	}
+	// No older state arrives after the latest one.
+	time.Sleep(50 * time.Millisecond)
+	for len(s.Events()) > 0 {
+		if m := <-s.Events(); m.Event == "state" && !strings.Contains(string(m.Data), `"name":"s4"`) {
+			t.Errorf("older state after the latest: %s", m.Data)
+		}
+	}
+}
+
+func TestCloseStopsWorker(t *testing.T) {
+	s := New((&fake{}).deps(writeFolder(t)))
+	s.Close()
+	s.Close() // idempotent
+	select {
+	case <-s.stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker still running")
+	}
+	s.SetState(running)
+	s.Show()
+	time.Sleep(20 * time.Millisecond)
+	if n := len(s.Events()); n != 0 {
+		t.Errorf("%d events after Close", n)
 	}
 }
 
 func TestSaveSettingsAppliesOnlyGivenFields(t *testing.T) {
 	f := &fake{theme: "light"}
-	s := New(f.deps(writeFolder(t)))
+	s := newService(t, f.deps(writeFolder(t)))
 	m := call(t, s, "saveSettings", `{"checkUpdates":true}`)
 	if len(f.sets) != 1 || f.sets[0] != "updates" {
 		t.Errorf("sets: %v", f.sets)
@@ -266,7 +328,7 @@ func TestSaveSettingsAppliesOnlyGivenFields(t *testing.T) {
 
 func TestSettingsMapsUnknownTheme(t *testing.T) {
 	f := &fake{theme: "purple"}
-	s := New(f.deps(writeFolder(t)))
+	s := newService(t, f.deps(writeFolder(t)))
 	if m := call(t, s, "settings", ""); m["theme"] != "system" {
 		t.Errorf("theme %v", m["theme"])
 	}
@@ -274,7 +336,7 @@ func TestSettingsMapsUnknownTheme(t *testing.T) {
 
 func TestSaveSettingsRefusesBadTheme(t *testing.T) {
 	f := &fake{theme: "light"}
-	s := New(f.deps(writeFolder(t)))
+	s := newService(t, f.deps(writeFolder(t)))
 	_, err := s.Handle(context.Background(), "saveSettings", json.RawMessage(`{"checkUpdates":true,"theme":"purple"}`))
 	if err == nil || !strings.Contains(err.Error(), "saveSettings") {
 		t.Errorf("err %v", err)
@@ -290,7 +352,7 @@ func TestSaveSettingsRefusesBadTheme(t *testing.T) {
 
 func TestUpdateCalls(t *testing.T) {
 	f := &fake{}
-	s := New(f.deps(writeFolder(t)))
+	s := newService(t, f.deps(writeFolder(t)))
 	m := call(t, s, "update", "")
 	if m["current"] != "1.2.3" || m["available"] != "" || m["url"] != "" {
 		t.Errorf("update: %v", m)
@@ -308,7 +370,7 @@ func TestUpdateCalls(t *testing.T) {
 func TestOpenCalls(t *testing.T) {
 	f := &fake{}
 	dir := writeFolder(t)
-	s := New(f.deps(dir))
+	s := newService(t, f.deps(dir))
 	for _, c := range []string{"openFolder", "openLog"} {
 		v, err := s.Handle(context.Background(), c, nil)
 		if err != nil || v != nil {
@@ -321,7 +383,7 @@ func TestOpenCalls(t *testing.T) {
 }
 
 func TestUnknownCall(t *testing.T) {
-	s := New((&fake{}).deps(writeFolder(t)))
+	s := newService(t, (&fake{}).deps(writeFolder(t)))
 	_, err := s.Handle(context.Background(), "nope", nil)
 	if err == nil || err.Error() != `unknown call "nope"` {
 		t.Errorf("err %v", err)
@@ -329,7 +391,7 @@ func TestUnknownCall(t *testing.T) {
 }
 
 func TestShowEvent(t *testing.T) {
-	s := New((&fake{}).deps(writeFolder(t)))
+	s := newService(t, (&fake{}).deps(writeFolder(t)))
 	s.Show()
 	select {
 	case msg := <-s.Events():

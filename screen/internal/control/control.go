@@ -41,49 +41,127 @@ type Deps struct {
 	Install         func(ctx context.Context)         // installs the offered update after the confirmation box
 	Open            func(path string) error           // opens a folder or file with its default program
 	LogPath         string
+	Logf            func(format string, args ...any) // nil discards
 }
 
 // Service answers the window's calls and queues its events.
 type Service struct {
 	d Deps
 
-	mu     sync.Mutex
+	mu     sync.Mutex // guards st, pending and closed; never held across Load or a send
 	st     supervisor.State
+	closed bool
+	// pending is the newest State the worker has not turned into an event
+	// yet, valid while hasPending.
+	pending    supervisor.State
+	hasPending bool
+
+	wake    chan struct{} // capacity 1: SetState signals the worker
+	done    chan struct{} // closed by Close
+	stopped chan struct{} // closed when the worker has returned
+
+	// qmu serializes pushes to events. It cannot block: under it, a send
+	// is only tried without waiting, and a full queue is made room in
+	// by receiving without waiting.
+	qmu    sync.Mutex
 	events chan bridge.Message
 }
 
-// New returns a Service over d.
+// New returns a Service over d and starts its worker; Close stops it.
 func New(d Deps) *Service {
-	return &Service{
-		d:      d,
-		st:     supervisor.State{Run: run.Status{Profile: -1}},
-		events: make(chan bridge.Message, eventBuffer),
+	s := &Service{
+		d:       d,
+		st:      supervisor.State{Run: run.Status{Profile: -1}},
+		events:  make(chan bridge.Message, eventBuffer),
+		wake:    make(chan struct{}, 1),
+		done:    make(chan struct{}),
+		stopped: make(chan struct{}),
 	}
+	go s.worker()
+	return s
+}
+
+// Close stops the worker; later SetState and Show calls do nothing. It does
+// not wait for a Load that is in progress. It may be called more than once.
+func (s *Service) Close() {
+	s.mu.Lock()
+	if !s.closed {
+		s.closed = true
+		close(s.done)
+	}
+	s.mu.Unlock()
 }
 
 // Events is the channel Serve writes to the window.
 func (s *Service) Events() chan bridge.Message { return s.events }
 
-// SetState records the supervisor state and queues a "state" event for the
-// window. It never blocks: when the queue is full the oldest event is dropped,
-// so the latest state is never lost.
+func (s *Service) logf(format string, args ...any) {
+	if s.d.Logf != nil {
+		s.d.Logf(format, args...)
+	}
+}
+
+// SetState records the supervisor state and has the worker queue a "state"
+// event for the window. It returns at once, whatever Load does: only the
+// latest state is kept for the worker, so a burst of states becomes one event.
 func (s *Service) SetState(st supervisor.State) {
 	s.mu.Lock()
-	s.st = st
-	s.mu.Unlock()
-	data, err := json.Marshal(s.state(st))
-	if err != nil {
+	if s.closed {
+		s.mu.Unlock()
 		return
 	}
-	s.push(bridge.Message{Event: "state", Data: data})
+	s.st = st
+	s.pending, s.hasPending = st, true
+	s.mu.Unlock()
+	select {
+	case s.wake <- struct{}{}:
+	default: // the worker is already signalled
+	}
+}
+
+func (s *Service) worker() {
+	defer close(s.stopped)
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-s.wake:
+		}
+		s.mu.Lock()
+		st, ok := s.pending, s.hasPending
+		s.hasPending = false
+		s.mu.Unlock()
+		if !ok {
+			continue
+		}
+		data, err := json.Marshal(s.state(st))
+		if err != nil {
+			s.logf("control: state event: %v", err)
+			continue
+		}
+		select {
+		case <-s.done:
+			return
+		default:
+		}
+		s.push(bridge.Message{Event: "state", Data: data})
+	}
 }
 
 // Show queues a "show" event: bring the window to the front.
-func (s *Service) Show() { s.push(bridge.Message{Event: "show"}) }
-
-func (s *Service) push(m bridge.Message) {
+func (s *Service) Show() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	closed := s.closed
+	s.mu.Unlock()
+	if !closed {
+		s.push(bridge.Message{Event: "show"})
+	}
+}
+
+// push queues m; when the queue is full the oldest event is dropped.
+func (s *Service) push(m bridge.Message) {
+	s.qmu.Lock()
+	defer s.qmu.Unlock()
 	for {
 		select {
 		case s.events <- m:
