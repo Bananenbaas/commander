@@ -205,7 +205,7 @@ func commander(args []string) int {
 	}, sup.Stop, logf)
 	// The window: a listener on the user's pipe, served one window at a
 	// time. Without the listener the tray works as before.
-	svc = control.New(controlDeps(updCtx, exe, dir, upd, logf))
+	svc = control.New(controlDeps(updCtx, exe, dir, upd, sup, logf))
 	win := newWindowServer(svc, exe, logf)
 	tr, err = tray.Run(ctx, tray.Options{
 		Icon:       normal,

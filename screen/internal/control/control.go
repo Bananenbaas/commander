@@ -40,6 +40,8 @@ type Deps struct {
 	Offered         func() (tag, url string, ok bool) // the update on offer, if any
 	Install         func(ctx context.Context)         // installs the offered update after the confirmation box
 	Open            func(path string) error           // opens a folder or file with its default program
+	Reload          func()                            // asks the supervisor to reload the configuration; nil does nothing
+	Apply           func()                            // asks the supervisor to send the buttons again; nil does nothing
 	LogPath         string
 	Logf            func(format string, args ...any) // nil discards
 }
@@ -410,6 +412,14 @@ func (s *Service) Handle(ctx context.Context, call string, args json.RawMessage)
 	case "installUpdate":
 		s.d.Install(ctx)
 		return s.update(), nil
+	case "deviceProfile":
+		return s.deviceProfile(args)
+	case "saveDeviceProfile":
+		return s.saveDeviceProfile(args)
+	case "renderButton":
+		return s.renderButton(args)
+	case "importPicture":
+		return s.importPicture(args)
 	case "openFolder":
 		if err := s.d.Open(s.d.Dir); err != nil {
 			return nil, fmt.Errorf("openFolder: %w", err)

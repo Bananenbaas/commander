@@ -28,6 +28,7 @@ import (
 	"github.com/Bananenbaas/commander/screen/internal/icon"
 	"github.com/Bananenbaas/commander/screen/internal/layout"
 	"github.com/Bananenbaas/commander/screen/internal/pipe"
+	"github.com/Bananenbaas/commander/screen/internal/supervisor"
 )
 
 // acceptRetry is the wait after a failed Accept before the next one.
@@ -295,7 +296,7 @@ func (ws *windowServer) stop() {
 
 // controlDeps is what the window's calls use; the settings stay in step with
 // the tray menu, which reads them anew every time it opens.
-func controlDeps(ctx context.Context, exe, dir string, u *updater, logf func(string, ...any)) control.Deps {
+func controlDeps(ctx context.Context, exe, dir string, u *updater, sup *supervisor.Supervisor, logf func(string, ...any)) control.Deps {
 	return control.Deps{
 		Version: version,
 		Dir:     dir,
@@ -327,6 +328,8 @@ func controlDeps(ctx context.Context, exe, dir string, u *updater, logf func(str
 			u.installOffer(ctx)
 		},
 		Open:    shellOpen,
+		Reload:  sup.Reload,
+		Apply:   sup.Apply,
 		LogPath: appdata.LogPath(),
 		Logf:    logf,
 	}
