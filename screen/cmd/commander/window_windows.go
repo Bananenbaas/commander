@@ -139,9 +139,7 @@ func windowMain() int {
 		messageBox(notRunningText, windows.MB_ICONINFORMATION)
 	default:
 		logf("window failed: %v", err)
-		// The runtime is there, so this is most likely WebView2 failing to
-		// start; reinstalling it is the usual cure.
-		messageBox(openFailedText+err.Error()+"\n\n"+webviewRepairText, windows.MB_ICONWARNING)
+		messageBox(openFailedMessage(err), windows.MB_ICONWARNING)
 	}
 	return 1
 }
@@ -252,6 +250,8 @@ func (ws *windowServer) acceptOne(ln *pipe.Listener) (more bool) {
 		c.Close()
 		return true
 	}
+	// Events queued while no window was connected are stale.
+	ws.svc.DropEvents()
 	ws.ctl.attached()
 	ws.logf("window connected (process %d)", sc.pid)
 	go ws.serveConn(sc)
@@ -314,9 +314,9 @@ func controlDeps(ctx context.Context, exe, dir string, u *updater, logf func(str
 		},
 		Theme:    appdata.LoadTheme,
 		SetTheme: appdata.SaveTheme,
-		CheckNow: func(context.Context) {
+		CheckNow: func(context.Context) error {
 			logf("Check now chosen in the window")
-			u.check(ctx, true)
+			return u.manualCheck(ctx)
 		},
 		Offered: func() (tag, url string, ok bool) {
 			rel, ok := u.offered()

@@ -36,7 +36,7 @@ type Deps struct {
 	SetCheckUpdates func(on bool) error // switching on also checks at once (as the tray does)
 	Theme           func() (string, error)
 	SetTheme        func(string) error
-	CheckNow        func(ctx context.Context)         // the manual check (shows its balloon)
+	CheckNow        func(ctx context.Context) error   // the manual check (shows its balloon); nil = it checked, an error = it failed or was skipped
 	Offered         func() (tag, url string, ok bool) // the update on offer, if any
 	Install         func(ctx context.Context)         // installs the offered update after the confirmation box
 	Open            func(path string) error           // opens a folder or file with its default program
@@ -171,6 +171,21 @@ func (s *Service) push(m bridge.Message) {
 		select {
 		case <-s.events:
 		default:
+		}
+	}
+}
+
+// DropEvents empties the event queue. Commander calls it when a new window
+// connects: what was queued while no window was there (a "show" among it)
+// is stale, and the new page asks for the state itself.
+func (s *Service) DropEvents() {
+	s.qmu.Lock()
+	defer s.qmu.Unlock()
+	for {
+		select {
+		case <-s.events:
+		default:
+			return
 		}
 	}
 }
@@ -388,7 +403,9 @@ func (s *Service) Handle(ctx context.Context, call string, args json.RawMessage)
 	case "update":
 		return s.update(), nil
 	case "checkUpdate":
-		s.d.CheckNow(ctx)
+		if err := s.d.CheckNow(ctx); err != nil {
+			return nil, fmt.Errorf("checkUpdate: %w", err)
+		}
 		return s.update(), nil
 	case "installUpdate":
 		s.d.Install(ctx)

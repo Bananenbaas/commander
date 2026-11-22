@@ -4,10 +4,14 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Bananenbaas/commander/screen/internal/gui"
+	"github.com/Bananenbaas/commander/screen/internal/pipe"
 )
 
 // fakeWindow records what windowCtl does.
@@ -219,5 +223,21 @@ func TestWindowConnLivePID(t *testing.T) {
 func TestWebviewRepairTextHasLink(t *testing.T) {
 	if !strings.Contains(webviewRepairText, "https://developer.microsoft.com/microsoft-edge/webview2/") {
 		t.Errorf("webviewRepairText = %q, want the download link", webviewRepairText)
+	}
+}
+
+func TestOpenFailedText(t *testing.T) {
+	pipeErr := fmt.Errorf("gui: connecting to Commander: %w", pipe.ErrNotOurs)
+	text := openFailedMessage(pipeErr)
+	if !strings.HasPrefix(text, openFailedText) || !strings.Contains(text, "another user") {
+		t.Errorf("pipe failure: %q", text)
+	}
+	if strings.Contains(text, "WebView2") {
+		t.Errorf("pipe failure mentions WebView2: %q", text)
+	}
+	wvErr := fmt.Errorf("gui: %w", &gui.WebView2Error{Err: errors.New("WebView2 has no view")})
+	text = openFailedMessage(wvErr)
+	if !strings.HasPrefix(text, openFailedText) || !strings.HasSuffix(text, webviewRepairText) {
+		t.Errorf("WebView2 failure: %q", text)
 	}
 }

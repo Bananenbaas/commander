@@ -454,3 +454,43 @@ func TestUpdatedFromRetry(t *testing.T) {
 		t.Errorf("without retry: %v after %d calls", err, calls)
 	}
 }
+
+// TestManualCheckReportsOutcome checks that the window's check reports what
+// happened, while the balloon still shows as for the tray's check.
+func TestManualCheckReportsOutcome(t *testing.T) {
+	older := beta1()
+	older.Tag = "v0.0.9"
+	u, f := newTestUpdater(t, "v0.1.0-beta.1", []update.Release{older}, nil)
+	if err := u.manualCheck(context.Background()); err != nil {
+		t.Errorf("up to date: %v, want nil", err)
+	}
+	u, f = newTestUpdater(t, "v0.1.0-beta.1", []update.Release{beta2()}, nil)
+	if err := u.manualCheck(context.Background()); err != nil {
+		t.Errorf("update found: %v, want nil", err)
+	}
+	if n := f.notified(); len(n) != 1 || !n[0].action {
+		t.Errorf("update found notified %v, want one clickable note", n)
+	}
+	u, f = newTestUpdater(t, "v0.1.0-beta.1", nil, errors.New("server answered 403 Forbidden"))
+	if err := u.manualCheck(context.Background()); err == nil || !strings.Contains(err.Error(), "403") {
+		t.Errorf("failed check: %v, want the error", err)
+	}
+	if n := f.notified(); len(n) != 1 || !strings.Contains(n[0].text, "403") {
+		t.Errorf("failed check notified %v", n)
+	}
+	u, _ = newTestUpdater(t, "dev", nil, nil)
+	if err := u.manualCheck(context.Background()); err == nil {
+		t.Error("dev build: nil, want an error (nothing was checked)")
+	}
+	u, f = newTestUpdater(t, "v0.1.0-beta.1", nil, nil)
+	if !u.begin() {
+		t.Fatal("guard taken")
+	}
+	if err := u.manualCheck(context.Background()); !errors.Is(err, errUpdateBusy) {
+		t.Errorf("busy: %v, want errUpdateBusy", err)
+	}
+	if n := f.notified(); len(n) != 1 || !strings.Contains(n[0].text, "already running") {
+		t.Errorf("busy check notified %v", n)
+	}
+	u.end()
+}

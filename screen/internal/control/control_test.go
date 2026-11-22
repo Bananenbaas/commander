@@ -5,6 +5,7 @@ package control
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,6 +73,7 @@ type fake struct {
 	checked, installed int
 	opened             []string
 	tag, url           string
+	checkErr           error
 }
 
 func (f *fake) deps(dir string) Deps {
@@ -89,7 +91,14 @@ func (f *fake) deps(dir string) Deps {
 		},
 		Theme:    func() (string, error) { return f.theme, nil },
 		SetTheme: func(s string) error { f.theme = s; f.sets = append(f.sets, "theme"); return nil },
-		CheckNow: func(context.Context) { f.checked++; f.tag, f.url = "v2.0.0", "https://example.invalid/r" },
+		CheckNow: func(context.Context) error {
+			f.checked++
+			if f.checkErr != nil {
+				return f.checkErr
+			}
+			f.tag, f.url = "v2.0.0", "https://example.invalid/r"
+			return nil
+		},
 		Offered: func() (string, string, bool) {
 			return f.tag, f.url, f.tag != ""
 		},
@@ -367,6 +376,18 @@ func TestUpdateCalls(t *testing.T) {
 	}
 }
 
+func TestCheckUpdateReportsFailure(t *testing.T) {
+	f := &fake{checkErr: errors.New("server answered 403 Forbidden")}
+	s := newService(t, f.deps(writeFolder(t)))
+	_, err := s.Handle(context.Background(), "checkUpdate", nil)
+	if err == nil || !strings.Contains(err.Error(), "403") {
+		t.Errorf("checkUpdate after a failed check: %v, want the error", err)
+	}
+	if f.checked != 1 {
+		t.Errorf("checked %d times", f.checked)
+	}
+}
+
 func TestOpenCalls(t *testing.T) {
 	f := &fake{}
 	dir := writeFolder(t)
@@ -400,5 +421,35 @@ func TestShowEvent(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("no event")
+	}
+}
+
+// TestDropEventsEmptiesTheQueue checks that events built while no window was
+// connected (a stale "show" among them) never reach the next window.
+func TestDropEventsEmptiesTheQueue(t *testing.T) {
+	s := newService(t, (&fake{}).deps(writeFolder(t)))
+	for i := 0; i < eventBuffer+4; i++ {
+		s.Show()
+	}
+	s.SetState(running)
+	waitState(t, s, `"SC"`)
+	s.Show()
+	if len(s.Events()) == 0 {
+		t.Fatal("nothing queued before DropEvents")
+	}
+	s.DropEvents()
+	select {
+	case m := <-s.Events():
+		t.Fatalf("event %q left after DropEvents", m.Event)
+	default:
+	}
+	s.Show()
+	select {
+	case m := <-s.Events():
+		if m.Event != "show" {
+			t.Errorf("event %q after DropEvents", m.Event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no event after DropEvents")
 	}
 }

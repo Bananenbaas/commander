@@ -3,9 +3,12 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"sync"
 	"time"
+
+	"github.com/Bananenbaas/commander/screen/internal/gui"
 )
 
 // startWait is how long a started window process has to connect before
@@ -17,13 +20,24 @@ const (
 	webviewMissingText = "Commander's window needs the Microsoft Edge WebView2 Runtime, which is not installed. " +
 		"Download it from https://developer.microsoft.com/microsoft-edge/webview2/ and open Commander again."
 	startFailedText = "Commander's window could not be started: "
-	// openFailedText and webviewRepairText are the window process's box
-	// when WebView2 is installed but the window still cannot be opened.
+	// openFailedText is the window process's box when WebView2 is
+	// installed but the window still cannot be opened; webviewRepairText
+	// follows it when WebView2 itself failed.
 	openFailedText    = "Commander's window could not be opened: "
 	webviewRepairText = "If this keeps happening, install the Microsoft Edge WebView2 Runtime again from " +
 		"https://developer.microsoft.com/microsoft-edge/webview2/ and open Commander again."
 	notRunningText = "Commander is not running. Start Commander first."
 )
+
+// openFailedMessage is the window process's box when the window cannot be
+// opened: the WebView2 repair hint only when WebView2 itself failed.
+func openFailedMessage(err error) string {
+	var wv *gui.WebView2Error
+	if errors.As(err, &wv) {
+		return openFailedText + err.Error() + "\n\n" + webviewRepairText
+	}
+	return openFailedText + err.Error()
+}
 
 // windowCtl decides what Open Commander and the left click on the tray icon
 // do: bring the connected window to the front, or start the window process.

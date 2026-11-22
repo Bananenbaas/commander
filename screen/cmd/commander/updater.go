@@ -115,17 +115,32 @@ func (u *updater) pendingRestart() func() error {
 	return u.restart
 }
 
+// errDevBuild means a development build, which does not look for updates.
+var errDevBuild = errors.New("this is a development build; it does not look for updates")
+
 // check looks for an update. A manual check always answers in a balloon;
 // an automatic one only logs, except that a newly found version is offered
 // in a balloon once per run.
 func (u *updater) check(ctx context.Context, manual bool) {
+	_ = u.checkOutcome(ctx, manual)
+}
+
+// manualCheck is the manual check, balloon included, that also reports
+// whether it checked: nil when it did (up to date or an update found), an
+// error when it failed or did not run.
+func (u *updater) manualCheck(ctx context.Context) error {
+	return u.checkOutcome(ctx, true)
+}
+
+// checkOutcome is check, reporting what happened as manualCheck describes.
+func (u *updater) checkOutcome(ctx context.Context, manual bool) error {
 	if !u.begin() {
 		if manual {
 			u.notify(updateTitle, busyText, nil)
 		} else {
 			u.logf("automatic update check skipped: another update operation runs")
 		}
-		return
+		return errUpdateBusy
 	}
 	defer u.end()
 
@@ -133,7 +148,7 @@ func (u *updater) check(ctx context.Context, manual bool) {
 		if manual {
 			u.notify(updateTitle, "This is a development build of Commander ("+u.current+"); it does not look for updates.", nil)
 		}
-		return
+		return errDevBuild
 	}
 	rels, err := u.releases(ctx)
 	if err != nil {
@@ -141,7 +156,7 @@ func (u *updater) check(ctx context.Context, manual bool) {
 		if manual {
 			u.notify(checkFailTitle, err.Error(), nil)
 		}
-		return
+		return err
 	}
 	rel, ok, err := update.Pick(u.current, rels)
 	if err != nil {
@@ -149,14 +164,14 @@ func (u *updater) check(ctx context.Context, manual bool) {
 		if manual {
 			u.notify(checkFailTitle, err.Error(), nil)
 		}
-		return
+		return err
 	}
 	if !ok {
 		u.logf("update check: Commander %s is up to date", u.current)
 		if manual {
 			u.notify(updateTitle, "Commander "+u.current+" is up to date.", nil)
 		}
-		return
+		return nil
 	}
 	u.logf("update check: Commander %s is available (running %s)", rel.Tag, u.current)
 	u.mu.Lock()
@@ -172,6 +187,7 @@ func (u *updater) check(ctx context.Context, manual bool) {
 			"Click here, or choose Update to "+rel.Tag+" in the menu, to install it.",
 			func() { u.installOffer(ctx) })
 	}
+	return nil
 }
 
 // confirmText is the question asked before installing rel.
