@@ -19,8 +19,8 @@ import (
 
 // Message is one line on the wire: a call, its answer, or an event.
 type Message struct {
-	ID     int64           `json:"id,omitempty"`     // calls and answers
-	Call   string          `json:"call,omitempty"`   // a call
+	ID     int64           `json:"id,omitempty"`   // calls and answers
+	Call   string          `json:"call,omitempty"` // a call
 	Args   json.RawMessage `json:"args,omitempty"`
 	Result json.RawMessage `json:"result,omitempty"` // an answer
 	Error  string          `json:"error,omitempty"`  // an answer that failed
@@ -79,16 +79,31 @@ func readLine(r *bufio.Reader) ([]byte, error) {
 	}
 }
 
+// MaxCalls is the most calls Serve runs at once; a call beyond that is
+// answered at once with the error "busy".
+const MaxCalls = 16
+
 // Serve answers the calls arriving on conn with h (each call on its own
-// goroutine, answers written one at a time) and writes every event sent on
-// events, until conn fails or ctx ends; it then closes conn.
+// goroutine, at most MaxCalls at once, answers written one at a time) and
+// writes every event sent on events, until conn fails or ctx ends; it then
+// closes conn. A panic in h is answered with an "internal error" answer.
+//
+// Serve blocks, so run it on its own goroutine. It returns only after the
+// running handlers have returned, so handlers should honour their ctx, which
+// ends when Serve ends.
 func Serve(ctx context.Context, conn io.ReadWriteCloser, h Handler, events <-chan Message) error {
 	ctx, cancel := context.WithCancel(ctx)
+	// Closing conn when ctx ends also releases a write that is blocked on a
+	// peer that does not read.
+	stop := context.AfterFunc(ctx, func() { conn.Close() })
 	out := &writer{w: conn}
 	var wg sync.WaitGroup
+	slots := make(chan struct{}, MaxCalls)
 
 	readErr := make(chan error, 1)
+	readDone := make(chan struct{})
 	go func() {
+		defer close(readDone)
 		r := bufio.NewReaderSize(conn, 64<<10)
 		for {
 			line, err := readLine(r)
@@ -114,22 +129,20 @@ func Serve(ctx context.Context, conn io.ReadWriteCloser, h Handler, events <-cha
 				}
 				continue
 			}
+			select {
+			case slots <- struct{}{}:
+			default:
+				if out.send(Message{ID: m.ID, Error: "busy"}) != nil {
+					readErr <- io.ErrClosedPipe
+					return
+				}
+				continue
+			}
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				res, err := h(ctx, m.Call, m.Args)
-				ans := Message{ID: m.ID}
-				if err != nil {
-					ans.Error = err.Error()
-				} else if res != nil {
-					b, merr := json.Marshal(res)
-					if merr != nil {
-						ans.Error = "bad result: " + merr.Error()
-					} else {
-						ans.Result = b
-					}
-				}
-				_ = out.send(ans)
+				defer func() { <-slots }()
+				_ = out.send(answer(ctx, h, m))
 			}()
 		}
 	}()
@@ -157,9 +170,35 @@ loop:
 		}
 	}
 	cancel()
+	stop()
 	conn.Close()
+	// The reader is the only caller of wg.Add; let it finish first.
+	<-readDone
 	wg.Wait()
 	return result
+}
+
+// answer runs the handler for one call and builds the answer.
+func answer(ctx context.Context, h Handler, m Message) (ans Message) {
+	ans.ID = m.ID
+	defer func() {
+		if p := recover(); p != nil {
+			ans = Message{ID: m.ID, Error: fmt.Sprintf("internal error: %v", p)}
+		}
+	}()
+	res, err := h(ctx, m.Call, m.Args)
+	switch {
+	case err != nil:
+		ans.Error = err.Error()
+	case res != nil:
+		b, merr := json.Marshal(res)
+		if merr != nil {
+			ans.Error = "bad result: " + merr.Error()
+		} else {
+			ans.Result = b
+		}
+	}
+	return ans
 }
 
 // Client is the calling side of the protocol.
@@ -200,9 +239,18 @@ func (c *Client) read() {
 		}
 		switch {
 		case m.Event != "":
-			select {
-			case c.events <- m:
-			case <-c.done:
+			// Never block the reader: when the queue is full, drop the
+			// oldest event to make room (the reader is the only sender).
+			for sent := false; !sent; {
+				select {
+				case c.events <- m:
+					sent = true
+				default:
+					select {
+					case <-c.events:
+					default:
+					}
+				}
 			}
 		case m.ID != 0:
 			c.mu.Lock()
@@ -263,7 +311,8 @@ func (c *Client) Call(ctx context.Context, call string, args any) (json.RawMessa
 	}
 }
 
-// Events delivers events; it is closed when the connection ends.
+// Events delivers events; it is closed when the connection ends. Up to 64
+// are queued; when the consumer falls behind, the oldest are dropped.
 func (c *Client) Events() <-chan Message { return c.events }
 
 // Done is closed when the connection has ended.
