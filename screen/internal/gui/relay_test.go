@@ -167,3 +167,22 @@ func TestThemeOf(t *testing.T) {
 		}
 	}
 }
+
+func TestFromApp(t *testing.T) {
+	for src, want := range map[string]bool{
+		AppOrigin + "/":                      true,
+		AppOrigin + "/index.html":            true,
+		AppOrigin + "/?x=1":                  true,
+		AppOrigin:                            false,
+		AppOrigin + ".evil.example/":         false,
+		AppOrigin + ":8443/":                 false,
+		"http://commander.invalid/":          false,
+		"file:///C:/Users/someone/drop.html": false,
+		"about:blank":                        false,
+		"":                                   false,
+	} {
+		if got := fromApp(src); got != want {
+			t.Errorf("fromApp(%q) = %v, want %v", src, got, want)
+		}
+	}
+}

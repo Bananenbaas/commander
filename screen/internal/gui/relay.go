@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"strings"
 
 	"github.com/Bananenbaas/commander/screen/internal/bridge"
 )
@@ -113,4 +114,11 @@ func themeOf(raw string) (dark, ok bool) {
 		return false, false
 	}
 	return pc.Args == "dark", true
+}
+
+// fromApp reports whether a message's source URI is a page of AppOrigin.
+// Anything else (a file dropped onto the window, any other page) is not
+// relayed.
+func fromApp(source string) bool {
+	return strings.HasPrefix(source, AppOrigin+"/")
 }

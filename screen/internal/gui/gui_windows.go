@@ -189,10 +189,10 @@ func Run(pipeName string, opts Options) error {
 
 	v, err := webviewloader.GetAvailableCoreWebView2BrowserVersionString("")
 	if err != nil {
-		return fmt.Errorf("gui: looking for WebView2: %w", err)
+		return webviewErr("gui: looking for WebView2: %w", err)
 	}
 	if v == "" {
-		return errors.New("gui: the WebView2 runtime is not installed")
+		return webviewErr("gui: the WebView2 runtime is not installed")
 	}
 	if opts.DataDir == "" {
 		local := os.Getenv("LOCALAPPDATA")
@@ -230,6 +230,11 @@ func Run(pipeName string, opts Options) error {
 	w.gone.Store(true)
 	w.ready = false
 	return nil
+}
+
+// webviewErr is a WebView2Error with a formatted message.
+func webviewErr(format string, args ...any) error {
+	return &WebView2Error{Err: fmt.Errorf(format, args...)}
 }
 
 // create registers the class and makes the window, shown at once on the
@@ -324,7 +329,16 @@ func (w *window) embed() error {
 		logf("window: WebView2: %v", err)
 		os.Exit(1)
 	})
-	wv.MessageCallback = func(msg string, _ *edge.ICoreWebView2, _ *edge.ICoreWebView2WebMessageReceivedEventArgs) {
+	wv.MessageCallback = func(msg string, _ *edge.ICoreWebView2, args *edge.ICoreWebView2WebMessageReceivedEventArgs) {
+		src, err := args.GetSource()
+		if err != nil {
+			logf("window: a page message without a source was dropped: %v", err)
+			return
+		}
+		if !fromApp(src) {
+			logf("window: a message from %q was dropped", src)
+			return
+		}
 		w.fromPage(msg)
 	}
 	wv.WebResourceRequestedCallback = func(req *edge.ICoreWebView2WebResourceRequest, args *edge.ICoreWebView2WebResourceRequestedEventArgs) {
@@ -340,9 +354,16 @@ func (w *window) embed() error {
 
 	view, err := wv.GetController().GetCoreWebView2()
 	if err != nil {
-		return fmt.Errorf("gui: WebView2 has no view: %w", err)
+		return webviewErr("gui: WebView2 has no view: %w", err)
 	}
 	w.view = view
+	// A file dropped onto the window would otherwise replace the page.
+	if err := wv.AllowExternalDrag(false); err != nil {
+		if !errors.Is(err, edge.UnsupportedCapabilityError) {
+			return webviewErr("gui: refusing dropped files: %w", err)
+		}
+		w.opts.logf("window: this WebView2 cannot refuse dropped files: %v", err)
+	}
 	if err := refuseNewWindows(view); err != nil {
 		return err
 	}
@@ -366,7 +387,7 @@ func (w *window) embed() error {
 func (w *window) settings() error {
 	s, err := w.wv.GetSettings()
 	if err != nil {
-		return fmt.Errorf("gui: WebView2 settings: %w", err)
+		return webviewErr("gui: WebView2 settings: %w", err)
 	}
 	dev := w.opts.DevTools
 	for _, step := range []struct {
@@ -381,7 +402,7 @@ func (w *window) settings() error {
 		{"browser keys", s.PutAreBrowserAcceleratorKeysEnabled, dev},
 	} {
 		if err := step.put(step.v); err != nil {
-			return fmt.Errorf("gui: WebView2 setting %s: %w", step.name, err)
+			return webviewErr("gui: WebView2 setting %s: %w", step.name, err)
 		}
 	}
 	return nil
@@ -540,7 +561,7 @@ func refuseNewWindows(view *edge.ICoreWebView2) error {
 		uintptr(unsafe.Pointer(newWindowHandler)),
 		uintptr(unsafe.Pointer(&token)))
 	if int32(hr) < 0 {
-		return fmt.Errorf("gui: refusing new windows: %w", syscall.Errno(hr))
+		return webviewErr("gui: refusing new windows: %w", syscall.Errno(hr))
 	}
 	return nil
 }
