@@ -294,8 +294,10 @@ The rules:
   wins: files in `games/` by file name, then the games that come from
   layouts, by profile number.
 - Names are unique, upper and lower case counting as the same, across all
-  game files, the Desktop game and the games that come from layouts. A
-  program may be named in only one game file.
+  game files and the Desktop game. A program may be named in only one game
+  file. The program of a layout's `switch_when_running` may not be the name
+  of a game file either. Two layouts that name the same program still load;
+  the one with the lower profile number wins.
 - `switch_when_running` in a layout keeps working for a program that has no
   game file: it counts as a game named after the program, that shows the
   layout's profile. A program that is both in a layout's
