@@ -10,6 +10,9 @@ import "errors"
 // ErrClosed is returned by Accept after the listener is closed.
 var ErrClosed = errors.New("pipe: listener closed")
 
+// ErrNotOurs is returned by Dial when the pipe is owned by another user.
+var ErrNotOurs = errors.New("pipe: the pipe belongs to another user")
+
 // Name is the pipe of the signed-in user: \\.\pipe\Commander-<SID>.
 func Name() (string, error) {
 	sid, err := userSID()

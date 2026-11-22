@@ -42,6 +42,10 @@ type Listener struct {
 	closed bool
 	next   windows.Handle // the instance the next Accept connects, or 0
 	active sync.WaitGroup // running Accept calls
+	// pending holds the OVERLAPPED of each running ConnectNamedPipe. The
+	// kernel writes to it until the call completes, so it must live on the
+	// heap (stacks move) and stay reachable until then.
+	pending map[*windows.Overlapped]struct{}
 }
 
 // Listen creates the first instance of the pipe; it fails when another
@@ -51,13 +55,15 @@ func Listen(name string) (*Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	sd, err := windows.SecurityDescriptorFromString("D:P(A;;GA;;;" + sid + ")")
+	// The owner is set to the user, not left to the token's default owner
+	// (Administrators in an elevated token), so Dial's owner check holds.
+	sd, err := windows.SecurityDescriptorFromString("O:" + sid + "D:P(A;;GA;;;" + sid + ")")
 	if err != nil {
 		return nil, fmt.Errorf("pipe: build the security descriptor: %w", err)
 	}
 	sa := &windows.SecurityAttributes{SecurityDescriptor: sd}
 	sa.Length = uint32(unsafe.Sizeof(*sa))
-	l := &Listener{name: name, sa: sa}
+	l := &Listener{name: name, sa: sa, pending: make(map[*windows.Overlapped]struct{})}
 	first, err := l.instance(true)
 	if err != nil {
 		return nil, err
@@ -137,8 +143,18 @@ func (l *Listener) connect(h windows.Handle) error {
 		return fmt.Errorf("pipe: create an event: %w", err)
 	}
 	defer windows.CloseHandle(ev)
-	ov := windows.Overlapped{HEvent: ev}
-	err = windows.ConnectNamedPipe(h, &ov)
+	// Every return below happens after the operation has completed or was
+	// cancelled and waited for, so ov can then be dropped.
+	ov := &windows.Overlapped{HEvent: ev}
+	l.mu.Lock()
+	l.pending[ov] = struct{}{}
+	l.mu.Unlock()
+	defer func() {
+		l.mu.Lock()
+		delete(l.pending, ov)
+		l.mu.Unlock()
+	}()
+	err = windows.ConnectNamedPipe(h, ov)
 	switch {
 	case err == nil, errors.Is(err, windows.ERROR_PIPE_CONNECTED):
 		return nil
@@ -147,17 +163,39 @@ func (l *Listener) connect(h windows.Handle) error {
 	}
 	which, err := windows.WaitForMultipleObjects([]windows.Handle{ev, l.quit}, false, windows.INFINITE)
 	if err != nil || which != windows.WAIT_OBJECT_0 {
-		windows.CancelIoEx(h, &ov)
+		windows.CancelIoEx(h, ov)
 		var n uint32
-		windows.GetOverlappedResult(h, &ov, &n, true)
+		windows.GetOverlappedResult(h, ov, &n, true)
 		if err != nil {
 			return fmt.Errorf("pipe: wait for a client on %s: %w", l.name, err)
 		}
 		return ErrClosed
 	}
 	var n uint32
-	if err := windows.GetOverlappedResult(h, &ov, &n, false); err != nil {
+	if err := windows.GetOverlappedResult(h, ov, &n, false); err != nil {
 		return fmt.Errorf("pipe: wait for a client on %s: %w", l.name, err)
+	}
+	return nil
+}
+
+// checkHandleOwner fails with ErrNotOurs unless the owner of the pipe h is
+// user.
+func checkHandleOwner(h windows.Handle, user *windows.SID) error {
+	sd, err := windows.GetSecurityInfo(h, windows.SE_KERNEL_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return fmt.Errorf("read the owner: %w", err)
+	}
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return fmt.Errorf("read the owner: %w", err)
+	}
+	return checkOwner(owner, user)
+}
+
+// checkOwner fails with ErrNotOurs unless owner is user.
+func checkOwner(owner, user *windows.SID) error {
+	if owner == nil || user == nil || !owner.Equals(user) {
+		return fmt.Errorf("%w (owner %v)", ErrNotOurs, owner)
 	}
 	return nil
 }
@@ -181,11 +219,18 @@ func (l *Listener) Close() error {
 	return windows.CloseHandle(l.quit)
 }
 
-// Dial connects to name, waiting up to timeout for a free instance.
+// Dial connects to name. It fails at once when the pipe does not exist and
+// waits up to timeout only while every instance is busy. It fails with
+// ErrNotOurs when the pipe is owned by anyone but the signed-in user, so a
+// pipe another account created under this name first is never used.
 func Dial(name string, timeout time.Duration) (io.ReadWriteCloser, error) {
 	p, err := windows.UTF16PtrFromString(name)
 	if err != nil {
 		return nil, fmt.Errorf("pipe: %q: %w", name, err)
+	}
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return nil, fmt.Errorf("pipe: read the user of this process: %w", err)
 	}
 	deadline := time.Now().Add(timeout)
 	for {
@@ -195,6 +240,10 @@ func Dial(name string, timeout time.Duration) (io.ReadWriteCloser, error) {
 			windows.OPEN_EXISTING,
 			windows.FILE_FLAG_OVERLAPPED|windows.SECURITY_SQOS_PRESENT|windows.SECURITY_IDENTIFICATION, 0)
 		if err == nil {
+			if err := checkHandleOwner(h, user.User.Sid); err != nil {
+				windows.CloseHandle(h)
+				return nil, fmt.Errorf("pipe: open %s: %w", name, err)
+			}
 			return os.NewFile(uintptr(h), name), nil
 		}
 		if !errors.Is(err, windows.ERROR_PIPE_BUSY) {

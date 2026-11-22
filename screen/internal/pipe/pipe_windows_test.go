@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 // testName returns a pipe name of this test and process only.
@@ -153,8 +155,58 @@ func TestDialWithoutListenerFails(t *testing.T) {
 		c.Close()
 		t.Fatal("Dial without a listener succeeded")
 	}
+	if !errors.Is(err, windows.ERROR_FILE_NOT_FOUND) {
+		t.Fatalf("Dial without a listener = %v; want ERROR_FILE_NOT_FOUND", err)
+	}
 	if d := time.Since(start); d > timeout+2*time.Second {
 		t.Fatalf("Dial took %v, timeout was %v", d, timeout)
+	}
+}
+
+func currentUser(t *testing.T) *windows.SID {
+	t.Helper()
+	u, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatalf("GetTokenUser: %v", err)
+	}
+	return u.User.Sid
+}
+
+func systemSID(t *testing.T) *windows.SID {
+	t.Helper()
+	sid, err := windows.CreateWellKnownSid(windows.WinLocalSystemSid)
+	if err != nil {
+		t.Fatalf("CreateWellKnownSid: %v", err)
+	}
+	return sid
+}
+
+func TestCheckOwner(t *testing.T) {
+	user, system := currentUser(t), systemSID(t)
+	if err := checkOwner(user, user); err != nil {
+		t.Fatalf("checkOwner(user, user) = %v; want nil", err)
+	}
+	if err := checkOwner(system, user); !errors.Is(err, ErrNotOurs) {
+		t.Fatalf("checkOwner(system, user) = %v; want ErrNotOurs", err)
+	}
+	if err := checkOwner(nil, user); !errors.Is(err, ErrNotOurs) {
+		t.Fatalf("checkOwner(nil, user) = %v; want ErrNotOurs", err)
+	}
+}
+
+// TestPipeOwnerIsTheUser reads the owner of a real instance: it is the user,
+// and the same handle is rejected when another user is expected.
+func TestPipeOwnerIsTheUser(t *testing.T) {
+	l, name := listen(t)
+	ch := acceptAsync(l)
+	_ = dial(t, name) // Dial itself passed the owner check
+	server := waitAccept(t, ch)
+	h := windows.Handle(server.(*os.File).Fd())
+	if err := checkHandleOwner(h, currentUser(t)); err != nil {
+		t.Fatalf("owner check against the user = %v; want nil", err)
+	}
+	if err := checkHandleOwner(h, systemSID(t)); !errors.Is(err, ErrNotOurs) {
+		t.Fatalf("owner check against SYSTEM = %v; want ErrNotOurs", err)
 	}
 }
 
@@ -172,7 +224,17 @@ func TestCloseUnblocksRead(t *testing.T) {
 	l, name := listen(t)
 	ch := acceptAsync(l)
 	_ = dial(t, name)
-	server := waitAccept(t, ch)
+	// Not waitAccept: this test closes server itself, exactly once.
+	var server io.ReadWriteCloser
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			t.Fatalf("Accept: %v", r.err)
+		}
+		server = r.conn
+	case <-time.After(5 * time.Second):
+		t.Fatal("Accept did not return")
+	}
 
 	done := make(chan error, 1)
 	started := make(chan struct{})
