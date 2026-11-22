@@ -22,7 +22,6 @@
     tab: "buttons",
     busy: {}, // control key: true while its call runs
     notes: {}, // control key: {text, error}
-    checked: false, // a check ran in this window
     started: false // the first state and settings answers are in
   };
 
@@ -156,6 +155,12 @@
     if (!kb.connected || typeof kb.profile !== "number" || kb.profile < 0) {
       return -1;
     }
+    // A game on the Desktop's own slot cannot be told from the Desktop.
+    var desk = app.state && app.state.desktop;
+    var deskSlot = desk && typeof desk.kb7 === "number" ? desk.kb7 : -1;
+    if (kb.profile === deskSlot) {
+      return -1;
+    }
     var list = games();
     for (var i = 0; i < list.length; i++) {
       if (typeof list[i].kb7 === "number" && list[i].kb7 === kb.profile) {
@@ -165,21 +170,51 @@
     return -1;
   }
 
+  // plainError turns an error from Commander into words for the player: the
+  // call names in front ("saveSettings: ") go, a plain lead comes first.
+  function plainError(lead, err) {
+    var text = String(err && err.message ? err.message : err).replace(/^([A-Za-z_]+: )+/, "");
+    return lead + ": " + text;
+  }
+
+  // leads are the words in front of an error, per control.
+  var leads = {
+    startWithWindows: "Could not save",
+    checkUpdates: "Could not save",
+    theme: "Could not save",
+    openFolder: "Could not open the folder",
+    openLog: "Could not open the log",
+    checkUpdate: "Could not check for updates",
+    installUpdate: "Could not install the update"
+  };
+
   function setNote(key, text, error) {
     app.notes[key] = { text: text, error: !!error };
   }
 
+  // noteEls keeps one live line per control across redraws, so a screen
+  // reader hears it when its text changes; syncNotes sets the texts.
+  var noteEls = {};
+
   function noteLine(key) {
-    var n = app.notes[key];
-    var p = el("p", "note");
-    p.setAttribute("aria-live", "polite");
-    if (n) {
-      p.textContent = n.text;
-      if (n.error) {
-        p.classList.add("error");
-      }
+    if (!noteEls[key]) {
+      var p = el("p", "note");
+      p.setAttribute("aria-live", "polite");
+      noteEls[key] = p;
     }
-    return p;
+    return noteEls[key];
+  }
+
+  function syncNotes() {
+    Object.keys(noteEls).forEach(function (key) {
+      var p = noteEls[key];
+      var n = app.notes[key];
+      var text = n ? n.text : "";
+      p.classList.toggle("error", !!(n && n.error));
+      if (p.textContent !== text) {
+        p.textContent = text;
+      }
+    });
   }
 
   // run starts a call for the control key: busy until it answers, then the
@@ -197,7 +232,7 @@
       render();
     }, function (err) {
       app.busy[key] = false;
-      setNote(key, err.message, true);
+      setNote(key, plainError(leads[key] || "Something went wrong", err), true);
       render();
     });
   }
@@ -223,24 +258,30 @@
   function renderTop() {
     var st = app.state;
     var kb = keyboard();
-    dot.className = "dot";
-    if (!st) {
-      statusText.textContent = app.stateError ? "Commander did not answer" : "Connecting to Commander";
-      return;
-    }
-    if (st.failed) {
-      dot.classList.add("bad");
-    } else if (kb.connected) {
-      dot.classList.add("ok");
-    }
+    var cls = "dot";
     var text;
-    if (kb.connected && !st.failed) {
-      text = "Running \u00b7 " + (str(kb.name) || profileLabel(kb.profile));
+    if (!st) {
+      text = app.stateError ? "Commander did not answer" : "Connecting to Commander";
     } else {
-      text = capital(str(st.status));
+      if (st.failed) {
+        cls += " bad";
+      } else if (kb.connected) {
+        cls += " ok";
+      }
+      if (kb.connected && !st.failed) {
+        text = "Running \u00b7 " + (str(kb.name) || profileLabel(kb.profile));
+      } else {
+        text = capital(str(st.status));
+      }
     }
-    statusText.textContent = text;
-    statusText.title = text;
+    if (dot.className !== cls) {
+      dot.className = cls;
+    }
+    // Only a real change, so the status is not announced on every redraw.
+    if (statusText.textContent !== text) {
+      statusText.textContent = text;
+      statusText.title = text;
+    }
   }
 
   // Sidebar
@@ -288,8 +329,10 @@
     var kb = keyboard();
     if (kb.connected) {
       kids.push(navItem("kb7", "KB7", "connected", "ok"));
+    } else if (st.failed) {
+      kids.push(navItem("kb7", "KB7", capital(str(st.status)) || "Error", "bad"));
     } else {
-      kids.push(navItem("kb7", "KB7", str(st.status) || "not connected", "warm"));
+      kids.push(navItem("kb7", "KB7", capital(str(st.status)) || "Not connected", "warm"));
     }
 
     kids.push(el("h2", "", "Commander"));
@@ -320,7 +363,6 @@
     var out = head("KB7", "Turtle Beach Command Series \u00b7 touchscreen, per-key lighting, volume mixer");
     if (str(st.loadError)) {
       var banner = el("div", "banner");
-      banner.setAttribute("role", "alert");
       banner.appendChild(el("strong", "", "The configuration could not be read"));
       banner.appendChild(el("span", "", st.loadError));
       out.push(banner);
@@ -348,17 +390,46 @@
 
     var bar = el("div", "tabs");
     bar.setAttribute("role", "tablist");
-    tabs.forEach(function (t) {
+    bar.setAttribute("aria-label", "KB7");
+    // One tab stop for the row; the arrow keys move between the tabs.
+    function selectTab(id, focus) {
+      app.tab = id;
+      render();
+      if (focus) {
+        var b = document.getElementById("tab-" + id);
+        if (b) {
+          b.focus();
+        }
+      }
+    }
+    tabs.forEach(function (t, i) {
       var b = el("button", "tab", t.label);
+      var selected = app.tab === t.id;
       b.type = "button";
       b.id = "tab-" + t.id;
       b.setAttribute("role", "tab");
       b.setAttribute("data-key", "tab:" + t.id);
       b.setAttribute("aria-controls", "tabpanel");
-      b.setAttribute("aria-selected", app.tab === t.id ? "true" : "false");
+      b.setAttribute("aria-selected", selected ? "true" : "false");
+      b.tabIndex = selected ? 0 : -1;
       b.addEventListener("click", function () {
-        app.tab = t.id;
-        render();
+        selectTab(t.id, false);
+      });
+      b.addEventListener("keydown", function (e) {
+        var to = -1;
+        if (e.key === "ArrowRight") {
+          to = (i + 1) % tabs.length;
+        } else if (e.key === "ArrowLeft") {
+          to = (i + tabs.length - 1) % tabs.length;
+        } else if (e.key === "Home") {
+          to = 0;
+        } else if (e.key === "End") {
+          to = tabs.length - 1;
+        }
+        if (to >= 0) {
+          e.preventDefault();
+          selectTab(tabs[to].id, true);
+        }
       });
       bar.appendChild(b);
     });
@@ -383,9 +454,14 @@
     var sec = el("section", "section");
     sec.appendChild(el("h2", "", "What each device does"));
     var card = el("div", "card");
-    var list = el("ul", "devices");
-    list.appendChild(el("li", "", kb7Line(kb7)));
-    card.appendChild(list);
+    if (app.state && str(app.state.loadError)) {
+      // The profiles are unknown: claim none.
+      card.appendChild(el("p", "note error", "The configuration could not be read, so what this profile does is not known."));
+    } else {
+      var list = el("ul", "devices");
+      list.appendChild(el("li", "", kb7Line(kb7)));
+      card.appendChild(list);
+    }
     sec.appendChild(card);
     out.push(sec);
     return out;
@@ -445,7 +521,7 @@
     var out = head("Settings");
     var s = app.settings;
     if (!s) {
-      var p = el("p", "note error", app.settingsError ? "Commander could not read the settings: " + app.settingsError : "Loading the settings");
+      var p = el("p", "note error", app.settingsError ? plainError("Could not read the settings", app.settingsError) : "Loading the settings");
       out.push(p);
       return out;
     }
@@ -546,18 +622,19 @@
     if (dev) {
       card.appendChild(el("p", "", "This is a development build; it does not look for updates."));
     }
-    card.appendChild(button("checkUpdate", "btn", "Check now", "Checking", function () {
-      run("checkUpdate", "checkUpdate", undefined, function (result) {
-        setUpdate(result);
-        app.checked = true;
-        if (!(result && str(result.available)) && !(result && result.current === "dev")) {
-          setNote("checkUpdate", "No newer version was found.", false);
-        }
-      });
-    }));
-    card.appendChild(noteLine("checkUpdate"));
+    if (!dev) {
+      card.appendChild(button("checkUpdate", "btn", "Check now", "Checking", function () {
+        run("checkUpdate", "checkUpdate", undefined, function (result) {
+          setUpdate(result);
+          if (!(result && str(result.available)) && !(result && result.current === "dev")) {
+            setNote("checkUpdate", "No newer version was found.", false);
+          }
+        });
+      }));
+      card.appendChild(noteLine("checkUpdate"));
+    }
     if (app.updateError) {
-      card.appendChild(el("p", "note error", app.updateError));
+      card.appendChild(el("p", "note error", plainError("Could not check for updates", app.updateError)));
     }
 
     if (u && str(u.available)) {
@@ -578,7 +655,7 @@
     var page = app.page;
     var out;
     if (!app.state) {
-      out = [el("p", "note error", app.stateError ? "Commander did not answer: " + app.stateError : "Connecting to Commander")];
+      out = [el("p", "note error", app.stateError ? plainError("Commander did not answer", app.stateError) : "Connecting to Commander")];
     } else if (page === "desktop") {
       out = desktopPage();
     } else if (page.indexOf("game:") === 0 && games()[Number(page.slice(5))]) {
@@ -605,6 +682,7 @@
     var key = focused && focused.getAttribute ? focused.getAttribute("data-key") : null;
     renderTop();
     renderMain();
+    syncNotes();
     renderNav();
     if (key) {
       var again = document.querySelector('[data-key="' + key.replace(/["\\]/g, "") + '"]');
@@ -628,7 +706,8 @@
   applyTheme();
 
   var gotState = call("state").then(function (result) {
-    if (result && typeof result === "object") {
+    // A "state" event may have come first: it is newer than this answer.
+    if (result && typeof result === "object" && !app.state) {
       app.state = result;
     }
   }, function (err) {

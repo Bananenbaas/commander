@@ -22,6 +22,11 @@
   --ok: #3ddc84;
   --bad: #ff5c5c;
   --glow: rgba(0, 170, 255, 0.16);
+  --focus: #00aaff;
+  /* Text on the glow background. */
+  --link-on-glow: #00aaff;
+  --warm-on-glow: #ff9a3d;
+  --bad-on-glow: #ff5c5c;
   --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
   --sans: system-ui, "Segoe UI", sans-serif;
   --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
@@ -39,9 +44,13 @@
     --text-muted: #46526e;
     --link: #006fb3;
     --warm: #b8540a;
-    --ok: #18864b;
+    --ok: #11733f;
     --bad: #c62828;
     --glow: rgba(0, 170, 255, 0.2);
+    --focus: #006fb3;
+    --link-on-glow: #005f99;
+    --warm-on-glow: #9a4508;
+    --bad-on-glow: #a51f1f;
     color-scheme: light;
   }
 }
@@ -55,9 +64,13 @@
   --text-muted: #46526e;
   --link: #006fb3;
   --warm: #b8540a;
-  --ok: #18864b;
+  --ok: #11733f;
   --bad: #c62828;
   --glow: rgba(0, 170, 255, 0.2);
+  --focus: #006fb3;
+  --link-on-glow: #005f99;
+  --warm-on-glow: #9a4508;
+  --bad-on-glow: #a51f1f;
   color-scheme: light;
 }
 
@@ -89,7 +102,7 @@ button {
 button[aria-disabled="true"] { cursor: default; }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -201,7 +214,7 @@ button[aria-disabled="true"] { cursor: default; }
 
 .nav-item[aria-current="page"] {
   background: var(--glow);
-  color: var(--link);
+  color: var(--link-on-glow);
 }
 
 .nav-item .label,
@@ -222,6 +235,9 @@ button[aria-disabled="true"] { cursor: default; }
 
 .nav-item .sub.ok { color: var(--ok); }
 .nav-item .sub.warm { color: var(--warm); }
+.nav-item .sub.bad { color: var(--bad); }
+.nav-item[aria-current="page"] .sub.warm { color: var(--warm-on-glow); }
+.nav-item[aria-current="page"] .sub.bad { color: var(--bad-on-glow); }
 
 .main {
   flex: 1 1 auto;
@@ -279,7 +295,7 @@ h1 {
   font: 600 17px var(--display);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--warm);
+  color: var(--warm-on-glow);
 }
 
 /* Profile chips */
@@ -482,7 +498,7 @@ h1 {
 
 .seg button[aria-pressed="true"] {
   background: var(--glow);
-  color: var(--link);
+  color: var(--link-on-glow);
 }
 
 .seg button:focus-visible { outline-offset: -2px; }
