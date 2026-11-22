@@ -792,18 +792,22 @@ func writeTypes(kb Keyboard, t25 *proto.Table25) error {
 	return nil
 }
 
-// finalProfile is the profile the run command would choose.
+// finalProfile is the profile the run command would choose: the one of the
+// game started last, or the desktop profile when no game with a profile runs.
+// Apply cannot know the start order, so games running now count as started
+// together and the first game in the order of cfg.Games wins.
 func finalProfile(cfg *layout.Config, running func(string) bool) byte {
-	if running != nil {
-		ps := append([]layout.Profile(nil), cfg.Profiles...)
-		sort.Slice(ps, func(i, j int) bool { return ps[i].Number < ps[j].Number })
-		for _, p := range ps {
-			if p.SwitchWhenRunning != "" && running(p.SwitchWhenRunning) {
-				return p.Number
-			}
+	if running == nil {
+		return cfg.DesktopProfile()
+	}
+	m := map[string]bool{}
+	for _, g := range cfg.Games {
+		if g.Program != "" && running(g.Program) {
+			m[g.Program] = true
 		}
 	}
-	return cfg.DesktopProfile()
+	p, _ := cfg.Choose(layout.StartOrder(nil, m, cfg.Games))
+	return p
 }
 
 // Restore gives the positions the ledger lists for profile their recorded

@@ -135,7 +135,7 @@ count, their shortest and longest duration, the time of the first, the last
 and the slowest, so the ring covers minutes of a lighting stream; a call much
 slower than the ones before gets an entry of its own. Markers note who
 opened the keyboard (`run` or `apply`), a failed open, its closing and a
-`switch_when_running` program seen ending, with the time until the switch
+game's program seen ending, with the time until the switch
 that follows; the last eight markers are also kept outside the ring.
 
 The trace is written to Commander's log, one line per entry with times in ms

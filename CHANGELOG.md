@@ -6,6 +6,16 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Game profiles: a `games/` folder in the configuration folder holds one file
+  per game with its program and the KB7 profile to show while it runs, and
+  `games/desktop.toml` sets the desktop profile. `switch_when_running` in a
+  layout keeps working for programs that have no game file.
+
+### Changed
+- When two game programs run, the one started last now decides the profile
+  (before: the lowest profile).
+
 ## [0.1.0-beta.7] - 2026-11-22
 
 ### Added

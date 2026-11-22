@@ -12,6 +12,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -296,7 +297,20 @@ func prof(n byte, file, program string, bs ...layout.Button) layout.Profile {
 	return layout.Profile{Number: n, File: filepath.Join("cfg", file), SwitchWhenRunning: program, Buttons: bs}
 }
 
-func cfgOf(ps ...layout.Profile) *layout.Config { return &layout.Config{Dir: "cfg", Profiles: ps} }
+// cfgOf builds a config the way Load would: a layout program becomes a game
+// that switches to the layout's profile, in order of profile number.
+func cfgOf(ps ...layout.Profile) *layout.Config {
+	cfg := &layout.Config{Dir: "cfg", Profiles: ps}
+	sorted := append([]layout.Profile(nil), ps...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Number < sorted[j].Number })
+	for _, p := range sorted {
+		if p.SwitchWhenRunning != "" {
+			n := p.Number
+			cfg.Games = append(cfg.Games, layout.Game{Name: p.SwitchWhenRunning, Program: p.SwitchWhenRunning, KB7: &n})
+		}
+	}
+	return cfg
+}
 
 func own(p, pos int) ledger.Owner { return ledger.Owner{Profile: p, Page: 1, Position: pos} }
 
@@ -785,6 +799,37 @@ func TestFinalProfile(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			f := newFake(t)
 			if _, err := Apply(context.Background(), f, c.cfg, &ledger.Ledger{}, false, c.running, nil); err != nil {
+				t.Fatal(err)
+			}
+			if f.active != c.want {
+				t.Fatalf("profile %d is active, want %d; calls %v", f.active, c.want, f.calls)
+			}
+		})
+	}
+}
+
+func TestApplyEndsOnTheChosenGame(t *testing.T) {
+	b := func(n byte) *byte { return &n }
+	cfg := func() *layout.Config {
+		c := cfgOf(prof(1, "desktop.toml", "", btn(0, "Zero")))
+		c.Games = []layout.Game{
+			{Name: "A", Program: "A.exe", KB7: b(2)},
+			{Name: "B", Program: "B.exe"},
+		}
+		c.Desktop = &layout.Game{Name: "Desktop", KB7: b(1)}
+		return c
+	}
+	for _, c := range []struct {
+		name    string
+		running func(string) bool
+		want    int
+	}{
+		{"only the game without kb7", func(n string) bool { return n == "B.exe" }, 1},
+		{"both", func(string) bool { return true }, 2},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFake(t)
+			if _, err := Apply(context.Background(), f, cfg(), &ledger.Ledger{}, false, c.running, nil); err != nil {
 				t.Fatal(err)
 			}
 			if f.active != c.want {

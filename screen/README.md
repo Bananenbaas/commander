@@ -174,6 +174,7 @@ second `apply` of an unchanged folder is fast.
 config/
   desktop.toml            one file per managed profile
   game.toml
+  games/                  optional: one file per game profile
   pictures/               own pictures (PNG, any size)
   symbols/                symbols (PNG, white on transparent)
   .kb7screen-state.json   the slot ledger, written by kb7screen
@@ -254,6 +255,54 @@ to their originals may already have been written).
 `kb7screen clear-launchers <config> --profile N` empties them on one profile;
 the positions the folder manages are left as they are.
 
+### Game profiles
+
+A game profile says which KB7 profile to show while a program runs. They are
+the files in the `games/` folder of the configuration folder, one TOML file
+per game:
+
+`games/sc.toml`:
+
+```toml
+name = "Star Citizen"
+program = "StarCitizen.exe"
+
+[devices]
+kb7 = 2                              # the KB7 profile (0 to 4) to show while it runs
+```
+
+`games/desktop.toml` is the Desktop game, the profile to show while no game
+runs. It has no `program`, and `kb7` is required:
+
+```toml
+[devices]
+kb7 = 0
+```
+
+The rules:
+
+- `name` and `program` are required, except in `desktop.toml`, where `name`
+  defaults to "Desktop". `program` is matched like `switch_when_running`:
+  upper or lower case, with or without `.exe`.
+- `kb7` is optional in a game. A game without `kb7` leaves the keyboard
+  alone: while it runs, the other running games, or the desktop profile,
+  decide. Other keys under `[devices]` are ignored, so a file can already
+  name devices Commander does not drive yet.
+- The game that started last decides the profile. When it ends, the one
+  started before it takes over again, and the desktop profile when none is
+  left. When two games are found running at the same poll, the one listed first
+  wins: files in `games/` by file name, then the games that come from
+  layouts, by profile number.
+- Names are unique, upper and lower case counting as the same, across all
+  game files, the Desktop game and the games that come from layouts. A
+  program may be named in only one game file.
+- `switch_when_running` in a layout keeps working for a program that has no
+  game file: it counts as a game named after the program, that shows the
+  layout's profile. A program that is both in a layout's
+  `switch_when_running` and in a file of `games/` is refused when the
+  configuration is read; remove one of them.
+- Without `games/desktop.toml` the desktop profile follows the rule below.
+
 ### Action steps
 
 An action is a list of steps, carried out in order.
@@ -297,10 +346,12 @@ tables are written whole, and `apply` waits until the keyboard has redrawn its
 screen before it switches to another profile: the keyboard takes the tables
 over some time after they are sent, and a switch before that could change the
 wrong profile. If the redraw does not come within 5 s, `apply` stops with an
-error; running it again writes the tables again. When it succeeds, it ends on the profile that `run` would choose: the one whose program
-is running, otherwise the desktop profile.
+error; running it again writes the tables again. When it succeeds, it ends on the profile that `run` would choose: the one of the running
+game that is listed first and has a `kb7` profile (`apply` cannot know which
+started last), otherwise the desktop profile.
 
-The desktop profile is the lowest profile whose layout has no
+The desktop profile is the `kb7` of `games/desktop.toml`. Without that file
+it is the lowest profile whose layout has no
 `switch_when_running`. When every layout has one, as in a folder with only the
 `game.toml` above, it is the lowest profile that no layout names (profile 0 in
 that example); that profile has no buttons of kb7screen, and touches there are
@@ -314,17 +365,16 @@ so where the active profile is not known (the first switch of `apply` and
 through another profile first. When the loop starts again within the same
 `run` or Commander (a reload, or after Apply buttons), it keeps the profile
 the keyboard was on, also one chosen on the keyboard by hand, unless a
-program of `switch_when_running` runs whose profile differs; that profile
-wins as always. After a reload the keyboard is taken to be on that profile,
+game is running whose profile differs; that profile wins as always. After a reload the keyboard is taken to be on that profile,
 so nothing is switched at all; after Apply buttons, which switches profiles,
 or when the keyboard had not confirmed the switch to that profile, the
 switch back goes through another profile first. A profile tapped on the
 keyboard during the second or two of a reload is not seen until the next
 profile change: until then, touches act for the kept profile. When the keyboard was
 unplugged, did not answer or was left to Swarm II in between, `run` connects
-as at the first start. Every two seconds `run` checks the programs named in
-`switch_when_running` and switches profile when one starts or ends, unless
-that profile is already active. Only touches of application buttons
+as at the first start. Every two seconds `run` checks the programs of the game profiles and
+switches profile when one starts or ends, unless that profile is already
+active. The game started last decides. Only touches of application buttons
 act; a position that the keyboard shows as something else is left to the
 keyboard. If the keyboard is unplugged, `run` waits for it and sets it up
 again. When three attempts in a row to set it up or switch its profile fail
