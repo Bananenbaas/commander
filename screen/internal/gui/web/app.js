@@ -20,6 +20,8 @@
     updateError: "",
     page: "kb7", // "kb7", "desktop", "game:<index>", "settings", "updates"
     tab: "buttons",
+    kb7Profile: -1, // the KB7 profile the Buttons tab shows
+    leaving: null, // what to do once the unsaved-changes question is answered
     busy: {}, // control key: true while its call runs
     notes: {}, // control key: {text, error}
     started: false // the first state and settings answers are in
@@ -66,6 +68,9 @@
         app.stateError = "";
         if (app.started) {
           render();
+          if (editor) {
+            editor.refresh();
+          }
         }
       }
       return;
@@ -302,7 +307,10 @@
       b.appendChild(s);
     }
     b.addEventListener("click", function () {
-      if (app.page !== page) {
+      if (app.page === page) {
+        return;
+      }
+      var go = function () {
         app.page = page;
         main.scrollTop = 0;
         // Fetched anew on every visit: the tray menu and the automatic
@@ -313,6 +321,11 @@
           loadUpdate("updates");
         }
         render();
+      };
+      if (app.page === "kb7") {
+        whenSaved(go);
+      } else {
+        go();
       }
     });
     return b;
@@ -355,6 +368,109 @@
     return out;
   }
 
+  // The Buttons tab: one editor for the window's life. Its node is put back
+  // in the page on every redraw, never rebuilt, so a field being typed in
+  // keeps its focus and text.
+  var editor = null;
+  var buttonsPanel = el("div", "tabpanel");
+
+  // onDirtyChange can come in the middle of a redraw (render shows the
+  // editor a profile), so the redraw it asks for waits for that one.
+  function onDirtyChange(dirty) {
+    if (!dirty) {
+      app.leaving = null;
+    }
+    Promise.resolve().then(render);
+  }
+
+  // whenSaved runs go now or, while the Buttons tab has unsaved changes,
+  // once the player has answered the question in the page.
+  function whenSaved(go) {
+    if (!editor || !editor.dirty()) {
+      app.leaving = null;
+      go();
+      return;
+    }
+    app.leaving = go;
+    render();
+    var b = document.querySelector('[data-key="ask:save"]');
+    if (b) {
+      b.focus();
+    }
+  }
+
+  // The question asked before leaving unsaved changes. The way out is taken
+  // at the click: saving or discarding clears app.leaving on the way.
+  function unsavedQuestion() {
+    var box = el("div", "banner ask");
+    box.setAttribute("role", "group");
+    box.setAttribute("aria-label", "Unsaved changes");
+    var text = el("p", "", "You have unsaved changes.");
+    text.setAttribute("role", "alert");
+    box.appendChild(text);
+    var row = el("div", "row");
+    row.appendChild(button("ask:save", "btn primary", "Save", "Saving", function () {
+      var go = app.leaving;
+      app.busy["ask:save"] = true;
+      render();
+      editor.save().then(function (ok) {
+        app.busy["ask:save"] = false;
+        app.leaving = null;
+        if (ok && go) {
+          go();
+          return;
+        }
+        // The Buttons tab says why.
+        app.tab = "buttons";
+        render();
+      });
+    }));
+    [["ask:discard", "Discard"], ["ask:keep", "Keep editing"]].forEach(function (o) {
+      row.appendChild(button(o[0], "btn", o[1], o[1], function () {
+        if (app.busy["ask:save"]) {
+          return;
+        }
+        var go = app.leaving;
+        app.leaving = null;
+        if (o[0] === "ask:discard") {
+          editor.discard();
+          if (go) {
+            go();
+            return;
+          }
+        }
+        render();
+      }));
+    });
+    box.appendChild(row);
+    return box;
+  }
+
+  // shownProfile is the KB7 profile for the Buttons tab: the one picked,
+  // else the one on the keyboard, else the lowest.
+  function shownProfile() {
+    var list = profiles();
+    var has = function (n) {
+      return list.some(function (p) {
+        return p.number === n;
+      });
+    };
+    if (has(app.kb7Profile)) {
+      return app.kb7Profile;
+    }
+    var kb = keyboard();
+    if (kb.connected && has(kb.profile)) {
+      return kb.profile;
+    }
+    var low = -1;
+    list.forEach(function (p) {
+      if (typeof p.number === "number" && (low < 0 || p.number < low)) {
+        low = p.number;
+      }
+    });
+    return low;
+  }
+
   var tabs = [
     { id: "buttons", label: "Buttons" },
     { id: "lighting", label: "Lighting" },
@@ -371,25 +487,49 @@
       banner.appendChild(el("span", "", st.loadError));
       out.push(banner);
     }
+    app.kb7Profile = shownProfile();
+    if (editor && !str(st.loadError)) {
+      editor.show(app.kb7Profile);
+    }
     var chips = el("div", "chips");
     var kb = keyboard();
     profiles().forEach(function (p) {
-      var c = el("span", "chip");
-      if (kb.connected && p.number === kb.profile) {
-        c.classList.add("on");
-      }
+      var live = kb.connected && p.number === kb.profile;
+      var c = el("button", "chip" + (live ? " live" : ""));
+      c.type = "button";
+      c.setAttribute("data-key", "profile:" + p.number);
+      c.setAttribute("aria-pressed", p.number === app.kb7Profile ? "true" : "false");
       var name = str(p.name) || "Profile " + (p.number + 1);
       var n = el("span", "name", name);
-      n.title = name;
+      n.title = live ? name + ", on the keyboard now" : name;
       c.appendChild(n);
       c.appendChild(el("span", "slot", p.number + 1));
+      if (live) {
+        c.appendChild(el("span", "sr-only", ", on the keyboard now"));
+      }
+      c.addEventListener("click", function () {
+        if (p.number === app.kb7Profile) {
+          return;
+        }
+        whenSaved(function () {
+          app.kb7Profile = p.number;
+          if (editor) {
+            editor.show(p.number);
+          }
+          render();
+        });
+      });
       chips.appendChild(c);
     });
     if (chips.childNodes.length > 0) {
+      chips.setAttribute("role", "group");
       chips.setAttribute("aria-label", "Profiles on the keyboard");
       out.push(chips);
     } else if (!str(st.loadError)) {
       out.push(el("p", "lead", "There are no profiles in the configuration folder yet."));
+    }
+    if (app.leaving) {
+      out.push(unsavedQuestion());
     }
 
     var bar = el("div", "tabs");
@@ -438,7 +578,20 @@
       bar.appendChild(b);
     });
     out.push(bar);
-    var panel = el("div", "tabpanel", "Comes in a later version.");
+    var panel;
+    if (app.tab !== "buttons") {
+      panel = el("div", "tabpanel", "Comes in a later version.");
+    } else if (str(st.loadError)) {
+      panel = el("div", "tabpanel");
+      panel.appendChild(el("p", "note error", "The buttons cannot be shown while the configuration cannot be read: " + st.loadError));
+    } else if (!editor || app.kb7Profile < 0) {
+      panel = el("div", "tabpanel", "There are no profiles to show.");
+    } else {
+      panel = buttonsPanel;
+      if (panel.firstChild !== editor.node) {
+        panel.replaceChildren(editor.node);
+      }
+    }
     panel.id = "tabpanel";
     panel.setAttribute("role", "tabpanel");
     panel.setAttribute("aria-labelledby", "tab-" + app.tab);
@@ -712,8 +865,28 @@
       out = kb7Page();
     }
     var top = main.scrollTop;
-    main.replaceChildren.apply(main, out);
+    replaceKeeping(main, out);
     main.scrollTop = top;
+  }
+
+  // replaceKeeping makes nodes the children of parent. A node already in
+  // parent stays where it is instead of being taken out and put back, so
+  // the focus inside it survives.
+  function replaceKeeping(parent, nodes) {
+    var keep = new Set(nodes);
+    Array.prototype.slice.call(parent.childNodes).forEach(function (c) {
+      if (!keep.has(c)) {
+        parent.removeChild(c);
+      }
+    });
+    var at = parent.firstChild;
+    nodes.forEach(function (n) {
+      if (n === at) {
+        at = at.nextSibling;
+      } else {
+        parent.insertBefore(n, at);
+      }
+    });
   }
 
   function render() {
@@ -747,6 +920,16 @@
     applyTheme();
   });
   applyTheme();
+  if (window.CommanderButtons) {
+    editor = window.CommanderButtons.create({
+      call: call, el: el, str: str, plainError: plainError, onDirtyChange: onDirtyChange
+    });
+  }
+  window.addEventListener("focus", function () {
+    if (editor && app.started) {
+      editor.refresh();
+    }
+  });
 
   var gotState = call("state").then(function (result) {
     // A "state" event may have come first: it is newer than this answer.

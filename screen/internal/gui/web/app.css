@@ -108,6 +108,8 @@ button[aria-disabled="true"] { cursor: default; }
 
 .muted { color: var(--text-muted); }
 
+[hidden] { display: none !important; }
+
 /* Top strip */
 
 .top {
@@ -335,10 +337,34 @@ h1 {
   opacity: 0.75;
 }
 
-.chip.on {
+button.chip:hover { color: var(--text); }
+
+.chip[aria-pressed="true"] {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
+}
+
+/* The profile on the keyboard now: a dot in front of its name. */
+.chip.live::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.chip.live[aria-pressed="true"]::before { background: var(--accent-ink); }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* Tabs */
@@ -539,6 +565,137 @@ h1 {
 .btn[aria-busy="true"] { opacity: 0.65; }
 .btn[aria-busy="true"]:hover::before { background: var(--line); }
 .btn.primary[aria-busy="true"]:hover::before { background: var(--accent); }
+
+/* Banner asking about unsaved changes */
+
+.banner.ask { border-color: var(--accent); background: var(--glow); }
+.banner.ask p { margin: 0 0 12px; }
+
+/* Buttons tab */
+
+.bbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-sunk);
+}
+
+.bbar.dirty { border-color: var(--accent); }
+
+.bbar-text {
+  flex: 1 1 260px;
+  margin: 0;
+  color: var(--text);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.bbar-text.warm { color: var(--warm); }
+.bbar-text.error { color: var(--bad); }
+
+.bbar-acts {
+  display: flex;
+  gap: 8px;
+}
+
+.bwork {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.bleft { flex: 0 1 auto; }
+
+.chips.pages { margin-top: 0; }
+.chips.pages .chip { min-width: 44px; justify-content: center; }
+
+.bgrid {
+  display: grid;
+  grid-template-columns: repeat(3, 120px);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* A place is the button's picture, 142 x 148 like the keyboard draws it. */
+.bplace {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 142 / 148;
+  border: 1px solid var(--line);
+  background: var(--bg-sunk);
+  overflow: hidden;
+}
+
+.bplace img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.bplus {
+  display: none;
+  font: 600 34px var(--display);
+  color: var(--text-muted);
+}
+
+.bplace.empty { border-style: dashed; }
+.bplace.empty .bplus { display: block; }
+.bplace.empty:hover { border-color: var(--text-muted); }
+.bplace.empty:hover .bplus { color: var(--text); }
+
+.bmark {
+  position: absolute;
+  inset: auto 6px 6px;
+  font-size: 13px;
+  color: var(--text);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bmark:empty { display: none; }
+.bplace.broken .bmark { inset: auto; font: 600 34px var(--display); color: var(--bad); }
+
+.bplace[aria-pressed="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.bplace.flagged { border-color: var(--bad); }
+.bplace.dragging { opacity: 0.5; }
+
+.bplace.drop {
+  border: 2px dashed var(--accent);
+  background: var(--glow);
+}
+
+.bpictures { margin-top: 10px; }
+
+.bpanel {
+  flex: 1 1 280px;
+  min-width: 0;
+  min-height: 120px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.bpanel p { margin: 0 0 8px; overflow-wrap: anywhere; }
+
+@media (max-width: 899px) {
+  .bpanel { flex-basis: 100%; }
+}
 
 .version {
   font: 600 28px var(--display);
