@@ -81,8 +81,8 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
   (`confirmed` / `observed` / `hypothesis` / `unknown`) and names the capture(s)
   it rests on.
 - **One writer**: only `screen/internal/store` writes the configuration folder
-  (the window process never does). Every file it writes starts with
-  `layout.Header`. Writes go to `.<name>.tmp-*` and are renamed over the
+  (the window process never does). Every layout and game file it writes starts with
+  `layout.Header` (imported pictures and symbols do not). Writes go to `.<name>.tmp-*` and are renamed over the
   target; a file whose bytes Commander's encoding would change is copied to
   `backup/` first. The migration writes `games/desktop.toml` first, then for
   each layout the layout without `switch_when_running`, then its game file,

@@ -288,7 +288,7 @@ func (s *Service) saveDeviceProfile(args json.RawMessage) (any, error) {
 		return map[string]any{"ok": false, "errors": bad}, nil
 	}
 
-	res, err := store.SaveButtons(s.d.Dir, slot, a.Version, files)
+	res, err := saveButtons(s.d.Dir, slot, a.Version, files)
 	var be *store.ButtonError
 	switch {
 	case errors.Is(err, store.ErrChanged):
@@ -297,6 +297,10 @@ func (s *Service) saveDeviceProfile(args json.RawMessage) (any, error) {
 		return map[string]any{"ok": false, "errors": []buttonErrorOut{{be.Page, be.Position, be.Err.Field, be.Err.Step, be.Err.Error()}}}, nil
 	case err != nil:
 		s.logf("control: saveDeviceProfile: %v", err)
+		if res.Written && s.d.Reload != nil {
+			// Some files changed: the running configuration is stale.
+			s.d.Reload()
+		}
 		return map[string]any{"ok": false, "error": err.Error()}, nil
 	}
 	switch res.Change {
@@ -364,3 +368,6 @@ func (s *Service) importPicture(args json.RawMessage) (any, error) {
 	}
 	return map[string]string{"path": rel}, nil
 }
+
+// saveButtons is store.SaveButtons; tests replace it.
+var saveButtons = store.SaveButtons

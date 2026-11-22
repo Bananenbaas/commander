@@ -357,7 +357,7 @@
       }
       var steps = Array.isArray(b.steps) ? b.steps : [];
       if (steps.length === 0 && !b.state) {
-        bad("action", -1, "Add at least one step, or pick a lighting state");
+        bad("action", -1, "Add at least one step, or pick a lighting state.");
       }
       steps.forEach(function (s, i) {
         var kind = stepKind(s);
@@ -1461,7 +1461,7 @@
         ms.type = "number";
         ms.min = "1";
         ms.max = String(WAIT_MAX);
-        ms.step = "10";
+        ms.step = "1";
         body.appendChild(ms);
         body.appendChild(el("span", "bstep-unit", "ms"));
         row.inputs.wait = ms;

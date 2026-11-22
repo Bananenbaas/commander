@@ -487,9 +487,16 @@
       banner.appendChild(el("span", "", st.loadError));
       out.push(banner);
     }
-    app.kb7Profile = shownProfile();
-    if (editor && !str(st.loadError)) {
-      editor.show(app.kb7Profile);
+    if (!str(st.loadError)) {
+      // While the folder does not load the list is empty; keep the profile
+      // (and a draft in it) until it loads again.
+      var shown = shownProfile();
+      if (!(editor && editor.dirty() && app.kb7Profile >= 0)) {
+        app.kb7Profile = shown;
+      }
+      if (editor) {
+        editor.show(app.kb7Profile);
+      }
     }
     var chips = el("div", "chips");
     var kb = keyboard();

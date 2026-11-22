@@ -27,7 +27,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
   each button's title, look (colour, symbol or picture), steps (press keys,
   wait, start a program, open a website, file or folder) and options, and
   Save writes them. A save is checked first (the folder must load, the
-  pictures must fit the 15 buttons), files are written atomically, and a file
+  pictures must fit the 15 different pictures the KB7 holds), files are written atomically, and a file
   that holds comments or other formatting is copied to `backup/` first; the
   files Commander saves start with a note that comments are not kept. Picked
   pictures and symbols are copied into `pictures/` and `symbols/`.

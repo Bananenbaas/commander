@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/png"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/Bananenbaas/commander/screen/internal/layout"
 	"github.com/Bananenbaas/commander/screen/internal/picture"
+	"github.com/Bananenbaas/commander/screen/internal/store"
 )
 
 type counts struct{ reload, apply int }
@@ -392,5 +394,36 @@ func TestSaveUnchanged(t *testing.T) {
 	again := profileCall(t, s)
 	if !reflect.DeepEqual(again["buttons"], p["buttons"]) || again["version"] != m["version"] {
 		t.Errorf("buttons changed by a save:\n%v\n%v", p["buttons"], again["buttons"])
+	}
+}
+
+func TestSaveFailureAfterWriteReloads(t *testing.T) {
+	s, _, c := buttonDeps(t)
+	p := profileCall(t, s)
+	v := p["version"].(string)
+	orig := saveButtons
+	t.Cleanup(func() { saveButtons = orig })
+
+	// Some files were written, then the save failed: the configuration is
+	// stale, so it is reloaded, and the error is still answered.
+	saveButtons = func(string, byte, string, []layout.FileButton) (store.Result, error) {
+		return store.Result{Written: true}, errors.New("disk full")
+	}
+	m := call(t, s, "saveDeviceProfile", saveArgs(t, p, v, nil))
+	if m["ok"] != false || m["error"] != "disk full" || c.reload != 1 {
+		t.Fatalf("after a partial write: %v reload=%d", m, c.reload)
+	}
+
+	// A failure before any write, and refusals, do not reload.
+	saveButtons = func(string, byte, string, []layout.FileButton) (store.Result, error) {
+		return store.Result{}, errors.New("disk full")
+	}
+	call(t, s, "saveDeviceProfile", saveArgs(t, p, v, nil))
+	saveButtons = func(string, byte, string, []layout.FileButton) (store.Result, error) {
+		return store.Result{}, store.ErrChanged
+	}
+	call(t, s, "saveDeviceProfile", saveArgs(t, p, v, nil))
+	if c.reload != 1 {
+		t.Errorf("reload = %d, want it unchanged by failures that wrote nothing", c.reload)
 	}
 }

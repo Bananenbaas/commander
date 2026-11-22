@@ -4,11 +4,13 @@ package store
 
 import (
 	"bytes"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -82,6 +84,35 @@ func TestImportPictureRefuses(t *testing.T) {
 	big := writeSrc(t, "big.png", make([]byte, maxPictureSize+1))
 	if _, err := ImportPicture(dir, big, "picture"); err == nil {
 		t.Error("a file over 20 MiB was accepted")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "pictures")); err == nil {
+		t.Error("a refused import left a folder behind")
+	}
+}
+
+func TestImportPictureTooLarge(t *testing.T) {
+	// A PNG header claiming 100000 x 100000 pixels, with no pixel data.
+	var b bytes.Buffer
+	b.WriteString("\x89PNG\r\n\x1a\n")
+	chunk := func(kind string, data []byte) {
+		n := len(data)
+		b.Write([]byte{byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)})
+		b.WriteString(kind)
+		b.Write(data)
+		sum := crc32.NewIEEE()
+		sum.Write([]byte(kind))
+		sum.Write(data)
+		c := sum.Sum32()
+		b.Write([]byte{byte(c >> 24), byte(c >> 16), byte(c >> 8), byte(c)})
+	}
+	w := 100000
+	hdr := []byte{byte(w >> 24), byte(w >> 16), byte(w >> 8), byte(w), byte(w >> 24), byte(w >> 16), byte(w >> 8), byte(w), 8, 6, 0, 0, 0}
+	chunk("IHDR", hdr)
+	chunk("IEND", nil)
+	dir := t.TempDir()
+	_, err := ImportPicture(dir, writeSrc(t, "huge.png", b.Bytes()), "picture")
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("err = %v, want the too large sentence", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "pictures")); err == nil {
 		t.Error("a refused import left a folder behind")

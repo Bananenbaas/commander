@@ -126,11 +126,11 @@ own pages. The top of the window shows the profile the keyboard is on. Today the
 
 **Saving.** Edits stay a draft (the "Unsaved changes" bar) until you press
 Save. Commander checks that the whole folder still loads and that the pictures
-fit the 15 buttons before it writes anything, and a file that does not load is
+fit the 15 different pictures the KB7 holds before it writes anything, and a file that does not load is
 never written. Files are written to a temporary file and renamed, so a crash
 does not leave half a file. Commander writes the files it saves in its own
 form: they start with a line saying so, and comments, formatting and key
-order are not kept. When a file holds any of that, the old file is first
+order are not kept. When a file holds any of that (comments, for example), the old file is first
 copied to `backup/` in the configuration folder (for example
 `backup/kb7-sc-20261122-221530.toml`, or `backup/games-sc-....toml` for
 `games/sc.toml`). Pictures and symbols you pick (symbols are PNG files) are
@@ -147,8 +147,9 @@ so they cannot be recorded in a key step; add them with Add step.
 The first Save also moves `switch_when_running` out of your layouts into game
 profiles: `switch_when_running = "StarCitizen.exe"` becomes the game
 `StarCitizen` in `games/starcitizen.toml`, and the desktop profile goes to
-`games/desktop.toml`. Each file is written in turn, and the original layout is
-kept in `backup/`. If a save is interrupted during this, a program's link to
+`games/desktop.toml` (only when none exists). Each file is written in turn, and
+the original layout is kept in `backup/` when it holds something Commander
+would not keep, such as comments. If a save is interrupted during this, a program's link to
 its profile can be missing until you restore the layout from `backup/`.
 
 The window needs the Microsoft Edge WebView2 Runtime. Windows 11 has it; if

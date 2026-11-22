@@ -15,6 +15,9 @@ import (
 // maxPictureSize is the largest file ImportPicture takes.
 const maxPictureSize = 20 << 20
 
+// maxPictureSide is the most pixels a picture may have in width or height.
+const maxPictureSide = 4096
+
 // ImportPicture copies the PNG file at path into the configuration folder, to
 // pictures/ (kind "picture") or symbols/ (kind "symbol"), and returns its
 // path relative to the folder, with slashes. The file keeps its base name in
@@ -44,6 +47,13 @@ func ImportPicture(dir, path, kind string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", errors.New("That file cannot be read.")
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return "", errors.New("That file is not a PNG picture.")
+	}
+	if cfg.Width > maxPictureSide || cfg.Height > maxPictureSide {
+		return "", errors.New("This picture is too large; use one of at most 4096 by 4096 pixels.")
 	}
 	if _, err := png.Decode(bytes.NewReader(data)); err != nil {
 		return "", errors.New("That file is not a PNG picture.")

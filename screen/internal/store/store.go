@@ -80,6 +80,7 @@ type Result struct {
 	Change   Change
 	Backups  []string // relative paths of the backups made
 	Migrated bool
+	Written  bool // at least one file was written, even if the save then failed
 }
 
 // ErrChanged: the layout on disk no longer has the version the save was based on.
@@ -207,6 +208,7 @@ func SaveButtons(dir string, slot byte, base string, buttons []layout.FileButton
 		if err := w.put(wr.Rel, wr.Data); err != nil {
 			return res, err
 		}
+		res.Written = true
 	}
 	res.Version = Version(data)
 	return res, nil

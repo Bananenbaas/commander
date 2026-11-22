@@ -430,10 +430,34 @@ func TestSaveButtonsInterrupted(t *testing.T) {
 	if len(res.Backups) != 1 {
 		t.Errorf("Backups = %v, want the one made before the failing write", res.Backups)
 	}
+	if !res.Written {
+		t.Error("Written = false, but files were written before the failure")
+	}
 	mustLoad(t, dir)
 	for rel := range snapshot(t, dir) {
 		if strings.Contains(rel, ".tmp-") {
 			t.Errorf("temporary file %s left behind", rel)
 		}
+	}
+}
+
+func TestSaveButtonsFirstWriteFails(t *testing.T) {
+	dir := migrationFolder(t, nil)
+	broken := errors.New("disk full")
+	orig := newSaveWriter
+	t.Cleanup(func() { newSaveWriter = orig })
+	newSaveWriter = func(dir string) *writer {
+		w := newWriter(dir)
+		w.writeFile = func(string, []byte) error { return broken }
+		return w
+	}
+	buttons, base := buttonsOf(t, dir, "kb7-0.toml")
+	buttons[0].Title = "Mail"
+	res, err := SaveButtons(dir, 0, base, buttons)
+	if !errors.Is(err, broken) {
+		t.Fatalf("err = %v, want the write error", err)
+	}
+	if res.Written {
+		t.Error("Written = true, but no file was written")
 	}
 }
