@@ -24,6 +24,7 @@ import (
 	"github.com/Bananenbaas/commander/screen/internal/control"
 	"github.com/Bananenbaas/commander/screen/internal/icon"
 	"github.com/Bananenbaas/commander/screen/internal/run"
+	"github.com/Bananenbaas/commander/screen/internal/startenv"
 	"github.com/Bananenbaas/commander/screen/internal/supervisor"
 	"github.com/Bananenbaas/commander/screen/internal/tray"
 )
@@ -49,6 +50,9 @@ func commander(args []string) int {
 	if parseErr == nil && parsed.window {
 		return windowMain()
 	}
+	// The tray shows no browser: undo what the WebView2 binding's init set,
+	// so the programs it starts get the environment Commander got.
+	envErr := startenv.Restore()
 
 	logw, logErr := appdata.OpenLog()
 	out := io.Discard
@@ -59,6 +63,9 @@ func commander(args []string) int {
 	// The log writer puts the date and time in front of every line.
 	logf := log.New(out, "", 0).Printf
 	logf("Commander %s starts", version)
+	if envErr != nil {
+		logf("cannot put the WEBVIEW2_* environment variables back: %v", envErr)
+	}
 
 	err := parseErr
 	dir, fromArg := parsed.dir, parsed.fromArg
