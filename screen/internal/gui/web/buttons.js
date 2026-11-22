@@ -521,9 +521,10 @@
       return res && typeof res === "object" && Array.isArray(res.buttons);
     }
 
-    // load fetches the profile. With keep, the draft stays when it differs
-    // from what was saved; otherwise the draft becomes the file.
-    function load(keep) {
+    // load fetches the profile. A draft that differs from what was saved
+    // when the answer arrives stays (an edit may have come in while the
+    // call ran); otherwise the draft becomes the file.
+    function load() {
       var gen = ed.gen;
       var profile = ed.profile;
       return api.call("deviceProfile", { device: "kb7", profile: profile }).then(function (res) {
@@ -533,7 +534,7 @@
         var wasDirty = isDirty();
         var fresh = !ed.saved || ed.saved.version !== res.version;
         ed.loadError = "";
-        if (keep && wasDirty) {
+        if (wasDirty) {
           ed.saved = res;
         } else {
           if (fresh) {
@@ -569,7 +570,7 @@
       ed.errors = {};
       draw();
       if (profile >= 0) {
-        load(false);
+        load();
       }
     }
 
@@ -580,7 +581,7 @@
       if (ed.profile < 0 || ed.saving || ed.changed || isDirty()) {
         return;
       }
-      load(false);
+      load();
     }
 
     function discard() {
@@ -623,14 +624,14 @@
           ed.notes = saveNotes(res);
           draw();
           // The file as written: tidied values and the pictures count.
-          load(true);
+          load();
           return true;
         }
         if (res.changed) {
           ed.changed = true;
           draw();
           // The file's new version, for the next Save; Discard loads it.
-          load(true);
+          load();
           return false;
         }
         if (Array.isArray(res.errors) && res.errors.length > 0) {
