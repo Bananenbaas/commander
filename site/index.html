@@ -15,7 +15,7 @@
 <meta property="og:title" content="Commander: your keyboard, your way">
 <meta property="og:description" content="An open-source tool for using a keyboard without its maker's software. It starts with the Turtle Beach KB7. Beta, Windows.">
 <meta property="og:url" content="https://commander.work/">
-<meta property="og:image" content="https://commander.work/img/helmet-256.png">
+<meta property="og:image" content="https://commander.work/img/window.png">
 <link rel="preload" href="fonts/BarlowCondensed-SemiBold.ttf" as="font" type="font/ttf" crossorigin>
 <link rel="stylesheet" href="style.css">
 <script src="theme.js"></script>
@@ -64,8 +64,9 @@
     </p>
   </div>
   <figure class="hero-shot">
-    <img src="img/panel.png" alt="A grid of twelve touchscreen buttons in three columns: coloured frames with titles such as Power, Engines, Shields, Gear, Boost and Eject." width="462" height="637">
-    <figcaption>Buttons rendered by Commander for the KB7's touchscreen. Program output, not a photo of the device.</figcaption>
+    <img class="shot-dark" src="img/window.png" alt="Commander's window on the KB7 page. A sidebar lists the game profiles Desktop, StarCitizen and DayZ. The Buttons tab shows twelve touchscreen buttons with coloured frames and symbols, such as Quantum, Jettison, Eject, Power &amp; Engines, Doors and Night Vision, with tabs for pages 1 to 3." width="1158" height="965">
+    <img class="shot-light" src="img/window-light.png" alt="Commander's window on the KB7 page. A sidebar lists the game profiles Desktop, StarCitizen and DayZ. The Buttons tab shows twelve touchscreen buttons with coloured frames and symbols, such as Quantum, Jettison, Eject, Power &amp; Engines, Doors and Night Vision, with tabs for pages 1 to 3." width="1161" height="970" loading="lazy">
+    <figcaption>Commander's window, on the Buttons tab of a KB7 profile. A screenshot of the program, not a photo of the keyboard.</figcaption>
   </figure>
 </section>
 
@@ -137,7 +138,7 @@
     </div>
     <div>
       <dt>Touchscreen buttons</dt>
-      <dd>Buttons on the pages of the keyboard's touchscreen, up to twelve to a page, per keyboard profile. Use your own PNG pictures or the built-in style: a coloured frame, an optional symbol and a title.</dd>
+      <dd>Three pages of buttons per keyboard profile. Use your own PNG pictures or the built-in style: a coloured frame, an optional symbol and a title.</dd>
     </div>
     <div>
       <dt>Actions on your PC</dt>
@@ -161,8 +162,7 @@
 <section id="example" aria-labelledby="example-h">
   <h2 id="example-h">One text file per profile</h2>
   <p class="intro">
-    Layouts are plain TOML files in a folder. The lighting below, and the
-    buttons at the top of this page, come from this one file.
+    Layouts are plain TOML files in a folder. The lighting below comes from this one file.
   </p>
 
   <figure class="wide">
