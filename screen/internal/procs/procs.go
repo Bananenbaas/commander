@@ -12,6 +12,18 @@ var Swarm = []string{"Turtle Beach Swarm II.exe", "Turtle Beach Device Service.e
 // commLen is the longest process name the Linux kernel keeps in comm.
 const commLen = 15
 
+// Proc is one running process.
+type Proc struct {
+	Name string // the executable's file name, e.g. "StarCitizen.exe"
+	Path string // full path when the system gives it, else ""
+}
+
+// List returns every running process with its name and, where the system
+// allows reading it, its full path. Nothing is filtered.
+func List() ([]Proc, error) {
+	return listProcs()
+}
+
 // Running reports, for every wanted name, whether a process with that name is
 // running. Names are compared case-insensitively and ".exe" is optional.
 func Running(names []string) (map[string]bool, error) {

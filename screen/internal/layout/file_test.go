@@ -275,3 +275,28 @@ func TestLoadErrorCarriesField(t *testing.T) {
 		t.Errorf("text %q, want %q", err.Error(), want)
 	}
 }
+
+func TestLoadWithNilRemovesAFile(t *testing.T) {
+	dir := folder(t, map[string]string{"a.toml": btn(""), "b.toml": prof(3)})
+	if err := os.Mkdir(filepath.Join(dir, "games"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, dir, "games/x.toml", "name = \"X\"\nprogram = \"x.exe\"\n[devices]\nkb7 = 2\n")
+	cfg, err := LoadWith(dir, map[string][]byte{"b.toml": nil, "games/x.toml": nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Profiles) != 1 || cfg.Profiles[0].Number != 0 {
+		t.Errorf("profiles = %+v, want only a.toml", cfg.Profiles)
+	}
+	if len(cfg.Games) != 0 {
+		t.Errorf("games = %+v, want none", cfg.Games)
+	}
+	disk, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(disk.Profiles) != 2 || len(disk.Games) != 1 {
+		t.Errorf("disk changed: %+v %+v", disk.Profiles, disk.Games)
+	}
+}

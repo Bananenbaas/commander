@@ -117,7 +117,8 @@ func Load(dir string) (*Config, error) {
 // LoadWith loads dir as Load does, but takes the bytes of the files named in
 // files (paths relative to dir with forward slashes, such as "kb7-sc.toml" or
 // "games/sc.toml") from the map instead of the disk; a name that does not
-// exist on disk is added. Pictures and symbols are still looked up on disk.
+// exist on disk is added, and a nil value means that file is absent (a file on
+// disk with that name is ignored). Pictures and symbols are still looked up on disk.
 func LoadWith(dir string, files map[string][]byte) (*Config, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -131,12 +132,15 @@ func LoadWith(dir string, files map[string][]byte) (*Config, error) {
 	seen := map[string]bool{}
 	for _, e := range entries {
 		if !e.IsDir() && strings.EqualFold(filepath.Ext(e.Name()), ".toml") {
-			names = append(names, e.Name())
 			seen[e.Name()] = true
+			if b, ok := files[e.Name()]; ok && b == nil {
+				continue // removed by the caller
+			}
+			names = append(names, e.Name())
 		}
 	}
-	for n := range files {
-		if !strings.Contains(n, "/") && strings.EqualFold(filepath.Ext(n), ".toml") && !seen[n] {
+	for n, b := range files {
+		if b != nil && !strings.Contains(n, "/") && strings.EqualFold(filepath.Ext(n), ".toml") && !seen[n] {
 			names = append(names, n)
 		}
 	}

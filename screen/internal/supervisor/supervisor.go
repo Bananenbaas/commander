@@ -205,6 +205,10 @@ type Supervisor struct {
 	applyDone chan applyResult // non-nil while an Apply runs
 }
 
+// Audio returns the computer's sound that the volume mixer follows, or nil
+// when there is no mixer (no Windows audio, or the loop was supplied).
+func (s *Supervisor) Audio() run.Audio { return s.audio }
+
 // New takes the per-user lock, then the run lock of dir, and removes a
 // request file left in dir (by a crash: nothing could take it while the lock
 // was free). A lock held by another process gives an error wrapping

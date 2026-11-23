@@ -816,3 +816,24 @@ func TestAudioUnsupportedIsNotLogged(t *testing.T) {
 		t.Fatalf("log = %q, want nothing", lines)
 	}
 }
+
+func TestAudioAccessor(t *testing.T) {
+	a := &fakeAudio{}
+	old := openAudio
+	openAudio = func(func(string, ...any)) (run.Audio, io.Closer, error) { return a, a, nil }
+	t.Cleanup(func() { openAudio = old })
+	s := realLoopSupervisor(t, nil)
+	if s.Audio() != run.Audio(a) {
+		t.Fatalf("Audio() = %v, want the fake", s.Audio())
+	}
+	s.Close()
+
+	openAudio = func(func(string, ...any)) (run.Audio, io.Closer, error) {
+		return nil, nil, errors.New("no output device")
+	}
+	s = realLoopSupervisor(t, nil)
+	defer s.Close()
+	if s.Audio() != nil {
+		t.Fatalf("Audio() = %v, want nil", s.Audio())
+	}
+}

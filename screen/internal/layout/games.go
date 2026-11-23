@@ -54,6 +54,9 @@ func loadGames(dir string, profiles []Profile, files map[string][]byte) (games [
 		}
 		for _, e := range entries {
 			if !e.IsDir() && strings.EqualFold(filepath.Ext(e.Name()), ".toml") {
+				if b, ok := files[gamesFolder+"/"+e.Name()]; ok && b == nil {
+					continue // removed by the caller
+				}
 				names = append(names, e.Name())
 			}
 		}
@@ -71,8 +74,8 @@ func loadGames(dir string, profiles []Profile, files map[string][]byte) (games [
 	for _, n := range names {
 		have[n] = true
 	}
-	for rel := range files {
-		if n, ok := strings.CutPrefix(rel, gamesFolder+"/"); ok && !strings.Contains(n, "/") && strings.EqualFold(filepath.Ext(n), ".toml") && !have[n] {
+	for rel, b := range files {
+		if n, ok := strings.CutPrefix(rel, gamesFolder+"/"); ok && b != nil && !strings.Contains(n, "/") && strings.EqualFold(filepath.Ext(n), ".toml") && !have[n] {
 			names = append(names, n)
 		}
 	}

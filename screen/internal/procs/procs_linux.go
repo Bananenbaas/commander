@@ -38,3 +38,30 @@ func list() ([]string, error) {
 	}
 	return out, nil
 }
+
+// listProcs returns every readable process: its comm as the name and, when
+// /proc/<pid>/exe may be read, the full path.
+func listProcs() ([]Proc, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil, err
+	}
+	var out []Proc
+	for _, e := range entries {
+		if _, err := strconv.Atoi(e.Name()); err != nil {
+			continue
+		}
+		dir := filepath.Join("/proc", e.Name())
+		b, err := os.ReadFile(filepath.Join(dir, "comm"))
+		if err != nil {
+			continue
+		}
+		name := string(bytes.TrimRight(b, "\n"))
+		if name == "" {
+			continue
+		}
+		path, _ := os.Readlink(filepath.Join(dir, "exe"))
+		out = append(out, Proc{Name: name, Path: path})
+	}
+	return out, nil
+}

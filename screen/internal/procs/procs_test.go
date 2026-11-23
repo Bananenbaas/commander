@@ -2,7 +2,13 @@
 
 package procs
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+)
 
 func TestMatch(t *testing.T) {
 	cases := []struct {
@@ -58,4 +64,30 @@ func TestSwarmNames(t *testing.T) {
 	if len(Swarm) != 2 || Swarm[0] != "Turtle Beach Swarm II.exe" || Swarm[1] != "Turtle Beach Device Service.exe" {
 		t.Fatalf("Swarm = %q", Swarm)
 	}
+}
+
+func TestListFindsTheTestProcess(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the test binary has no .exe name here")
+	}
+	got, err := List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range got {
+		if p.Name == "" {
+			t.Fatalf("a process without a name: %+v", p)
+		}
+		if strings.EqualFold(p.Name, filepath.Base(self)) {
+			if !strings.EqualFold(p.Path, self) {
+				t.Fatalf("path = %q, want %q", p.Path, self)
+			}
+			return
+		}
+	}
+	t.Fatalf("%s not in %d processes", filepath.Base(self), len(got))
 }
