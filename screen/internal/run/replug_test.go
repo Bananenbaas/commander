@@ -65,7 +65,7 @@ func TestReplugAfterUnconfirmedSwitchesEndsWhenTheKeyboardAnswers(t *testing.T) 
 			"poll", "switch 0",
 			"poll", "poll", "close")
 		wantStatuses(h, got, Status{Profile: -1, Waiting: "keyboard"},
-			Status{Profile: 0, Unconfirmed: true}, Status{Profile: 2, Unconfirmed: true},
+			Status{Profile: 0, Unconfirmed: true}, Status{Profile: 2, Game: game, Unconfirmed: true},
 			Status{Profile: -1, Waiting: WaitReplug}, Status{Profile: 0, Unconfirmed: true})
 		h.wantLogged(1, replugMsg)
 	})

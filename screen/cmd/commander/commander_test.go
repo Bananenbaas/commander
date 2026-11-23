@@ -35,7 +35,7 @@ func TestTipFor(t *testing.T) {
 		// A reload that failed keeps the old configuration running; the
 		// balloon says so, the tip keeps showing the loop.
 		{supervisor.State{Phase: supervisor.Running, Run: run.Status{Profile: 2}, Err: "not reloaded"}, "Commander: profile 2"},
-		{supervisor.State{Phase: supervisor.Applying, Run: none}, "Commander: applying buttons…"},
+		{supervisor.State{Phase: supervisor.Applying, Run: none}, "Commander: putting buttons on the KB7…"},
 		{supervisor.State{Phase: supervisor.Failed, Run: none, Err: "layout.toml: line 3: bad key"}, "Commander: error: layout.toml: line 3: bad key"},
 		{supervisor.State{Phase: supervisor.Failed, Run: none}, "Commander: error"},
 		{supervisor.State{Phase: supervisor.Stopped, Run: none}, "Commander: stopped"},

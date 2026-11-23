@@ -29,6 +29,15 @@ const (
 	desktopRel   = "games/desktop.toml"
 )
 
+// GameFieldError is a refusal of a game profile that concerns one of its
+// fields: "name" or "program". Its text is a sentence for the player.
+type GameFieldError struct {
+	Field string
+	Msg   string
+}
+
+func (e *GameFieldError) Error() string { return e.Msg }
+
 // SaveGame saves the game id names ("desktop", "games/x.toml",
 // "layout:<program>", or "" for a new one) after checking base (the
 // Version of its file; "" for a new game or a game not in a file yet).
@@ -149,10 +158,10 @@ func checkGame(desktop bool, g GameEdit) (name, program string, err error) {
 		return name, "", nil
 	}
 	if name == "" {
-		return "", "", errors.New("Give the game profile a name.")
+		return "", "", &GameFieldError{"name", "Give the game profile a name."}
 	}
 	if program == "" {
-		return "", "", errors.New("Choose the program that starts it.")
+		return "", "", &GameFieldError{"program", "Choose the program that starts it."}
 	}
 	return name, program, nil
 }
@@ -382,9 +391,9 @@ func gameRefusal(err error, rel string, before *layout.Config) error {
 			continue
 		}
 		if m[3] == "use the name" {
-			return fmt.Errorf("Another game profile is called %s.", g.Name)
+			return &GameFieldError{"name", fmt.Sprintf("Another game profile is called %s.", g.Name)}
 		}
-		return fmt.Errorf("%s already switches on %s.", g.Name, g.Program)
+		return &GameFieldError{"program", fmt.Sprintf("%s already switches on %s.", g.Name, g.Program)}
 	}
 	return otherFile(err)
 }

@@ -406,7 +406,7 @@
       var lines = [];
       var cls = "bbar-text";
       if (ed.changed) {
-        lines.push("This profile's name was changed outside Commander since you opened it. Save again to replace that change, or Discard to load it.");
+        lines.push("This profile's name was changed outside Commander since you opened it. Save to replace that change, or Discard to load it.");
         cls += " warm";
       } else if (!dirty) {
         lines = ed.notes.slice();
@@ -489,6 +489,12 @@
         } else if (!wasDirty || !ed.saved) {
           ed.saved = res;
           ed.draft = str(res.name);
+        } else {
+          // The name was changed outside Commander while it is edited
+          // here: the edit stays and the bar says so. Save replaces that
+          // change, Discard loads it.
+          ed.saved = res;
+          ed.changed = true;
         }
         draw();
       }, function (err) {
@@ -531,6 +537,7 @@
       }
       load();
     }
+
 
     function discard() {
       if (!ed.saved) {

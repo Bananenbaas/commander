@@ -2163,3 +2163,30 @@ func TestProfileNames(t *testing.T) {
 		})
 	})
 }
+
+// A game that leaves the keyboard alone is still the active game profile:
+// the status names it while it runs, and Desktop ("") again when it ends.
+func TestStatusNamesAGameThatDoesNotSwitch(t *testing.T) {
+	test(t, func(h *harness) {
+		cfg := &layout.Config{
+			Profiles: []layout.Profile{
+				{Number: 0, Buttons: []layout.Button{tapButton(3, chord(action.A))}},
+				{Number: 1, Buttons: []layout.Button{tapButton(3, chord(action.B))}},
+			},
+			Games:   []layout.Game{{Name: "Game", Program: game}},
+			Desktop: &layout.Game{Name: "Desktop", KB7: kb7(1)},
+		}
+		h.onPoll[1] = func() { h.running[game] = true }
+		h.onPoll[2] = func() { h.running[game] = false }
+		h.onPoll[3] = h.cancel
+		var got []Status
+		d := h.deps()
+		d.Status = func(s Status) { got = append(got, s) }
+		if err := Run(h.ctx, cfg, d); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		h.want("poll", "open", "notify", "fresh 1", "poll", "poll", "poll", "close")
+		wantStatuses(h, &got, Status{Profile: -1, Waiting: "keyboard"},
+			Status{Profile: 1}, Status{Profile: 1, Game: "Game"}, Status{Profile: 1})
+	})
+}

@@ -139,9 +139,10 @@ order are not kept. When a file holds any of that (comments, for example), the o
 copied to `backup/` in the configuration folder (for example
 `backup/kb7-sc-20261122-221530.toml`, or `backup/games-sc-....toml` for
 `games/sc.toml`). Pictures and symbols you pick (symbols are PNG files) are
-copied into `pictures/` and `symbols/` in the folder. If the file was changed
-outside Commander while the window was open, Save says so and keeps your edits;
-a second Save overwrites it. After a save Commander reloads the configuration
+copied into `pictures/` and `symbols/` in the folder. The window looks at the folder every two seconds: a file changed, added
+or removed outside Commander shows by itself. If that happens to what you are
+editing, your edits stay and the tab says so; Save then replaces that change
+and Discard loads it. After a save Commander reloads the configuration
 (steps, modes, confirmation, states) or applies it to the keyboard (buttons
 added, removed or moved, or a title, label, colour, symbol or picture
 changed).

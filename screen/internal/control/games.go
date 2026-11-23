@@ -4,6 +4,7 @@ package control
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -133,7 +134,14 @@ func (s *Service) saveGameProfile(args json.RawMessage) (any, error) {
 		g.KB7 = &n
 	}
 	file, res, err := store.SaveGame(s.d.Dir, a.ID, a.Version, g)
-	out := s.saveAnswer("saveGameProfile", gameChangedText, res, err, noRefusals)
+	out := s.saveAnswer("saveGameProfile", gameChangedText, res, err, func(err error) map[string]any {
+		// A refusal that concerns one field is shown at that field.
+		var fe *store.GameFieldError
+		if errors.As(err, &fe) {
+			return map[string]any{"ok": false, "error": fe.Msg, "field": fe.Field}
+		}
+		return nil
+	})
 	if out["ok"] == true {
 		out["id"] = file
 	}

@@ -72,6 +72,16 @@ runtime that Windows 11 has.
   that shows while anything is unsaved (also Ctrl+S). It saves every tab with
   changes at once, and Commander writes to the keyboard once for all of them.
 - Commander's window: the KB7 profiles are listed by slot.
+- Commander's window: the top bar and the sidebar show the game profile that
+  is active (the game started last, also one that leaves the keyboard alone;
+  Desktop when none runs), and "Putting buttons on the KB7…" while Commander
+  writes to the keyboard.
+- Commander's window: a file of the configuration folder that is changed,
+  added or removed outside Commander shows within a few seconds. Unsaved edits
+  stay, and the tab says the file was changed.
+- Commander's window: "When Commander is not running" can be set for a
+  profile without lighting too, and a game profile's refusal ("Choose the
+  program that starts it.") is shown at its field.
 - The first save moves `switch_when_running` from the layouts into `games/`
   (the program `StarCitizen.exe` becomes the game `StarCitizen`).
 

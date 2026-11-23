@@ -69,6 +69,10 @@ type Status struct {
 	// Name is the active profile's name as the keyboard stores it, "" when
 	// unknown.
 	Name string
+	// Game is the name of the game profile that is active: the game
+	// started last among those running, also when it leaves the keyboard's
+	// profile alone. "" is the Desktop.
+	Game string
 	// Waiting says what the loop waits for: "" (nothing, the keyboard is in
 	// use), "keyboard" (not connected), "Swarm II" (left to Swarm II) or
 	// WaitReplug (the keyboard does not answer).
@@ -430,7 +434,21 @@ func (l *loop) ready() {
 		l.report(Status{Profile: -1, Waiting: WaitReplug})
 		return
 	}
-	l.report(Status{Profile: int(l.active), Name: l.nameOf(l.active), Unconfirmed: l.assumed})
+	l.report(Status{Profile: int(l.active), Name: l.nameOf(l.active), Game: l.game(), Unconfirmed: l.assumed})
+}
+
+// game is the name of the game started last among those running, "" when
+// none runs.
+func (l *loop) game() string {
+	if len(l.order) == 0 {
+		return ""
+	}
+	for _, g := range l.cfg.Games {
+		if g.Program == l.order[0] {
+			return g.Name
+		}
+	}
+	return ""
 }
 
 // waiting reports that the keyboard is not in use: not connected, or not
@@ -565,6 +583,11 @@ func (l *loop) poll(ctx context.Context) {
 	}
 	want := l.expect()
 	if want == l.expected {
+		// The game on top can change while the profile stays (a game that
+		// leaves the keyboard alone, or two games on one profile).
+		if l.last.Waiting == "" && l.last.Profile >= 0 && l.last.Game != l.game() {
+			l.ready()
+		}
 		return
 	}
 	if want == l.active {

@@ -1476,7 +1476,7 @@
       var lines = [];
       var cls = "bbar-text";
       if (ed.changed) {
-        lines.push("This profile's lighting was changed outside Commander since you opened it. Save again to replace that change, or Discard to load it.");
+        lines.push("This profile's lighting was changed outside Commander since you opened it. Save to replace that change, or Discard to load it.");
         cls += " warm";
       } else if (!dirty) {
         lines = ed.notes.slice();
@@ -1606,7 +1606,9 @@
           simpleBtn.disabled = !fit || switching();
           noSimple.hidden = !!fit;
         }
-        storedSec.hidden = none;
+        // Also without lighting: one colour for when Commander is not
+        // running is a setting of its own.
+        storedSec.hidden = false;
         drawStored(d.stored);
         pickNote.hidden = !ed.picking;
         canvas.classList.toggle("picking", !!ed.picking);
@@ -1852,11 +1854,31 @@
 
     // refresh reads the lighting again when nothing is being edited, so a
     // change made outside Commander shows.
+    // outside looks whether the file was changed outside Commander while
+    // the player has unsaved edits here: the edits stay, and the bar says
+    // so. Save then replaces that change, Discard loads it.
+    function outside() {
+      var was = ed.saved ? ed.saved.version : "";
+      var p = load();
+      if (p && p.then) {
+        p.then(function () {
+          if (ed.saved && was && ed.saved.version !== was && isDirty() && !ed.saving) {
+            ed.changed = true;
+            draw();
+          }
+        });
+      }
+    }
+
     function refresh() {
       if (!info) {
         loadInfo();
       }
-      if (ed.profile < 0 || ed.saving || ed.changed || isDirty()) {
+      if (ed.profile < 0 || ed.saving || ed.changed) {
+        return;
+      }
+      if (isDirty()) {
+        outside();
         return;
       }
       load();

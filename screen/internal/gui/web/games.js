@@ -166,6 +166,7 @@
       deleteNote: "",
       notes: [], // lines after a save or a delete
       barError: "",
+      fieldErrors: {}, // a refusal of the last save per field: name, program
       changed: false, // the file changed outside Commander since it was read
       gen: 0, // counts shows, so an overtaken answer is ignored
       wasDirty: false,
@@ -253,7 +254,9 @@
         changed();
       }
     });
-    nameSec.card.appendChild(nameIn);
+    var nameErr = el("p", "note error");
+    nameErr.hidden = true;
+    add(nameSec.card, nameIn, nameErr);
 
     // Switch to this when
     var progSec = section("Switch to this when");
@@ -380,7 +383,8 @@
       }
       busy(refreshBtn, ed.runningBusy, "Refresh", "Refreshing");
       busy(browseBtn, ed.picking, "Browse", "Choosing");
-      setText(progErr, [ed.runningError, ed.pickError].filter(Boolean).join("\n"));
+      setText(progErr, [ed.runningError, ed.pickError, ed.fieldErrors.program].filter(Boolean).join("\n"));
+      setText(nameErr, ed.fieldErrors.name || "");
     }
 
     function drawDevices() {
@@ -417,7 +421,7 @@
       var lines = [];
       var cls = "bbar-text";
       if (ed.changed) {
-        lines.push("This game profile was changed outside Commander since you opened it. Save again to replace that change, or Discard to load it.");
+        lines.push("This game profile was changed outside Commander since you opened it. Save to replace that change, or Discard to load it.");
         cls += " warm";
       } else if (!dirty) {
         lines = ed.notes.slice();
@@ -474,6 +478,7 @@
     function changed() {
       ed.notes = [];
       ed.barError = "";
+      ed.fieldErrors = {};
       ed.deleteNote = "";
       draw();
     }
@@ -569,6 +574,7 @@
       ed.loadError = "";
       ed.notes = [];
       ed.barError = "";
+      ed.fieldErrors = {};
       ed.changed = false;
       ed.asking = false;
       ed.deleteNote = "";
@@ -583,10 +589,30 @@
     // refresh reads the game profile again when nothing is being edited,
     // so a change made outside Commander shows.
     function refresh() {
-      if (ed.id === null || ed.saving || ed.deleting || ed.changed || isDirty()) {
+      if (ed.id === null || ed.saving || ed.deleting || ed.changed) {
+        return;
+      }
+      if (isDirty()) {
+        outside();
         return;
       }
       load();
+    }
+
+    // outside looks whether the file was changed outside Commander while
+    // the player has unsaved edits here: the edits stay, and the bar says
+    // so. Save then replaces that change, Discard loads it.
+    function outside() {
+      var was = ed.saved ? ed.saved.version : "";
+      var p = load();
+      if (p && p.then) {
+        p.then(function () {
+          if (ed.saved && was && ed.saved.version !== was && isDirty() && !ed.saving) {
+            ed.changed = true;
+            draw();
+          }
+        });
+      }
     }
 
     function discard() {
@@ -615,6 +641,7 @@
         sent.program = "";
       }
       ed.barError = "";
+      ed.fieldErrors = {};
       ed.deleteNote = "";
       ed.saving = api.call("saveGameProfile", {
         id: ed.id, version: str(ed.saved.version), name: sent.name, program: sent.program, kb7: sent.kb7
@@ -651,6 +678,12 @@
           draw();
           // The file's new version, for the next Save; Discard loads it.
           load();
+          return false;
+        }
+        // A refusal about one field is said at that field.
+        if (res.field === "name" || res.field === "program") {
+          ed.fieldErrors[res.field] = str(res.error);
+          draw();
           return false;
         }
         ed.barError = api.plainError("Could not save", str(res.error) || "Commander did not say why");

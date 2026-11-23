@@ -10,7 +10,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,7 +108,66 @@ func New(d Deps) *Service {
 		stopped: make(chan struct{}),
 	}
 	go s.worker()
+	go s.watch()
 	return s
+}
+
+// watchEvery is how often the configuration folder is looked at for changes
+// made outside Commander.
+var watchEvery = 2 * time.Second
+
+// watch queues a "state" event when a file of the configuration folder
+// changes, so the window shows a file edited by hand, added or removed
+// without being asked. It only looks at names, sizes and times.
+func (s *Service) watch() {
+	t := time.NewTicker(watchEvery)
+	defer t.Stop()
+	last := folderMark(s.d.Dir)
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-t.C:
+		}
+		m := folderMark(s.d.Dir)
+		if m == last {
+			continue
+		}
+		last = m
+		s.mu.Lock()
+		if !s.closed {
+			s.pending, s.hasPending = s.st, true
+		}
+		s.mu.Unlock()
+		select {
+		case s.wake <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// folderMark is a line per TOML file directly in dir and in dir/games: its
+// name, size and time of change. Two marks differ when a file was added,
+// removed or written.
+func folderMark(dir string) string {
+	var b strings.Builder
+	for _, sub := range []string{"", "games"} {
+		entries, err := os.ReadDir(filepath.Join(dir, sub))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".toml") {
+				continue
+			}
+			fi, err := e.Info()
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(&b, "%s/%s %d %d\n", sub, e.Name(), fi.Size(), fi.ModTime().UnixNano())
+		}
+	}
+	return b.String()
 }
 
 // Close stops the worker; later SetState and Show calls do nothing. It does
@@ -295,7 +357,7 @@ func StatusText(st supervisor.State) string {
 		}
 		return "starting"
 	case supervisor.Applying:
-		return "applying buttons…"
+		return "putting buttons on the KB7…"
 	case supervisor.Failed:
 		what := "error"
 		if st.Err != "" {
@@ -313,6 +375,7 @@ type keyboardInfo struct {
 	Waiting   string `json:"waiting"`
 	Profile   int    `json:"profile"`
 	Name      string `json:"name"`
+	Game      string `json:"game"` // the active game profile, "" for Desktop
 }
 
 type profileInfo struct {
@@ -362,6 +425,7 @@ func (s *Service) state(st supervisor.State) stateInfo {
 			Waiting:   st.Run.Waiting,
 			Profile:   st.Run.Profile,
 			Name:      st.Run.Name,
+			Game:      st.Run.Game,
 		},
 		Folder:   s.d.Dir,
 		Profiles: []profileInfo{},

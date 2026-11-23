@@ -517,3 +517,18 @@ func TestSaveBatchActsOnce(t *testing.T) {
 	}
 	call(t, s, "saveEnd", "")
 }
+
+func TestFolderChangeQueuesAState(t *testing.T) {
+	old := watchEvery
+	watchEvery = 20 * time.Millisecond
+	t.Cleanup(func() { watchEvery = old })
+	dir := writeFolder(t)
+	s := newService(t, (&fake{}).deps(dir))
+	s.SetState(running)
+	waitState(t, s, `"profiles"`)
+	// A layout added by hand shows up without anyone asking.
+	if err := os.WriteFile(filepath.Join(dir, "byhand.toml"), []byte("profile = 4\nname = \"ByHand\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, s, "ByHand")
+}

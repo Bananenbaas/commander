@@ -158,22 +158,18 @@
     return str(g.name) || str(g.program) || "Game profile";
   }
 
-  // activeGame is the index of the game whose KB7 profile is on the keyboard
-  // now, or -1.
+  // activeGame is the index of the game profile that is active now, as
+  // Commander reports it (the game started last, whatever it does with the
+  // keyboard), or -1 for Desktop.
   function activeGame() {
     var kb = keyboard();
-    if (!kb.connected || typeof kb.profile !== "number" || kb.profile < 0) {
-      return -1;
-    }
-    // A game on the Desktop's own slot cannot be told from the Desktop.
-    var desk = app.state && app.state.desktop;
-    var deskSlot = desk && typeof desk.kb7 === "number" ? desk.kb7 : -1;
-    if (kb.profile === deskSlot) {
+    var name = str(kb.game);
+    if (!kb.connected || !name) {
       return -1;
     }
     var list = games();
     for (var i = 0; i < list.length; i++) {
-      if (typeof list[i].kb7 === "number" && list[i].kb7 === kb.profile) {
+      if (str(list[i].name) === name) {
         return i;
       }
     }
@@ -279,7 +275,10 @@
         cls += " ok";
       }
       if (kb.connected && !st.failed) {
-        text = "Running \u00b7 " + (str(kb.name) || profileLabel(kb.profile));
+        // The game profile that is active: the game started last, else
+        // Desktop.
+        var desk = st.desktop || {};
+        text = "Running \u00b7 " + (str(kb.game) || str(desk.name) || "Desktop");
       } else {
         text = capital(str(st.status));
       }
@@ -337,8 +336,9 @@
     var kids = [];
     kids.push(el("h2", "", "Game profiles"));
     var desk = st.desktop || {};
-    kids.push(navItem("desktop", str(desk.name) || "Desktop", "default"));
     var active = activeGame();
+    var onDesktop = keyboard().connected && active < 0;
+    kids.push(navItem("desktop", str(desk.name) || "Desktop", onDesktop ? "default \u00b7 active" : "default"));
     games().forEach(function (g, i) {
       kids.push(navItem("game:" + str(g.id), gameName(g), i === active ? "active" : ""));
     });
