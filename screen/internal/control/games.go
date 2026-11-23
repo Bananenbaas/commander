@@ -235,18 +235,25 @@ type mixerOut struct {
 
 // mixer answers the volumes the keyboard's mixer page shows. Without audio,
 // or when it cannot be read, it is not available; that is no error, as the
-// window asks every second.
+// window asks every second, and the same failure is logged only once.
 func (s *Service) mixer() mixerOut {
 	none := mixerOut{Programs: []programVolumeOut{}}
 	if s.d.Mixer == nil {
 		return none
 	}
 	sys, progs, ok, err := s.d.Mixer()
-	if err != nil {
-		s.logf("control: mixer: %v", err)
-		return none
+	text := ""
+	if ok && err != nil {
+		text = err.Error()
 	}
-	if !ok {
+	s.mixMu.Lock()
+	changed := text != s.mixErr
+	s.mixErr = text
+	s.mixMu.Unlock()
+	if text != "" && changed {
+		s.logf("control: mixer: %v", err)
+	}
+	if !ok || err != nil {
 		return none
 	}
 	out := mixerOut{Available: true, System: volumeOut{sys.Name, sys.Level, sys.Muted}, Programs: []programVolumeOut{}}

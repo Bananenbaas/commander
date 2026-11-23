@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -321,5 +322,39 @@ func TestMixer(t *testing.T) {
 	}
 	if m := call(t, newService(t, d), "mixer", ""); !reflect.DeepEqual(m, want) {
 		t.Errorf("got  %v\nwant %v", m, want)
+	}
+}
+
+func TestMixerLogsAFailureOnce(t *testing.T) {
+	d := (&fake{}).deps(gamesFolder(t))
+	var lines []string
+	d.Logf = func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }
+	var err error
+	ok := true
+	d.Mixer = func() (audio.Session, []audio.Session, bool, error) { return audio.Session{}, nil, ok, err }
+	s := newService(t, d)
+
+	err = errors.New("no output device")
+	for range 3 {
+		call(t, s, "mixer", "")
+	}
+	if len(lines) != 1 {
+		t.Fatalf("three failing reads: %q", lines)
+	}
+	err = nil
+	call(t, s, "mixer", "")
+	err = errors.New("no output device")
+	call(t, s, "mixer", "")
+	if len(lines) != 2 {
+		t.Fatalf("a success, then the failure again: %q", lines)
+	}
+	// ok=false also forgets the failure.
+	err, ok = nil, false
+	call(t, s, "mixer", "")
+	err, ok = errors.New("no output device"), true
+	call(t, s, "mixer", "")
+	call(t, s, "mixer", "")
+	if len(lines) != 3 {
+		t.Errorf("no audio, then the failure twice: %q", lines)
 	}
 }

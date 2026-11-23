@@ -149,3 +149,17 @@ func TestDeleteProfileFailureAfterWriteReloads(t *testing.T) {
 		t.Errorf("partial write: %v reload %d apply %d", m, c.reload, c.apply)
 	}
 }
+
+func TestProfileCallsNeedAVersion(t *testing.T) {
+	s, c := countingDeps(t, usedFolder(t))
+	for _, call := range []string{"saveProfileName", "deleteProfile"} {
+		for _, args := range []string{`{"profile":0,"name":"X"}`, `{"profile":0,"version":"","name":"X"}`} {
+			if _, err := s.Handle(context.Background(), call, json.RawMessage(args)); err == nil {
+				t.Errorf("%s %s: no error", call, args)
+			}
+		}
+	}
+	if c.apply != 0 || c.reload != 0 {
+		t.Errorf("apply %d reload %d", c.apply, c.reload)
+	}
+}

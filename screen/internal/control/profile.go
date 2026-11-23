@@ -4,6 +4,7 @@ package control
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/Bananenbaas/commander/screen/internal/layout"
@@ -89,6 +90,9 @@ func (s *Service) saveProfileName(args json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if a.Version == "" {
+		return nil, errors.New("saveProfileName: bad arguments: no version")
+	}
 	res, err := store.SaveProfileName(s.d.Dir, slot, a.Version, a.Name)
 	return s.saveAnswer("saveProfileName", profileChangedText, res, err, noRefusals), nil
 }
@@ -123,6 +127,9 @@ func (s *Service) deleteProfile(args json.RawMessage) (any, error) {
 	slot, err := profileSlot("deleteProfile", a.Profile)
 	if err != nil {
 		return nil, err
+	}
+	if a.Version == "" {
+		return nil, errors.New("deleteProfile: bad arguments: no version")
 	}
 	res, err := deleteLayout(s.d.Dir, slot, a.Version)
 	return s.saveAnswer("deleteProfile", profileChangedText, res, err, noRefusals), nil

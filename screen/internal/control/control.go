@@ -75,6 +75,12 @@ type Service struct {
 	// by receiving without waiting.
 	qmu    sync.Mutex
 	events chan bridge.Message
+
+	// mixMu guards mixErr, the mixer read error logged last ("" when the
+	// last read worked or there was no audio): a failure that repeats every
+	// second is logged once.
+	mixMu  sync.Mutex
+	mixErr string
 }
 
 // New returns a Service over d and starts its worker; Close stops it.
