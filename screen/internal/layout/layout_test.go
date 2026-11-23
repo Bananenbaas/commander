@@ -626,3 +626,39 @@ func TestEncodeKeepsEnabled(t *testing.T) {
 		t.Errorf("enabled lost:\n%s", enc)
 	}
 }
+
+func TestBuildLight(t *testing.T) {
+	// Values built in Go ([]string keys, float64 numbers) build as the file
+	// would hold them.
+	l := &FileLight{Layers: []map[string]any{
+		{"effect": "static", "color": "#102030"},
+		{"effect": "fixed", "keys": []string{"W", "A"}, "color": "#FF0000"},
+		{"effect": "state", "name": "caps", "toggle": "CapsLock", "keys": []string{"CapsLock"}, "color": "#00FF00", "blink": 2.0},
+	}}
+	st, err := BuildLight(l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if names := stateNames(st); len(names) != 1 || names[0] != "caps" {
+		t.Errorf("states %v", names)
+	}
+	if st, err := BuildLight(nil); st != nil || err != nil {
+		t.Errorf("nil: %v %v", st, err)
+	}
+
+	// Errors read as Load's, without the file name.
+	_, err = BuildLight(&FileLight{Layers: []map[string]any{
+		{"effect": "static", "color": "#000000", "enabled": false},
+		{"effect": "wave", "colors": []string{"#FF0000"}},
+	}})
+	if err == nil || !strings.HasPrefix(err.Error(), "light.layer 2: ") {
+		t.Fatalf("one colour wave: %v", err)
+	}
+	if layer, setting, ok := LightError(err); !ok || layer != 2 || setting != "colors" {
+		t.Errorf("LightError = %d %q %v", layer, setting, ok)
+	}
+	_, err = BuildLight(&FileLight{Layers: []map[string]any{{"effect": "static", "color": "#000000", "enabled": false}}})
+	if err == nil || err.Error() != "light: every lighting layer is off; turn one on or remove the lighting" {
+		t.Errorf("all off: %v", err)
+	}
+}

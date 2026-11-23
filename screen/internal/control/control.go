@@ -420,6 +420,14 @@ func (s *Service) Handle(ctx context.Context, call string, args json.RawMessage)
 		return s.renderButton(args)
 	case "importPicture":
 		return s.importPicture(args)
+	case "lightingInfo":
+		return lightingInfo(), nil
+	case "deviceLight":
+		return s.deviceLight(args)
+	case "saveDeviceLight":
+		return s.saveDeviceLight(args)
+	case "lightFrames":
+		return s.lightFrames(args)
 	case "openFolder":
 		if err := s.d.Open(s.d.Dir); err != nil {
 			return nil, fmt.Errorf("openFolder: %w", err)

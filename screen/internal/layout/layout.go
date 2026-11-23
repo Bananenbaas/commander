@@ -277,6 +277,28 @@ func LightError(err error) (layer int, setting string, ok bool) {
 	return le.Layer, le.Setting, true
 }
 
+// BuildLight builds the stack of a [light] table that is not in a file yet,
+// such as a draft in the window. The table is encoded and decoded first, so
+// its values have the types Load sees, and errors read as Load's without the
+// file name. A nil l is no lighting: a nil stack and no error.
+func BuildLight(l *FileLight) (*light.Stack, error) {
+	if l == nil {
+		return nil, nil
+	}
+	data, err := (&File{Light: l}).Encode()
+	if err != nil {
+		return nil, err
+	}
+	var raw rawFile
+	if _, err := toml.Decode(string(data), &raw); err != nil {
+		return nil, err
+	}
+	if raw.Light == nil {
+		raw.Light = &rawLight{}
+	}
+	return buildLight(raw.Light)
+}
+
 var declaredBy = regexp.MustCompile(`is already declared by layer (\d+)$`)
 
 // buildLight turns the [light] table into a stack. Errors name light.layer N
