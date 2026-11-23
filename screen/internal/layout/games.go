@@ -19,10 +19,14 @@ type Game struct {
 	File    string // absolute path; for a game built from a layout, that layout's path
 	Program string // "" only for the Desktop game
 	KB7     *byte  // KB7 profile 0-4; nil = don't switch
+	Order   int    // place among the games: lower first, 0 (not given) before all
 }
 
 // gamesFolder is the folder of game profiles inside the configuration folder.
 const gamesFolder = "games"
+
+// maxGameOrder is the highest order a game file may give.
+const maxGameOrder = 1 << 30
 
 // desktopGameFile is the file in games/ that describes the Desktop game.
 const desktopGameFile = "desktop.toml"
@@ -30,6 +34,7 @@ const desktopGameFile = "desktop.toml"
 type rawGame struct {
 	Name    string         `toml:"name"`
 	Program *string        `toml:"program"`
+	Order   int64          `toml:"order"`
 	Devices map[string]any `toml:"devices"`
 }
 
@@ -120,6 +125,9 @@ func loadGames(dir string, profiles []Profile, files map[string][]byte) (games [
 		byProgram[programKey(g.Program)] = label
 		games = append(games, *g)
 	}
+	// Games are listed in the order they were made: by their order, and by
+	// file name among games with the same one (hand-written files have none).
+	sort.SliceStable(games, func(i, j int) bool { return games[i].Order < games[j].Order })
 
 	var fromLayouts []Profile
 	for _, p := range profiles {
@@ -159,7 +167,10 @@ func loadGame(path, label string, data []byte, isDesktop bool) (*Game, error) {
 		}
 		return nil, fmt.Errorf("%s: unknown key(s): %s", label, strings.Join(keys, ", "))
 	}
-	g := &Game{Name: raw.Name, File: path}
+	if raw.Order < 0 || raw.Order > maxGameOrder {
+		return nil, fmt.Errorf("%s: order must be 0 to %d, got %d", label, maxGameOrder, raw.Order)
+	}
+	g := &Game{Name: raw.Name, File: path, Order: int(raw.Order)}
 	if v, ok := raw.Devices["kb7"]; ok {
 		n, isInt := v.(int64)
 		if !isInt || n < 0 || n > maxProfile {

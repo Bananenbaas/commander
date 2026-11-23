@@ -54,7 +54,8 @@ type FileButton struct {
 type GameFile struct {
 	Name    string         `toml:"name,omitempty"`
 	Program string         `toml:"program,omitempty"`
-	Devices map[string]any `toml:"devices"` // "kb7": int64 profile 0-4
+	Order   int64          `toml:"order,omitempty"` // place among the games, see Game.Order
+	Devices map[string]any `toml:"devices"`         // "kb7": int64 profile 0-4
 }
 
 // DecodeFile reads a layout file's bytes. Unknown keys are an error, as in Load.

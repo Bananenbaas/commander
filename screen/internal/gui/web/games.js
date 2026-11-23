@@ -6,6 +6,7 @@
 // until Save. Built with createElement and textContent only.
 
 (function () {
+  var SLOTS = 5; // the KB7 has five profiles
   var NONE = "none"; // the "(don't switch)" choice of a device
 
   // Draft logic: plain functions, no page involved.
@@ -68,9 +69,10 @@
   }
 
   // profileChoices are the KB7 profiles a game can switch to, by name and
-  // slot, after "(don't switch)" (which Desktop does not have). A slot the
-  // game names that has no profile is still offered, so it shows.
-  function profileChoices(profiles, kb7, desktop) {
+  // slot, after "(don't switch)" (which Desktop does not have), then the
+  // slots that have no profile yet: choosing one makes a new, empty profile
+  // there when the game is saved.
+  function profileChoices(profiles, desktop) {
     var out = [];
     if (!desktop) {
       out.push({ value: NONE, label: "(don't switch)" });
@@ -80,15 +82,13 @@
     }).sort(function (a, b) {
       return a.number - b.number;
     });
-    var has = false;
     list.forEach(function (p) {
-      if (p.number === kb7) {
-        has = true;
-      }
       out.push({ value: String(p.number), label: (str(p.name) || "Profile " + (p.number + 1)) + " (slot " + (p.number + 1) + ")" });
     });
-    if (typeof kb7 === "number" && !has) {
-      out.push({ value: String(kb7), label: "Profile " + (kb7 + 1) + " (slot " + (kb7 + 1) + ")" });
+    for (var n = 0; n < SLOTS; n++) {
+      if (!list.some(function (p) { return p.number === n; })) {
+        out.push({ value: String(n), label: "New profile (slot " + (n + 1) + ")" });
+      }
     }
     return out;
   }
@@ -395,7 +395,7 @@
     }
 
     function drawDevices() {
-      var choices = profileChoices(ed.saved.profiles, ed.draft.kb7, ed.desktop);
+      var choices = profileChoices(ed.saved.profiles, ed.desktop);
       var shape = JSON.stringify(choices);
       if (shape !== kb7Shape) {
         kb7Shape = shape;
@@ -406,7 +406,12 @@
         kb7In.value = v;
       }
       var n = ed.draft.kb7;
-      editBtn.hidden = typeof n !== "number";
+      // A slot without a profile gets one when the game is saved; until
+      // then there is nothing to edit.
+      var made = (Array.isArray(ed.saved.profiles) ? ed.saved.profiles : []).some(function (p) {
+        return p && p.number === n;
+      });
+      editBtn.hidden = typeof n !== "number" || !made;
       if (typeof n === "number") {
         var label = "Profile " + (n + 1);
         choices.forEach(function (c) {

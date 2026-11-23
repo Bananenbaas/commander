@@ -116,6 +116,15 @@ func (s *Service) duplicateProfile(args json.RawMessage) (any, error) {
 	return out, nil
 }
 
+func (s *Service) newProfile() (any, error) {
+	n, res, err := store.NewProfile(s.d.Dir)
+	out := s.saveAnswer("newProfile", profileChangedText, res, err, noRefusals)
+	if out["ok"] == true {
+		out["newProfile"] = int(n)
+	}
+	return out, nil
+}
+
 func (s *Service) deleteProfile(args json.RawMessage) (any, error) {
 	var a struct {
 		Profile *int   `json:"profile"`

@@ -459,6 +459,8 @@ func (s *Service) Handle(ctx context.Context, call string, args json.RawMessage)
 		return s.saveProfileName(args)
 	case "duplicateProfile":
 		return s.duplicateProfile(args)
+	case "newProfile":
+		return s.newProfile()
 	case "deleteProfile":
 		return s.deleteProfile(args)
 	case "openFolder":

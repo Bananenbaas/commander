@@ -378,3 +378,67 @@ func TestGameChangesKeepDesktop(t *testing.T) {
 		t.Errorf("deleting a game moved Desktop to %d", p)
 	}
 }
+
+func TestSaveGameNewSlotMakesLayout(t *testing.T) {
+	dir := gameFolder(t, nil)
+	file, res, err := SaveGame(dir, "", "", GameEdit{Name: "DayZ \u00e9dition with a very long name", Program: "DayZ_x64.exe", KB7: kb7(3)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Change != Apply || !res.Written {
+		t.Errorf("result = %+v, want an Apply", res)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "kb7-4.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := layout.DecodeFile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Profile != 3 || f.Name == nil || *f.Name != "DayZ dition with a" || len(f.Buttons) != 0 {
+		t.Errorf("layout = %+v, name %v", f, f.Name)
+	}
+	cfg, err := layout.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Profiles) != 3 || len(cfg.Games) != 1 || *cfg.Games[0].KB7 != 3 {
+		t.Errorf("profiles %d, games %+v", len(cfg.Profiles), cfg.Games)
+	}
+	if cfg.DesktopProfile() != 0 {
+		t.Errorf("Desktop moved to %d", cfg.DesktopProfile())
+	}
+	// A second game on the slot that now has a layout only reloads.
+	_, res, err = SaveGame(dir, "", "", GameEdit{Name: "Other", Program: "other.exe", KB7: kb7(3)})
+	if err != nil || res.Change != Reload {
+		t.Errorf("second game: %+v, %v", res, err)
+	}
+	if g := gameOf(t, dir, file); g.Order != 1 {
+		t.Errorf("first game's order = %d, want 1", g.Order)
+	}
+}
+
+func TestSaveGameKeepsTheOrderOfMaking(t *testing.T) {
+	dir := gameFolder(t, nil)
+	for _, n := range []string{"Zeta", "Alpha", "Mid"} {
+		if _, _, err := SaveGame(dir, "", "", GameEdit{Name: n, Program: n + ".exe", KB7: kb7(1)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Saving a game again keeps its place.
+	if _, _, err := SaveGame(dir, "games/zeta.toml", fileVersion(t, dir, "games/zeta.toml"), GameEdit{Name: "Zeta", Program: "Zeta.exe"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := layout.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, g := range cfg.Games {
+		got = append(got, g.Name)
+	}
+	if want := []string{"Zeta", "Alpha", "Mid"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("games = %q, want %q", got, want)
+	}
+}

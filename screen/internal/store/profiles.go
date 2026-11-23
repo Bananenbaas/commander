@@ -129,6 +129,94 @@ func DuplicateProfile(dir string, slot byte) (newSlot byte, r Result, err error)
 	return byte(free), res, nil
 }
 
+// NewProfile makes an empty layout for the lowest KB7 slot (0-4) that has
+// none and returns that slot. Desktop stays on its profile. The change is an
+// Apply.
+func NewProfile(dir string) (newSlot byte, r Result, err error) {
+	saveMu.Lock()
+	defer saveMu.Unlock()
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return 0, Result{}, err
+	}
+	cfg, err := layout.Load(abs)
+	if err != nil {
+		return 0, Result{}, otherFile(err)
+	}
+	layouts, err := readLayouts(abs)
+	if err != nil {
+		return 0, Result{}, err
+	}
+	free := -1
+	for n := 0; n <= 4 && free < 0; n++ {
+		if profileOf(cfg, byte(n)) == nil {
+			free = n
+		}
+	}
+	if free < 0 {
+		return 0, Result{}, errors.New(fiveProfiles)
+	}
+	t := &profileTarget{abs: abs, cfg: cfg, layouts: layouts}
+	writes, migrated, err := t.prepare(nil, true)
+	if err != nil {
+		return 0, Result{}, err
+	}
+	w, err := emptyLayout(abs, byte(free), "")
+	if err != nil {
+		return 0, Result{}, err
+	}
+	writes = append(writes, w)
+	if _, err := layout.LoadWith(abs, asFiles(writes)); err != nil {
+		return 0, Result{}, otherFile(err)
+	}
+	res := Result{Change: Apply, Migrated: migrated}
+	if err := commit(abs, writes, &res); err != nil {
+		return 0, res, err
+	}
+	res.Version = Version(w.Data)
+	return byte(free), res, nil
+}
+
+// emptyLayout is the write of a layout without buttons or lighting for KB7
+// profile slot: the file kb7-<slot+1>.toml (-2, -3 on a clash). name becomes
+// its name on the keyboard as far as the keyboard can show it: characters it
+// cannot show are left out and the rest is cut to the longest name.
+func emptyLayout(abs string, slot byte, name string) (Write, error) {
+	layouts, err := readLayouts(abs)
+	if err != nil {
+		return Write{}, err
+	}
+	taken := map[string]bool{}
+	for _, l := range layouts {
+		taken[strings.ToLower(strings.TrimSuffix(l.rel, filepath.Ext(l.rel)))] = true
+	}
+	f := layout.File{Profile: int(slot)}
+	if n := keyboardName(name); n != "" {
+		f.Name = &n
+	}
+	data, err := f.Encode()
+	if err != nil {
+		return Write{}, err
+	}
+	return Write{Rel: unique(fmt.Sprintf("kb7-%d", slot+1), "-", taken) + ".toml", Data: data}, nil
+}
+
+// keyboardName is name as the keyboard can show it: printable ASCII only,
+// without surrounding spaces, at most proto.MaxNameLen characters.
+func keyboardName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if r >= 0x20 && r <= 0x7e {
+			b.WriteRune(r)
+		}
+	}
+	n := strings.TrimSpace(b.String())
+	if len(n) > proto.MaxNameLen {
+		n = strings.TrimSpace(n[:proto.MaxNameLen])
+	}
+	return n
+}
+
 // DeleteProfile removes the layout of KB7 profile slot (0-4) after checking
 // the file still has version base (the Version of the whole file). It is
 // refused while a game profile, Desktop included, uses the profile, and for

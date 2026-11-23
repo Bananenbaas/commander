@@ -183,8 +183,12 @@ lighting").
 **Game profile pages.** Each game has a page with **Switch to this when** (the
 program: pick one of the running programs, with Refresh, or choose its file;
 Windows' own programs are left out of the list) and **What each device does**
-(the KB7 profile to show, or "(don't switch)"). **+ New** in the
-sidebar makes one, and **Delete** on its page removes it. Desktop is the
+(the KB7 profile to show, or "(don't switch)"). The list of KB7 profiles also
+holds the slots that have no profile yet, as "New profile (slot 3)": choosing
+one makes an empty profile there when the game is saved, named after the game,
+and Commander then puts it on the keyboard. **+ New** in the
+sidebar makes a game profile, and **Delete** on its page removes it. The
+sidebar lists the game profiles in the order they were made. Desktop is the
 profile shown when no game runs ("When the program ends: back to Desktop"): it
 always has a KB7 profile, has no program and cannot be deleted. When
 `games/desktop.toml` does not exist yet, the Desktop page shows the profile
@@ -198,6 +202,9 @@ hand-written file), and Commander then reloads the configuration.
 keyboard's mixer page shows, and asks Commander every second while it is open.
 Nothing is set from the window. Without Windows audio, or when Commander is not
 running, it says "The volume mixer is not available right now."
+
+**+** after the profiles on the KB7 page adds an empty profile in the lowest
+free slot (not shown when all five are in use).
 
 **The Profile tab** sets the name shown on the keyboard (empty leaves the
 keyboard's name as it is), **Duplicate** copies the profile into the lowest free
@@ -427,8 +434,12 @@ The rules:
 - The game that started last decides the profile. When it ends, the one
   started before it takes over again, and the desktop profile when none is
   left. When two games are found running at the same poll, the one listed first
-  wins: files in `games/` by file name, then the games that come from
-  layouts, by profile number.
+  wins: files in `games/` by their `order` (see below), then the games that
+  come from layouts, by profile number.
+- `order` is optional: a whole number from 0 that places the game among the
+  others, lower first, and by file name among games with the same order. A
+  file without it counts as 0. Commander's window gives each new game the
+  next number, so the games stay in the order they were made.
 - Names are unique, upper and lower case counting as the same, across all
   game files and the Desktop game. A program may be named in only one game
   file. The program of a layout's `switch_when_running` may not be the name

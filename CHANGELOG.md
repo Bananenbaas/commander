@@ -47,7 +47,9 @@ runtime that Windows 11 has.
 - Commander's window: game profiles are edited in the window. Each game page
   has "Switch to this when" (the program, picked from the running programs or
   a file dialog) and "What each device does" (the KB7 profile, or "(don't
-  switch)"); a new game profile is made with "+ New" in the sidebar, and one can
+  switch)", or a slot that has no profile yet, which gets a new, empty profile
+  named after the game when the game is saved); the game profiles are listed in
+  the order they were made (`order` in a game file); a new game profile is made with "+ New" in the sidebar, and one can
   be deleted with "Delete" on its page. Saving or deleting a game reloads the configuration. Desktop
   always has a KB7 profile, has no program and cannot be deleted; when no
   `games/desktop.toml` exists it is written (pinning Desktop to the profile it
@@ -64,6 +66,8 @@ runtime that Windows 11 has.
   nor the last one ("The last profile cannot be deleted."); a deleted
   profile's layout is moved to `backup/`, so it can be restored. A sixth
   profile is refused ("The KB7 has five profiles and all five are in use.").
+- Commander's window: "+" after the profiles on the KB7 page adds an empty
+  profile in the lowest free slot.
 - The first save moves `switch_when_running` from the layouts into `games/`
   (the program `StarCitizen.exe` becomes the game `StarCitizen`).
 

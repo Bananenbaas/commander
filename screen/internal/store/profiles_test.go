@@ -368,3 +368,49 @@ func TestDeleteProfileRefuses(t *testing.T) {
 		t.Errorf("layout gone: %v", err)
 	}
 }
+
+func TestNewProfile(t *testing.T) {
+	dir := folder(t, map[string]string{
+		"kb7-0.toml": "profile = 0\n",
+		"kb7-3.toml": "profile = 2\n",
+	})
+	n, res, err := NewProfile(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || res.Change != Apply || !res.Written {
+		t.Errorf("slot %d, result %+v", n, res)
+	}
+	// kb7-2.toml is free as a name; the next free slot is 3, whose usual
+	// name kb7-4.toml is free too.
+	if _, err := os.Stat(filepath.Join(dir, "kb7-2.toml")); err != nil {
+		t.Error(err)
+	}
+	cfg, err := layout.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Profiles) != 3 || cfg.DesktopProfile() != 0 {
+		t.Errorf("profiles %d, desktop %d", len(cfg.Profiles), cfg.DesktopProfile())
+	}
+	for want := byte(3); want <= 4; want++ {
+		if n, _, err := NewProfile(dir); err != nil || n != want {
+			t.Fatalf("slot %d, %v; want %d", n, err, want)
+		}
+	}
+	if _, _, err := NewProfile(dir); err == nil || err.Error() != fiveProfiles {
+		t.Errorf("sixth profile: %v", err)
+	}
+}
+
+func TestNewProfileFileNameClash(t *testing.T) {
+	dir := folder(t, map[string]string{
+		"kb7-2.toml": "profile = 0\n",
+	})
+	if n, _, err := NewProfile(dir); err != nil || n != 1 {
+		t.Fatalf("slot %d, %v", n, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "kb7-2-2.toml")); err != nil {
+		t.Error(err)
+	}
+}

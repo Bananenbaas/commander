@@ -357,3 +357,37 @@ func TestTwoDesktopGameFilesAreRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestGamesOrder(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, s string) {
+		t.Helper()
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("a.toml", "profile = 0\n")
+	write("games/b.toml", "name = \"B\"\nprogram = \"b.exe\"\norder = 2\n")
+	write("games/c.toml", "name = \"C\"\nprogram = \"c.exe\"\norder = 1\n")
+	write("games/z.toml", "name = \"Z\"\nprogram = \"z.exe\"\n")
+	write("games/d.toml", "name = \"D\"\nprogram = \"d.exe\"\n")
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, g := range c.Games {
+		got = append(got, g.Name)
+	}
+	if want := "D Z C B"; strings.Join(got, " ") != want {
+		t.Errorf("games = %q, want %q", strings.Join(got, " "), want)
+	}
+	write("games/e.toml", "name = \"E\"\nprogram = \"e.exe\"\norder = -1\n")
+	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "games/e.toml") {
+		t.Errorf("negative order: %v", err)
+	}
+}

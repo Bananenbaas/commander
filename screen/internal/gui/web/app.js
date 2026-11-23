@@ -607,6 +607,38 @@
       });
       chips.appendChild(c);
     });
+    if (profiles().length > 0 && profiles().length < 5 && !str(st.loadError)) {
+      var plus = el("button", "chip", app.making ? "Adding" : "+");
+      plus.type = "button";
+      plus.disabled = !!app.making;
+      plus.setAttribute("data-key", "profile:new");
+      plus.setAttribute("aria-label", "Add a profile");
+      plus.title = "Add a profile";
+      plus.addEventListener("click", function () {
+        whenSaved(function () {
+          app.making = true;
+          app.makeError = "";
+          render();
+          call("newProfile", {}).then(function (res) {
+            app.making = false;
+            if (res && res.ok) {
+              profileMade(res.newProfile);
+              return;
+            }
+            app.makeError = plainError("Could not add a profile", (res && res.error) || "no answer");
+            render();
+          }, function (err) {
+            app.making = false;
+            app.makeError = plainError("Could not add a profile", err);
+            render();
+          });
+        });
+      });
+      chips.appendChild(plus);
+    }
+    if (app.makeError) {
+      out.push(el("p", "note error", app.makeError));
+    }
     if (chips.childNodes.length > 0) {
       chips.setAttribute("role", "group");
       chips.setAttribute("aria-label", "Profiles on the keyboard");

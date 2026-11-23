@@ -34,8 +34,10 @@ const (
 // Version of its file; "" for a new game or a game not in a file yet).
 // It returns the game's file afterwards. It migrates first when any layout
 // has switch_when_running; a new game's file is games/<slug of its name>.toml
-// and a saved game keeps its file. Nothing is written unless the folder with
-// every new file loads.
+// and a saved game keeps its file. A new game is placed after the games
+// there are (its order). When g.KB7 is a slot that has no layout yet, an
+// empty layout is made for it, named after the game, and the change is an
+// Apply. Nothing is written unless the folder with every new file loads.
 func SaveGame(dir, id, base string, g GameEdit) (file string, r Result, err error) {
 	name, program, err := checkGame(isDesktop(id), g)
 	if err != nil {
@@ -71,9 +73,15 @@ func SaveGame(dir, id, base string, g GameEdit) (file string, r Result, err erro
 		gf.Program = program
 	}
 	if t.old != nil {
+		gf.Order = t.old.Order
 		for k, v := range t.old.Devices {
 			gf.Devices[k] = v
 		}
+	} else if id == "" {
+		for _, other := range t.before.Games {
+			gf.Order = max(gf.Order, int64(other.Order))
+		}
+		gf.Order++
 	}
 	delete(gf.Devices, "kb7")
 	if g.KB7 != nil {
@@ -95,6 +103,16 @@ func SaveGame(dir, id, base string, g GameEdit) (file string, r Result, err erro
 	if !found {
 		writes = append(writes, Write{Rel: rel, Data: data})
 	}
+	change := Reload
+	if g.KB7 != nil && profileOf(t.before, *g.KB7) == nil {
+		w, err := emptyLayout(t.abs, *g.KB7, name)
+		if err != nil {
+			return "", Result{}, err
+		}
+		// The layout goes first, so the folder loads after every write.
+		writes = append([]Write{w}, writes...)
+		change = Apply
+	}
 	all := map[string][]byte{}
 	for _, w := range writes {
 		all[w.Rel] = w.Data
@@ -103,7 +121,7 @@ func SaveGame(dir, id, base string, g GameEdit) (file string, r Result, err erro
 		return "", Result{}, gameRefusal(err, rel, t.before)
 	}
 
-	res := Result{Change: Reload, Migrated: t.migrated}
+	res := Result{Change: change, Migrated: t.migrated}
 	if err := commit(t.abs, writes, &res); err != nil {
 		return rel, res, err
 	}
