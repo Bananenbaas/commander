@@ -134,18 +134,22 @@ const (
 
 // filter is the name shown in the dialog and the pattern it lists.
 func (k pickKind) filter() (name, pattern string) {
-	if k == pickEXE {
+	switch k {
+	case pickEXE:
 		return "Programs (*.exe)", "*.exe"
+	default:
+		return "PNG pictures (*.png)", "*.png"
 	}
-	return "PNG pictures (*.png)", "*.png"
 }
 
 // title is the dialog's caption.
 func (k pickKind) title() string {
-	if k == pickEXE {
+	switch k {
+	case pickEXE:
 		return "Choose a program"
+	default:
+		return "Choose a picture"
 	}
-	return "Choose a picture"
 }
 
 // pickOf reports whether raw is a "__pickPicture" or "__pickProgram" call,

@@ -230,3 +230,61 @@ func TestPathLine(t *testing.T) {
 		}
 	}
 }
+
+func TestPickKinds(t *testing.T) {
+	cases := []struct {
+		kind                 pickKind
+		name, pattern, title string
+	}{
+		{pickPNG, "PNG pictures (*.png)", "*.png", "Choose a picture"},
+		{pickEXE, "Programs (*.exe)", "*.exe", "Choose a program"},
+	}
+	for _, c := range cases {
+		name, pattern := c.kind.filter()
+		if name != c.name || pattern != c.pattern || c.kind.title() != c.title {
+			t.Errorf("kind %d = %q %q %q", c.kind, name, pattern, c.kind.title())
+		}
+	}
+}
+
+func TestPickGuard(t *testing.T) {
+	var g pickGuard
+	opened := 0
+	var inner string
+	line := g.answer(3, pickEXE, func(k pickKind) (string, error) {
+		opened++
+		if k != pickEXE {
+			t.Errorf("dialog got kind %v", k)
+		}
+		inner = g.answer(4, pickPNG, func(pickKind) (string, error) {
+			opened++
+			return "never.png", nil
+		})
+		return `C:\Games\x.exe`, nil
+	})
+	if opened != 1 {
+		t.Errorf("dialog opened %d times, want 1", opened)
+	}
+	if inner != pathLine(4, "") {
+		t.Errorf("busy answer = %s", inner)
+	}
+	if line != pathLine(3, `C:\Games\x.exe`) {
+		t.Errorf("answer = %s", line)
+	}
+	// Free again after success, cancel and error.
+	steps := []struct {
+		path string
+		err  error
+		want string
+	}{
+		{"", nil, pathLine(5, "")},
+		{"", errors.New("boom"), errorLine(5, "boom")},
+		{"a.png", nil, pathLine(5, "a.png")},
+	}
+	for _, s := range steps {
+		got := g.answer(5, pickPNG, func(pickKind) (string, error) { return s.path, s.err })
+		if got != s.want {
+			t.Errorf("answer = %s, want %s", got, s.want)
+		}
+	}
+}
