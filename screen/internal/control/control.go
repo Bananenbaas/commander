@@ -12,8 +12,10 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/Bananenbaas/commander/screen/internal/audio"
 	"github.com/Bananenbaas/commander/screen/internal/bridge"
 	"github.com/Bananenbaas/commander/screen/internal/layout"
+	"github.com/Bananenbaas/commander/screen/internal/procs"
 	"github.com/Bananenbaas/commander/screen/internal/run"
 	"github.com/Bananenbaas/commander/screen/internal/supervisor"
 )
@@ -44,6 +46,12 @@ type Deps struct {
 	Apply           func()                            // asks the supervisor to send the buttons again; nil does nothing
 	LogPath         string
 	Logf            func(format string, args ...any) // nil discards
+
+	// Mixer reads the system volume and the programs with sound; ok is
+	// false when there is no audio now. nil: there is no mixer.
+	Mixer func() (system audio.Session, programs []audio.Session, ok bool, err error)
+	// Running lists every running process; nil: none.
+	Running func() ([]procs.Proc, error)
 }
 
 // Service answers the window's calls and queues its events.
@@ -244,6 +252,7 @@ type profileInfo struct {
 }
 
 type gameInfo struct {
+	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Program string `json:"program"`
 	KB7     *int   `json:"kb7"`
@@ -299,7 +308,7 @@ func (s *Service) state(st supervisor.State) stateInfo {
 		})
 	}
 	for _, g := range cfg.Games {
-		gi := gameInfo{Name: g.Name, Program: g.Program, File: g.File}
+		gi := gameInfo{ID: gameID(cfg, g), Name: g.Name, Program: g.Program, File: g.File}
 		if g.KB7 != nil {
 			n := int(*g.KB7)
 			gi.KB7 = &n
@@ -428,6 +437,24 @@ func (s *Service) Handle(ctx context.Context, call string, args json.RawMessage)
 		return s.saveDeviceLight(args)
 	case "lightFrames":
 		return s.lightFrames(args)
+	case "gameProfile":
+		return s.gameProfile(args)
+	case "saveGameProfile":
+		return s.saveGameProfile(args)
+	case "deleteGameProfile":
+		return s.deleteGameProfile(args)
+	case "runningPrograms":
+		return s.runningPrograms()
+	case "mixer":
+		return s.mixer(), nil
+	case "profileInfo":
+		return s.profileInfo(args)
+	case "saveProfileName":
+		return s.saveProfileName(args)
+	case "duplicateProfile":
+		return s.duplicateProfile(args)
+	case "deleteProfile":
+		return s.deleteProfile(args)
 	case "openFolder":
 		if err := s.d.Open(s.d.Dir); err != nil {
 			return nil, fmt.Errorf("openFolder: %w", err)

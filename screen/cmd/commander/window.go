@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Bananenbaas/commander/screen/internal/gui"
+	"github.com/Bananenbaas/commander/screen/internal/run"
 )
 
 // startWait is how long a started window process has to connect before
@@ -177,4 +178,23 @@ func (s *servedConn) Close() error {
 	err := s.ReadWriteCloser.Close()
 	s.once.Do(func() { s.wc.drop(s) })
 	return err
+}
+
+// mixerOf is the window's mixer over the supervisor's audio: ok is false
+// when there is none, and once served is closed (Serve has returned and
+// closed the audio) it is not read again.
+func mixerOf(audio func() run.Audio, served <-chan struct{}) func() (run.Session, []run.Session, bool, error) {
+	return func() (run.Session, []run.Session, bool, error) {
+		select {
+		case <-served:
+			return run.Session{}, nil, false, nil
+		default:
+		}
+		a := audio()
+		if a == nil {
+			return run.Session{}, nil, false, nil
+		}
+		sys, progs, err := a.Sessions()
+		return sys, progs, true, err
+	}
 }

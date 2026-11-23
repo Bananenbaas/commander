@@ -12,6 +12,7 @@ import (
 
 	"github.com/Bananenbaas/commander/screen/internal/gui"
 	"github.com/Bananenbaas/commander/screen/internal/pipe"
+	"github.com/Bananenbaas/commander/screen/internal/run"
 )
 
 // fakeWindow records what windowCtl does.
@@ -239,5 +240,36 @@ func TestOpenFailedText(t *testing.T) {
 	text = openFailedMessage(wvErr)
 	if !strings.HasPrefix(text, openFailedText) || !strings.HasSuffix(text, webviewRepairText) {
 		t.Errorf("WebView2 failure: %q", text)
+	}
+}
+
+// fakeAudio is a run.Audio that counts its Sessions calls.
+type fakeAudio struct {
+	run.Audio
+	reads int
+}
+
+func (a *fakeAudio) Sessions() (run.Session, []run.Session, error) {
+	a.reads++
+	return run.Session{Name: "Speakers", Level: 30}, []run.Session{{Name: "Discord"}}, nil
+}
+
+func TestMixerOf(t *testing.T) {
+	if _, _, ok, err := mixerOf(func() run.Audio { return nil }, make(chan struct{}))(); ok || err != nil {
+		t.Errorf("no audio: ok %v err %v", ok, err)
+	}
+
+	a := &fakeAudio{}
+	served := make(chan struct{})
+	m := mixerOf(func() run.Audio { return a }, served)
+	sys, progs, ok, err := m()
+	if !ok || err != nil || sys.Name != "Speakers" || len(progs) != 1 || a.reads != 1 {
+		t.Errorf("running: %v %v %v %v reads %d", sys, progs, ok, err, a.reads)
+	}
+
+	// Once Serve has returned the audio is closed: it is not read again.
+	close(served)
+	if _, _, ok, err := m(); ok || err != nil || a.reads != 1 {
+		t.Errorf("after Serve: ok %v err %v reads %d", ok, err, a.reads)
 	}
 }

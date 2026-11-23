@@ -28,6 +28,7 @@ import (
 	"github.com/Bananenbaas/commander/screen/internal/icon"
 	"github.com/Bananenbaas/commander/screen/internal/layout"
 	"github.com/Bananenbaas/commander/screen/internal/pipe"
+	"github.com/Bananenbaas/commander/screen/internal/procs"
 	"github.com/Bananenbaas/commander/screen/internal/supervisor"
 )
 
@@ -295,8 +296,9 @@ func (ws *windowServer) stop() {
 }
 
 // controlDeps is what the window's calls use; the settings stay in step with
-// the tray menu, which reads them anew every time it opens.
-func controlDeps(ctx context.Context, exe, dir string, u *updater, sup *supervisor.Supervisor, logf func(string, ...any)) control.Deps {
+// the tray menu, which reads them anew every time it opens. served is closed
+// when the supervisor's Serve has returned.
+func controlDeps(ctx context.Context, exe, dir string, u *updater, sup *supervisor.Supervisor, served <-chan struct{}, logf func(string, ...any)) control.Deps {
 	return control.Deps{
 		Version: version,
 		Dir:     dir,
@@ -330,6 +332,8 @@ func controlDeps(ctx context.Context, exe, dir string, u *updater, sup *supervis
 		Open:    shellOpen,
 		Reload:  sup.Reload,
 		Apply:   sup.Apply,
+		Mixer:   mixerOf(sup.Audio, served),
+		Running: procs.List,
 		LogPath: appdata.LogPath(),
 		Logf:    logf,
 	}
