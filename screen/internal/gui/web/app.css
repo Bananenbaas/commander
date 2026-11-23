@@ -908,6 +908,168 @@ button.chip:hover { color: var(--text); }
 .bstate .note { flex-basis: 100%; margin: 0; }
 .bacts { gap: 10px; }
 
+/* Lighting tab */
+
+.ledit { color: var(--text); }
+.ledit .note { white-space: pre-line; }
+
+/* The board is dark in both themes, like the keyboard. */
+.lboard {
+  padding: 6px;
+  border: 1px solid #222c47;
+  border-radius: 10px;
+  background: #10172a;
+}
+
+.lcanvas {
+  display: block;
+  width: 100%;
+  height: 160px;
+}
+
+.lcanvas.picking { cursor: pointer; }
+
+.lnotset {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+}
+
+.lnotset p { margin: 0 0 12px; }
+
+.lview {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.lsec {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.lsec h3 { margin: 0 0 10px; }
+.lsub { margin: 14px 0 6px; }
+
+.lcards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+/* A card with the cut corner: the line colour drawn behind, the face on
+   top of it; the selected card's line is the accent. */
+.lcard {
+  position: relative;
+  isolation: isolate;
+  min-height: 64px;
+  padding: 10px 14px;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.lcard::before,
+.lcard::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+}
+
+.lcard::before { inset: 0; background: var(--line); }
+.lcard::after { inset: 1px; background: var(--bg-sunk); }
+.lcard:hover { color: var(--text); }
+.lcard:hover::before { background: var(--text-muted); }
+.lcard.on { color: var(--link-on-glow); }
+.lcard.on::before { background: var(--accent); }
+.lcard.on::after { inset: 2px; background: color-mix(in srgb, var(--bg-sunk) 84%, var(--accent)); }
+
+.lcard-name {
+  font: 600 20px var(--display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lctl {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.lctl .note { margin: 0; }
+.lremove { margin-top: 14px; }
+
+.lextra {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.lextra:first-of-type { border-top: 0; padding-top: 0; }
+.lextra > .lctl { margin-left: 28px; }
+
+.lcolor {
+  width: 36px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+
+.lcolor-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.lcolor-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lrange-row .brange { flex: 1 1 160px; }
+.lrange-val { min-width: 44px; font-variant-numeric: tabular-nums; }
+
+.lkeys .bcaps { flex: 1 1 200px; }
+
+.bsmall[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--glow);
+  color: var(--link-on-glow);
+}
+
+.lstates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lstate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.lstate:first-child { border-top: 0; padding-top: 0; }
+.lstate .binput[type="text"] { flex: 1 1 160px; min-width: 0; }
+
+.ladv { margin-top: 16px; }
+
+.lreason {
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--warm);
+  border-radius: 8px;
+  color: var(--text);
+}
+
 .version {
   font: 600 28px var(--display);
   letter-spacing: 0.02em;

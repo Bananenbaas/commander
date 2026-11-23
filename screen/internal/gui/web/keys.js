@@ -207,10 +207,13 @@
   // window loses focus. Beyond start, stop and running it offers chord
   // (the keys picked and held now), pick (add a key by name) and skipped
   // (the key codes Commander cannot press that the last recording met).
+  // Only one recorder runs in the window: starting one stops the one that
+  // ran, dropping what that one held.
   function recorder(options) {
     var oneChord = !!options.oneChord;
     var state = null; // {data, picked, timer}
     var skippedLast = [];
+    var self;
 
     function arm() {
       if (state.timer) {
@@ -263,6 +266,9 @@
       }
       var s = state;
       state = null;
+      if (active === self) {
+        active = null;
+      }
       clearTimeout(s.timer);
       document.removeEventListener("keydown", onKey, true);
       document.removeEventListener("keyup", onKey, true);
@@ -289,9 +295,13 @@
       options.onStop();
     }
 
-    return {
+    self = {
       start: function () {
         finish(true);
+        if (active && active !== self) {
+          active.stop(false);
+        }
+        active = self;
         state = { data: newRecording(), picked: [], timer: null };
         skippedLast = [];
         document.addEventListener("keydown", onKey, true);
@@ -330,6 +340,17 @@
         return skippedLast.slice();
       }
     };
+    return self;
+  }
+
+  var active = null; // the recorder that runs, if any
+
+  // stopAll ends the recording that runs anywhere in the window, dropping
+  // what it held.
+  function stopAll() {
+    if (active) {
+      active.stop(false);
+    }
   }
 
   window.CommanderKeys = {
@@ -344,6 +365,7 @@
     },
     caps: caps,
     recorder: recorder,
+    stopAll: stopAll,
     KEY_CODES: KEY_CODES, KEY_LIST: KEY_LIST, WAIT_MAX: WAIT_MAX, keyCap: keyCap, keyWords: keyWords,
     newRecording: newRecording, recordDown: recordDown, recordUp: recordUp, recordEnd: recordEnd
   };

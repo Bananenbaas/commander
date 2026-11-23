@@ -68,9 +68,9 @@
         app.stateError = "";
         if (app.started) {
           render();
-          if (editor) {
-            editor.refresh();
-          }
+          editors().forEach(function (e) {
+            e.ed.refresh();
+          });
         }
       }
       return;
@@ -368,25 +368,46 @@
     return out;
   }
 
-  // The Buttons tab: one editor for the window's life. Its node is put back
-  // in the page on every redraw, never rebuilt, so a field being typed in
-  // keeps its focus and text.
+  // The Buttons and Lighting tabs: one editor each for the window's life.
+  // Its node is put back in the page on every redraw, never rebuilt, so a
+  // field being typed in keeps its focus and text.
   var editor = null;
   var buttonsPanel = el("div", "tabpanel");
+  var lighting = null;
+  var lightingPanel = el("div", "tabpanel");
+
+  // editors are the editors there are, with the tab each sits in.
+  function editors() {
+    var out = [];
+    if (editor) {
+      out.push({ ed: editor, tab: "buttons", panel: buttonsPanel });
+    }
+    if (lighting) {
+      out.push({ ed: lighting, tab: "lighting", panel: lightingPanel });
+    }
+    return out;
+  }
+
+  function dirtyEditors() {
+    return editors().filter(function (e) {
+      return e.ed.dirty();
+    });
+  }
 
   // onDirtyChange can come in the middle of a redraw (render shows the
   // editor a profile), so the redraw it asks for waits for that one.
   function onDirtyChange(dirty) {
-    if (!dirty) {
+    // The question stays while another tab still has changes.
+    if (!dirty && dirtyEditors().length === 0) {
       app.leaving = null;
     }
     Promise.resolve().then(render);
   }
 
-  // whenSaved runs go now or, while the Buttons tab has unsaved changes,
-  // once the player has answered the question in the page.
+  // whenSaved runs go now or, while a tab has unsaved changes, once the
+  // player has answered the question in the page.
   function whenSaved(go) {
-    if (!editor || !editor.dirty()) {
+    if (dirtyEditors().length === 0) {
       app.leaving = null;
       go();
       return;
@@ -413,15 +434,31 @@
       var go = app.leaving;
       app.busy["ask:save"] = true;
       render();
-      editor.save().then(function (ok) {
+      // Each tab with changes saves in turn; the first that does not go
+      // through stops the way out.
+      var failed = "";
+      dirtyEditors().reduce(function (p, e) {
+        return p.then(function () {
+          if (failed) {
+            return null;
+          }
+          return e.ed.save().then(function (ok) {
+            if (!ok) {
+              failed = e.tab;
+            }
+          });
+        });
+      }, Promise.resolve()).then(function () {
         app.busy["ask:save"] = false;
         app.leaving = null;
-        if (ok && go) {
+        if (!failed && go) {
           go();
           return;
         }
-        // The Buttons tab says why.
-        app.tab = "buttons";
+        // That tab says why.
+        if (failed) {
+          app.tab = failed;
+        }
         render();
       });
     }));
@@ -433,7 +470,9 @@
         var go = app.leaving;
         app.leaving = null;
         if (o[0] === "ask:discard") {
-          editor.discard();
+          editors().forEach(function (e) {
+            e.ed.discard();
+          });
           if (go) {
             go();
             return;
@@ -491,12 +530,12 @@
       // While the folder does not load the list is empty; keep the profile
       // (and a draft in it) until it loads again.
       var shown = shownProfile();
-      if (!(editor && editor.dirty() && app.kb7Profile >= 0)) {
+      if (!(dirtyEditors().length > 0 && app.kb7Profile >= 0)) {
         app.kb7Profile = shown;
       }
-      if (editor) {
-        editor.show(app.kb7Profile);
-      }
+      editors().forEach(function (e) {
+        e.ed.show(app.kb7Profile);
+      });
     }
     var chips = el("div", "chips");
     var kb = keyboard();
@@ -520,9 +559,9 @@
         }
         whenSaved(function () {
           app.kb7Profile = p.number;
-          if (editor) {
-            editor.show(p.number);
-          }
+          editors().forEach(function (e) {
+            e.ed.show(p.number);
+          });
           render();
         });
       });
@@ -586,17 +625,24 @@
     });
     out.push(bar);
     var panel;
-    if (app.tab !== "buttons") {
+    var shownEditor = null;
+    editors().forEach(function (e) {
+      if (e.tab === app.tab) {
+        shownEditor = e;
+      }
+    });
+    var what = app.tab === "lighting" ? "The lighting" : "The buttons";
+    if (app.tab !== "buttons" && app.tab !== "lighting") {
       panel = el("div", "tabpanel", "Comes in a later version.");
     } else if (str(st.loadError)) {
       panel = el("div", "tabpanel");
-      panel.appendChild(el("p", "note error", "The buttons cannot be shown while the configuration cannot be read: " + st.loadError));
-    } else if (!editor || app.kb7Profile < 0) {
+      panel.appendChild(el("p", "note error", what + " cannot be shown while the configuration cannot be read: " + st.loadError));
+    } else if (!shownEditor || app.kb7Profile < 0) {
       panel = el("div", "tabpanel", "There are no profiles to show.");
     } else {
-      panel = buttonsPanel;
-      if (panel.firstChild !== editor.node) {
-        panel.replaceChildren(editor.node);
+      panel = shownEditor.panel;
+      if (panel.firstChild !== shownEditor.ed.node) {
+        panel.replaceChildren(shownEditor.ed.node);
       }
     }
     panel.id = "tabpanel";
@@ -874,10 +920,12 @@
     var top = main.scrollTop;
     replaceKeeping(main, out);
     main.scrollTop = top;
-    // Keys are recorded only while the Buttons tab is shown.
-    if (editor && out.indexOf(buttonsPanel) < 0) {
-      editor.stopRecording();
-    }
+    // Keys are recorded only while their tab is shown.
+    editors().forEach(function (e) {
+      if (out.indexOf(e.panel) < 0) {
+        e.ed.stopRecording();
+      }
+    });
   }
 
   // replaceKeeping makes nodes the children of parent. A node already in
@@ -936,9 +984,16 @@
       call: call, el: el, str: str, plainError: plainError, onDirtyChange: onDirtyChange
     });
   }
+  if (window.CommanderLighting) {
+    lighting = window.CommanderLighting.create({
+      call: call, el: el, str: str, plainError: plainError, onDirtyChange: onDirtyChange
+    });
+  }
   window.addEventListener("focus", function () {
-    if (editor && app.started) {
-      editor.refresh();
+    if (app.started) {
+      editors().forEach(function (e) {
+        e.ed.refresh();
+      });
     }
   });
 
