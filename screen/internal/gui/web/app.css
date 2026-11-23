@@ -1062,6 +1062,147 @@ button.chip:hover { color: var(--text); }
 
 .ladv { margin-top: 16px; }
 
+/* The advanced view: the layers, top first, beside the selected layer's
+   settings when there is room. */
+.ladv-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  margin-bottom: 14px;
+}
+
+@media (min-width: 900px) {
+  .ladv-stack { grid-template-columns: minmax(260px, 2fr) minmax(0, 3fr); }
+}
+
+.llist h3 { margin: 0 0 4px; }
+.llist > .note { margin: 0 0 10px; }
+
+.llayers {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.llayer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-sunk);
+}
+
+.llayer.on { border-color: var(--accent); background: color-mix(in srgb, var(--bg-sunk) 88%, var(--accent)); }
+.llayer.flagged { border-color: var(--bad); }
+.llayer.dragging { opacity: 0.5; }
+.llayer.drop { border: 2px dashed var(--accent); background: var(--glow); }
+
+/* A grip of dots to show the row can be dragged. */
+.lgrip {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 22px;
+  cursor: grab;
+  background-image: radial-gradient(circle, var(--text-muted) 1.2px, transparent 1.6px);
+  background-size: 5px 5px;
+}
+
+.llayer-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 4px 6px;
+  border-radius: 5px;
+  text-align: left;
+  font: 600 17px var(--display);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.llayer.off .llayer-name { color: var(--text-muted); }
+
+.llayer-state {
+  font: 12px var(--sans);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-muted);
+}
+
+.llayer.flagged .llayer-state { color: var(--bad); }
+
+.lswitch { min-height: 30px; }
+.ladd .binput { flex: 1 1 160px; min-width: 0; }
+
+.ldetail {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.ldetail-name {
+  margin: 0;
+  font: 600 22px var(--display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ldetail > .note { margin: 2px 0 10px; }
+
+.lfields {
+  display: flex;
+  flex-direction: column;
+}
+
+.lfield {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.lfield:first-child { border-top: 0; padding-top: 0; }
+.lfield .note { margin: 4px 0 0; }
+.lfield-head { margin-bottom: 6px; gap: 8px; }
+.lfield-label { font-weight: 600; }
+.lfield-ctl .lcolor-list { margin-bottom: 0; }
+.lnum { width: 110px; }
+
+.lreq {
+  padding: 1px 6px;
+  border: 1px solid var(--warm);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--warm-on-glow);
+}
+
+.lfield.lmissing .lreq { background: color-mix(in srgb, transparent 80%, var(--warm)); }
+
+.ldef-tag {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* An optional setting left out shows its default, greyed. */
+.lfield.ldef .lfield-ctl { opacity: 0.55; }
+.lfield.ldef .lfield-ctl:focus-within { opacity: 1; }
+
+.lraw {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-sunk);
+  font: 13px var(--mono);
+  overflow-wrap: anywhere;
+}
+
 .lreason {
   margin: 0 0 10px;
   padding: 10px 14px;

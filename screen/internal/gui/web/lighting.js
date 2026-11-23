@@ -9,6 +9,7 @@
 
 (function () {
   var K = window.CommanderKeys; // key caps and the recorder (keys.js)
+  var A = window.CommanderLightAdvanced; // the advanced view (lightadv.js)
   var NEW_COLOR = "#00AAFF";
   var WAVE_COLORS = ["#00AAFF", "#FF9A3D"];
   var RIPPLE_COLOR = "#FFFFFF";
@@ -32,8 +33,8 @@
   //
   // A draft is {kind, simple, light, stored}. kind is "none" (no [light]:
   // the keyboard shows its own), "simple" (simple holds the simple view) or
-  // "light" (a stack the simple view cannot show; light holds it as
-  // Commander sent it). The keyed parts of the simple view, the highlighted
+  // "light" (the advanced view: light holds the stack as Commander sent it,
+  // with the player's edits). The keyed parts of the simple view, the highlighted
   // keys and each key state, hold {keys, orig, leds}: the names as written,
   // the LEDs those names light, and the LEDs picked now.
 
@@ -304,14 +305,63 @@
     return out;
   }
 
-  // stripLeds drops the picked LEDs from a stack: Commander keeps the keys
-  // of a layer it gets no LEDs for.
-  function stripLeds(light) {
-    var out = copy(light);
-    (Array.isArray(out.layers) ? out.layers : []).forEach(function (l) {
-      delete l.leds;
+  // simpleToLight is the stack the simple view writes, bottom first, as
+  // deviceLight gives stacks; it follows Commander's own translation, with
+  // settings at their default left out. effects is lightingInfo's list.
+  function simpleToLight(s, names, effects) {
+    var p = simplePayload(s, names || {});
+    var layers = [];
+    function push(effect, settings, item) {
+      var spec = (Array.isArray(effects) ? effects : []).filter(function (e) {
+        return e && e.name === effect;
+      })[0];
+      if (spec) {
+        A.logic.dropDefaults(settings, spec);
+      }
+      layers.push({
+        effect: effect, enabled: true, keys: item ? keysOf(item, names || {}) : [],
+        leds: item ? ledSet(item.leds) : [], settings: settings
+      });
+    }
+    if (p.base === "off") {
+      push("static", { color: "#000000" });
+    } else if (p.base === "static") {
+      push("static", p.colors.length > 0 ? { color: p.colors[0] } : {});
+    } else if (p.base === "wave") {
+      var wave = { colors: p.colors };
+      if (p.speed) {
+        wave.speed = p.speed;
+      }
+      if (p.direction) {
+        wave.direction = p.direction.toLowerCase();
+      }
+      push("wave", wave);
+    } else if (p.base === "breathing") {
+      var breath = {};
+      if (p.colors.length > 0) {
+        breath.colors = p.colors;
+      }
+      if (p.period) {
+        breath.period = A.logic.formatSeconds(p.period);
+      }
+      push("breathing", breath);
+    }
+    if (p.ripple) {
+      var cs = p.ripple.colors;
+      push("ripple", cs.length === 1 ? { color: cs[0] } : (cs.length > 1 ? { colors: cs } : {}));
+    }
+    if (p.highlight) {
+      push("fixed", { color: p.highlight.color }, s.highlight);
+    }
+    p.states.forEach(function (st, i) {
+      var m = { name: st.name };
+      if (st.toggle) {
+        m.toggle = st.toggle;
+      }
+      m.color = st.color;
+      push("state", m, s.states[i]);
     });
-    return out;
+    return { fps: 0, layers: layers };
   }
 
   // lightPayload is the lighting part of a call: exactly one of simple and
@@ -321,7 +371,7 @@
       return { simple: simplePayload(draft.simple, names || {}) };
     }
     if (draft.kind === "light" && draft.light) {
-      return { light: stripLeds(draft.light) };
+      return { light: A.logic.payload(draft.light) };
     }
     return { light: null };
   }
@@ -490,7 +540,7 @@
     speedToSlider: speedToSlider, sliderToSpeed: sliderToSpeed,
     periodToSlider: periodToSlider, sliderToPeriod: sliderToPeriod,
     fromSaved: fromSaved, newSimple: newSimple, switchBase: switchBase, newState: newState,
-    keysOf: keysOf, simplePayload: simplePayload, lightPayload: lightPayload,
+    keysOf: keysOf, simplePayload: simplePayload, simpleToLight: simpleToLight, lightPayload: lightPayload,
     storedPayload: storedPayload, storedChanged: storedChanged, differs: differs,
     controlsOf: controlsOf, errorsByControl: errorsByControl, pageChecks: pageChecks,
     saveNotes: saveNotes, decodeFrame: decodeFrame, boardGeometry: boardGeometry, ledAt: ledAt
@@ -506,7 +556,6 @@
       saved: null, // the deviceLight answer the draft started from
       base: null, // the draft of what is saved
       draft: null,
-      view: "simple", // "simple" or "advanced"
       loadError: "",
       saving: null, // the Promise of a save that runs
       notes: [], // lines after a save
@@ -515,6 +564,7 @@
       errors: {}, // control -> [message], from the last save or the page's checks
       previewErrors: {}, // control -> [message], from the last lightFrames answer
       picking: "", // the control whose keys the picture picks, or ""
+      fit: null, // {key, simple}: the simple view of the draft lightFrames last showed
       gen: 0, // counts profile loads, so an overtaken answer is ignored
       wasDirty: false
     };
@@ -646,7 +696,6 @@
         d.simple = newSimple();
         d.light = null;
       });
-      ed.view = "simple";
       draw();
     });
     add(notSet, el("p", "", "Commander does not control this profile's lighting; the keyboard shows its own."), setBtn);
@@ -655,9 +704,7 @@
     var viewRow = el("div", "row lview");
     var advancedBtn = smallBtn("Advanced");
     advancedBtn.addEventListener("click", function () {
-      ed.view = "advanced";
-      stopPicking();
-      draw();
+      enterAdvanced();
     });
     viewRow.appendChild(advancedBtn);
 
@@ -841,19 +888,69 @@
     add(extraSec, rippleBox, hlBox, stBox);
     add(simpleBox, baseSec, extraSec);
 
-    // The advanced view: a container the advanced editor fills. Until then
-    // it says why the lighting opened here.
+    // The advanced view (lightadv.js), with why the lighting opened there
+    // and the way back to the simple view.
     var advBox = el("div", "ladv");
     var advReason = el("p", "lreason");
     var advBody = el("div", "ladv-body");
-    advBody.appendChild(el("p", "note", "The advanced view comes in a later version of Commander."));
+    var adv = A.create({
+      el: el,
+      keys: K,
+      info: function () {
+        return info;
+      },
+      light: function () {
+        return ed.draft && ed.draft.kind === "light" ? ed.draft.light : null;
+      },
+      names: function () {
+        return names;
+      },
+      edit: function (key, fn) {
+        if (ed.draft && ed.draft.kind === "light") {
+          edit(key, function (d) {
+            fn(d.light);
+          });
+        }
+      },
+      restack: function (fn) {
+        if (!ed.draft || ed.draft.kind !== "light") {
+          return;
+        }
+        fn(ed.draft.light);
+        // The errors named the layers by their place; those moved.
+        ed.errors = {};
+        ed.previewErrors = {};
+        changed();
+      },
+      clear: function () {
+        edit("", function (d) {
+          d.kind = "none";
+          d.simple = null;
+          d.light = null;
+        });
+      },
+      errors: function () {
+        var out = {};
+        Object.keys(ed.errors).concat(Object.keys(ed.previewErrors)).forEach(function (k) {
+          out[k] = errorsFor(k);
+        });
+        return out;
+      },
+      picking: function () {
+        return ed.picking;
+      },
+      startPicking: startPicking,
+      stopPicking: stopPicking,
+      redraw: function () {
+        draw();
+        paint();
+      }
+    });
+    advBody.appendChild(adv.node);
     var simpleRow = el("div", "row");
     var simpleBtn = smallBtn("Simple view");
     simpleBtn.addEventListener("click", function () {
-      if (ed.draft && ed.draft.kind === "simple") {
-        ed.view = "simple";
-        draw();
-      }
+      backToSimple();
     });
     var noSimple = el("p", "note", "This lighting does not fit the simple view.");
     add(simpleRow, simpleBtn, noSimple);
@@ -1129,6 +1226,7 @@
 
     function stopRecording() {
       toggleRec.stop(false);
+      adv.stopRecording();
     }
 
     // Picking keys on the picture.
@@ -1175,6 +1273,10 @@
         return;
       }
       var control = ed.picking;
+      if (adv.isKey(control)) {
+        adv.togglePick(control, i);
+        return;
+      }
       edit(control, function (d) {
         var item = itemOf(d.simple, control);
         if (item) {
@@ -1182,6 +1284,18 @@
         }
       });
     });
+
+    // pickedLeds is the set of LEDs the picture picks for now.
+    function pickedLeds() {
+      if (!ed.picking) {
+        return [];
+      }
+      if (adv.isKey(ed.picking)) {
+        return adv.pickedSet(ed.picking) || [];
+      }
+      var item = itemOf(simple(), ed.picking);
+      return item ? item.leds : [];
+    }
 
     // The preview: frames from Commander's lighting engine, looped.
 
@@ -1226,8 +1340,7 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, drawnWidth, geom.height);
       var frame = frames.length > 0 ? frames[frameAt % frames.length] : null;
-      var picked = ed.picking ? itemOf(simple(), ed.picking) : null;
-      var pickedSet = picked ? picked.leds : [];
+      var pickedSet = pickedLeds();
       var size = geom.unit * 0.82;
       var radius = geom.unit * 0.16;
       ledList().forEach(function (l) {
@@ -1286,7 +1399,10 @@
       var gen = frameGen;
       var profileGen = ed.gen;
       var forSimple = simple();
-      api.call("lightFrames", lightPayload(ed.draft, names)).then(function (res) {
+      var forLight = ed.draft.kind === "light" && ed.draft.light ? ed.draft.light.layers.length : -1;
+      var sent = lightPayload(ed.draft, names);
+      var sentKey = canonical(sent);
+      api.call("lightFrames", sent).then(function (res) {
         if (gen !== frameGen || profileGen !== ed.gen) {
           return;
         }
@@ -1294,10 +1410,12 @@
         setText(previewNote, "");
         previewNote.hidden = true;
         if (Array.isArray(res.errors) && res.errors.length > 0) {
-          ed.previewErrors = errorsByControl(res.errors, forSimple);
+          ed.fit = null;
+          ed.previewErrors = forLight >= 0 ? A.logic.errorsByLayer(res.errors, forLight) : errorsByControl(res.errors, forSimple);
           draw();
           return;
         }
+        ed.fit = { key: sentKey, simple: res.simple && typeof res.simple === "object" ? res.simple : null };
         ed.previewErrors = {};
         if (Array.isArray(res.frames)) {
           try {
@@ -1514,19 +1632,23 @@
         var d = ed.draft;
         var none = d.kind === "none";
         notSet.hidden = !none;
-        var advanced = !none && (d.kind === "light" || ed.view === "advanced");
+        var advanced = d.kind === "light";
         viewRow.hidden = none || advanced;
         simpleBox.hidden = none || advanced;
         advBox.hidden = !advanced;
-        if (d.kind === "simple" && !advanced) {
+        if (d.kind === "simple") {
           drawSimple(d.simple);
         }
         if (advanced) {
-          var reason = d.kind === "light" ? str(ed.saved.reason) : "";
+          // Why the saved stack opened here; empty when it fits the simple
+          // view.
+          var reason = ed.saved.simple ? "" : str(ed.saved.reason);
           setText(advReason, reason);
           advReason.hidden = !reason;
-          simpleBtn.hidden = d.kind !== "simple";
-          noSimple.hidden = d.kind === "simple";
+          adv.draw();
+          var fit = currentFit();
+          simpleBtn.disabled = !fit;
+          noSimple.hidden = !!fit;
         }
         storedSec.hidden = none;
         drawStored(d.stored);
@@ -1572,6 +1694,72 @@
       }
     }
 
+    // Between the views. The advanced view edits a stack; the simple view
+    // its own draft. Going to Advanced turns the simple draft into its
+    // stack: the saved one as Commander sent it when nothing was changed,
+    // else the one the simple view writes. Going back takes the simple view
+    // Commander found in the stack.
+
+    // lightBase is a saved draft as the advanced view compares with it: a
+    // simple one as its stack, as saved.
+    function lightBase(b) {
+      if (b.kind !== "simple" || !ed.saved || !ed.saved.light) {
+        return b;
+      }
+      return { kind: "light", simple: null, light: copy(ed.saved.light), stored: b.stored };
+    }
+
+    function enterAdvanced() {
+      var d = ed.draft;
+      if (!d || d.kind !== "simple") {
+        return;
+      }
+      stopPicking();
+      stopRecording();
+      var unchanged = ed.base && ed.base.kind === "simple" && ed.saved && ed.saved.light &&
+        canonical(lightPayload(d, names)) === canonical(lightPayload(ed.base, names));
+      var stack = unchanged ? copy(ed.saved.light) : simpleToLight(d.simple, names, info ? info.effects : []);
+      ed.base = lightBase(ed.base);
+      d.kind = "light";
+      d.light = stack;
+      d.simple = null;
+      ed.errors = {};
+      ed.previewErrors = {};
+      adv.reset();
+      changed();
+    }
+
+    // currentFit is the simple view of the draft as it is now, when the
+    // last lightFrames answer was for it and has one; else null.
+    function currentFit() {
+      if (!ed.fit || !ed.fit.simple || !ed.draft) {
+        return null;
+      }
+      return ed.fit.key === canonical(lightPayload(ed.draft, names)) ? ed.fit.simple : null;
+    }
+
+    function backToSimple() {
+      var fit = currentFit();
+      if (!fit || ed.draft.kind !== "light") {
+        return;
+      }
+      stopPicking();
+      stopRecording();
+      if (ed.base && ed.base.kind === "light" && ed.saved && ed.saved.simple) {
+        var b = fromSaved(ed.saved);
+        b.stored = ed.base.stored;
+        ed.base = b;
+      }
+      var layers = Array.isArray(ed.draft.light.layers) ? ed.draft.light.layers : [];
+      ed.errors = {};
+      ed.previewErrors = {};
+      edit("", function (d) {
+        d.kind = "simple";
+        d.simple = simpleFrom(fit, layers);
+        d.light = null;
+      });
+    }
+
     // Loading and saving
 
     function isDirty() {
@@ -1594,14 +1782,20 @@
         }
         var wasDirty = isDirty();
         var fresh = !ed.saved || ed.saved.version !== res.version;
+        // A player in the advanced view stays there, unless the lighting
+        // changed outside Commander and the draft follows it.
+        var stay = !!ed.draft && ed.draft.kind === "light" && (wasDirty || !fresh);
         ed.loadError = "";
         ed.saved = res;
         ed.base = fromSaved(res);
+        if (stay) {
+          ed.base = lightBase(ed.base);
+        }
         if (!wasDirty) {
           ed.draft = copy(ed.base);
           if (fresh) {
-            ed.view = ed.draft.kind === "light" ? "advanced" : "simple";
             ed.picking = "";
+            adv.reset();
           }
           askFrames();
         }
@@ -1631,7 +1825,6 @@
       ed.saved = null;
       ed.base = null;
       ed.draft = null;
-      ed.view = "simple";
       ed.loadError = "";
       ed.notes = [];
       ed.barError = "";
@@ -1639,6 +1832,8 @@
       ed.errors = {};
       ed.previewErrors = {};
       ed.picking = "";
+      ed.fit = null;
+      adv.reset();
       frames = [];
       frameAt = 0;
       draw();
@@ -1665,8 +1860,8 @@
       }
       stopRecording();
       ed.draft = copy(ed.base);
-      ed.view = ed.draft.kind === "light" ? "advanced" : "simple";
       ed.picking = "";
+      adv.reset();
       ed.changed = false;
       ed.errors = {};
       ed.previewErrors = {};
@@ -1678,8 +1873,8 @@
       ed.errors = byControl;
       ed.notes = [];
       ed.barError = "Not saved: the lighting needs a fix.";
-      if (ed.draft && ed.draft.kind === "simple") {
-        ed.view = "simple";
+      if (ed.draft && ed.draft.kind === "light") {
+        adv.showFirstError();
       }
       draw();
     }
@@ -1739,7 +1934,9 @@
           return false;
         }
         if (Array.isArray(res.errors) && res.errors.length > 0) {
-          showErrors(errorsByControl(res.errors, sent.kind === "simple" ? sent.simple : null));
+          showErrors(sent.kind === "light" && sent.light ?
+            A.logic.errorsByLayer(res.errors, sent.light.layers.length) :
+            errorsByControl(res.errors, sent.kind === "simple" ? sent.simple : null));
           return false;
         }
         ed.barError = api.plainError("Could not save", str(res.error) || "Commander did not say why");
