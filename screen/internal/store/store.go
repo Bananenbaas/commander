@@ -278,23 +278,8 @@ func SaveProfile(dir string, slot byte, bases map[string]string, e Edit) (Result
 		res.Change = Reload
 	}
 
-	w := newSaveWriter(abs)
-	for _, wr := range writes {
-		lossless := layoutLossless
-		if strings.HasPrefix(wr.Rel, "games/") {
-			lossless = gameLossless
-		}
-		b, err := w.backup(wr.Rel, lossless)
-		if err != nil {
-			return res, err
-		}
-		if b != "" {
-			res.Backups = append(res.Backups, b)
-		}
-		if err := w.put(wr.Rel, wr.Data); err != nil {
-			return res, err
-		}
-		res.Written = true
+	if err := commit(abs, writes, &res); err != nil {
+		return res, err
 	}
 	res.Version = version
 	return res, nil

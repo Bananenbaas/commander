@@ -105,15 +105,19 @@ func programBase(program string) string {
 	return program
 }
 
-// programSlug is the game file name for a program: lower case, every
-// character outside a-z, 0-9, - and _ replaced by -, "game" when empty.
-func programSlug(program string) string {
-	s := strings.Map(func(r rune) rune {
+// programSlug is the game file name for a program: slug of its file name
+// without folders and ".exe".
+func programSlug(program string) string { return slug(programBase(program)) }
+
+// slug is a game file name for s: lower case, every character outside a-z,
+// 0-9, - and _ replaced by -, "game" when empty.
+func slug(s string) string {
+	s = strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
 			return r
 		}
 		return '-'
-	}, strings.ToLower(programBase(program)))
+	}, strings.ToLower(s))
 	if s == "" {
 		return "game"
 	}
