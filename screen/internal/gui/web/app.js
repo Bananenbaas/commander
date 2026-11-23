@@ -126,8 +126,12 @@
     return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
   }
 
+  // profiles are the KB7 profiles by slot, as the keyboard has them.
   function profiles() {
-    return app.state && Array.isArray(app.state.profiles) ? app.state.profiles : [];
+    var list = app.state && Array.isArray(app.state.profiles) ? app.state.profiles : [];
+    return list.slice().sort(function (a, b) {
+      return a.number - b.number;
+    });
   }
 
   function games() {

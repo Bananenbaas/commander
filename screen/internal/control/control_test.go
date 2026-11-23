@@ -453,3 +453,22 @@ func TestDropEventsEmptiesTheQueue(t *testing.T) {
 		t.Fatal("no event after DropEvents")
 	}
 }
+
+func TestStateListsProfilesBySlot(t *testing.T) {
+	dir := writeFolder(t)
+	// File names in another order than the slots.
+	for name, body := range map[string]string{"a.toml": "profile = 3\n", "z.toml": "profile = 1\n"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := newService(t, (&fake{}).deps(dir))
+	s.SetState(running)
+	var got []float64
+	for _, p := range call(t, s, "state", "")["profiles"].([]any) {
+		got = append(got, p.(map[string]any)["number"].(float64))
+	}
+	if len(got) != 3 || got[0] != 0 || got[1] != 1 || got[2] != 3 {
+		t.Errorf("profiles in order %v, want 0 1 3", got)
+	}
+}

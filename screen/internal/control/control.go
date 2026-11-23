@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/Bananenbaas/commander/screen/internal/audio"
@@ -313,6 +314,8 @@ func (s *Service) state(st supervisor.State) stateInfo {
 			Buttons: len(p.Buttons), Lit: p.Light != nil,
 		})
 	}
+	// By slot, as the keyboard has them; the folder lists them by file name.
+	sort.SliceStable(out.Profiles, func(i, j int) bool { return out.Profiles[i].Number < out.Profiles[j].Number })
 	for _, g := range cfg.Games {
 		gi := gameInfo{ID: gameID(cfg, g), Name: g.Name, Program: g.Program, File: g.File}
 		if g.KB7 != nil {
