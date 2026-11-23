@@ -189,23 +189,26 @@ func TestFromApp(t *testing.T) {
 
 func TestPickOf(t *testing.T) {
 	cases := []struct {
-		raw string
-		id  int64
-		ok  bool
+		raw  string
+		id   int64
+		kind pickKind
+		ok   bool
 	}{
-		{`{"id":7,"call":"__pickPicture"}`, 7, true},
-		{`{"id":8,"call":"__pickPicture","args":null}`, 8, true},
-		{`{"id":9,"call":"__theme","args":"dark"}`, 0, false},
-		{`{"id":1,"call":"state"}`, 0, false},
-		{`{"id":1,"call":"__pickPictures"}`, 0, false},
-		{`{"id":1}`, 0, false},
-		{`{`, 0, false},
-		{``, 0, false},
+		{`{"id":7,"call":"__pickPicture"}`, 7, pickPNG, true},
+		{`{"id":8,"call":"__pickPicture","args":null}`, 8, pickPNG, true},
+		{`{"id":4,"call":"__pickProgram"}`, 4, pickEXE, true},
+		{`{"id":9,"call":"__theme","args":"dark"}`, 0, 0, false},
+		{`{"id":1,"call":"state"}`, 0, 0, false},
+		{`{"id":1,"call":"__pickPictures"}`, 0, 0, false},
+		{`{"id":1,"call":"__pickPrograms"}`, 0, 0, false},
+		{`{"id":1}`, 0, 0, false},
+		{`{`, 0, 0, false},
+		{``, 0, 0, false},
 	}
 	for _, c := range cases {
-		id, ok := pickOf(c.raw)
-		if id != c.id || ok != c.ok {
-			t.Errorf("pickOf(%s) = %d %v, want %d %v", c.raw, id, ok, c.id, c.ok)
+		id, kind, ok := pickOf(c.raw)
+		if id != c.id || kind != c.kind || ok != c.ok {
+			t.Errorf("pickOf(%s) = %d %v %v, want %d %v %v", c.raw, id, kind, ok, c.id, c.kind, c.ok)
 		}
 	}
 }

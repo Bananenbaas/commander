@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/Bananenbaas/commander/screen/internal/bridge"
 )
@@ -123,22 +124,67 @@ func fromApp(source string) bool {
 	return strings.HasPrefix(source, AppOrigin+"/")
 }
 
-// pickCall is the call the window answers itself with the file dialog.
-const pickCall = "__pickPicture"
+// pickKind says which file the player is asked for.
+type pickKind int
 
-// pickOf reports whether raw is the "__pickPicture" call and its page id.
-func pickOf(raw string) (id int64, ok bool) {
+const (
+	pickPNG pickKind = iota + 1 // "__pickPicture"
+	pickEXE                     // "__pickProgram"
+)
+
+// filter is the name shown in the dialog and the pattern it lists.
+func (k pickKind) filter() (name, pattern string) {
+	if k == pickEXE {
+		return "Programs (*.exe)", "*.exe"
+	}
+	return "PNG pictures (*.png)", "*.png"
+}
+
+// title is the dialog's caption.
+func (k pickKind) title() string {
+	if k == pickEXE {
+		return "Choose a program"
+	}
+	return "Choose a picture"
+}
+
+// pickOf reports whether raw is a "__pickPicture" or "__pickProgram" call,
+// with its page id and which file it asks for.
+func pickOf(raw string) (id int64, kind pickKind, ok bool) {
 	var pc struct {
 		ID   int64  `json:"id"`
 		Call string `json:"call"`
 	}
-	if json.Unmarshal([]byte(raw), &pc) != nil || pc.Call != pickCall {
-		return 0, false
+	if json.Unmarshal([]byte(raw), &pc) != nil {
+		return 0, 0, false
 	}
-	return pc.ID, true
+	switch pc.Call {
+	case "__pickPicture":
+		return pc.ID, pickPNG, true
+	case "__pickProgram":
+		return pc.ID, pickEXE, true
+	}
+	return 0, 0, false
 }
 
-// pathLine is the answer to a "__pickPicture" call; an empty path means the
+// pickGuard lets one file dialog be open at a time.
+type pickGuard struct{ busy atomic.Bool }
+
+// answer runs dialog and returns the line to post for the call. While a
+// dialog is open, another pick is answered at once with an empty path.
+func (g *pickGuard) answer(id int64, kind pickKind, dialog func(pickKind) (string, error)) string {
+	if !g.busy.CompareAndSwap(false, true) {
+		return pathLine(id, "")
+	}
+	defer g.busy.Store(false)
+	path, err := dialog(kind)
+	if err != nil {
+		return errorLine(id, err.Error())
+	}
+	return pathLine(id, path)
+}
+
+// pathLine is the answer to a pick call; an empty path means the
 // player cancelled.
 func pathLine(id int64, path string) string {
 	b, err := json.Marshal(struct {

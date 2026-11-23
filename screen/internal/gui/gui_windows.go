@@ -148,6 +148,7 @@ type window struct {
 	opts   Options
 	client *bridge.Client
 	ctx    context.Context
+	picks  pickGuard
 
 	hwnd      uintptr
 	inst      uintptr
@@ -441,13 +442,8 @@ func (w *window) fromPage(msg string) {
 		setDarkTitleBar(w.hwnd, dark)
 		return
 	}
-	if id, ok := pickOf(msg); ok {
-		path, err := w.pickPicture()
-		if err != nil {
-			w.enqueue(errorLine(id, err.Error()), true)
-			return
-		}
-		w.enqueue(pathLine(id, path), true)
+	if id, kind, ok := pickOf(msg); ok {
+		w.enqueue(w.picks.answer(id, kind, w.pickFile), true)
 		return
 	}
 	go func() { w.enqueue(Relay(w.ctx, w.client, msg), true) }()

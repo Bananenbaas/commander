@@ -54,21 +54,22 @@ type openFileName struct {
 	flagsEx           uint32
 }
 
-// pngFilter is the double-NUL terminated filter list.
-func pngFilter() []uint16 {
+// filterList is the double-NUL terminated filter list of a kind.
+func filterList(kind pickKind) []uint16 {
 	var f []uint16
-	for _, s := range []string{"PNG pictures (*.png)", "*.png"} {
+	name, pattern := kind.filter()
+	for _, s := range []string{name, pattern} {
 		f = append(f, windows.StringToUTF16(s)...) // keeps the NUL after each
 	}
 	return append(f, 0)
 }
 
-// pickPicture shows the open-file dialog owned by the window and returns the
+// pickFile shows the open-file dialog owned by the window and returns the
 // chosen path, or "" when the player cancelled. It runs on the window thread.
-func (w *window) pickPicture() (string, error) {
-	filter := pngFilter()
+func (w *window) pickFile(kind pickKind) (string, error) {
+	filter := filterList(kind)
 	file := make([]uint16, pickBufLen)
-	title, err := windows.UTF16PtrFromString("Choose a picture")
+	title, err := windows.UTF16PtrFromString(kind.title())
 	if err != nil {
 		return "", err
 	}
