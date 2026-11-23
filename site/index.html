@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Commander: your keyboard, your way</title>
-<meta name="description" content="Commander is an open-source tool for using a keyboard without its maker's software. It starts with the Turtle Beach KB7: your own touchscreen buttons and layered RGB lighting, without Swarm II. Beta, Windows.">
+<meta name="description" content="Commander is an open-source tool for using a keyboard without its maker's software. It starts with the Turtle Beach KB7: your own touchscreen buttons, layered RGB lighting and a profile per game, without Swarm II. Beta, Windows.">
 <link rel="canonical" href="https://commander.work/">
 <link rel="icon" type="image/png" href="img/helmet-256.png">
 <meta name="theme-color" content="#080c18" media="(prefers-color-scheme: dark)">
@@ -48,8 +48,8 @@
     <p class="lead">
       Commander is an open-source tool for using a keyboard without its
       maker's software. It starts with one keyboard, the Turtle Beach Command
-      Series KB7: your own buttons on its touchscreen and layered RGB
-      lighting, without Swarm II running.
+      Series KB7: your own buttons on its touchscreen, layered RGB lighting
+      and a profile per game, set up in one window, without Swarm II running.
     </p>
     <p class="actions">
       <a class="btn primary" href="https://github.com/Bananenbaas/commander/releases" rel="noopener noreferrer">Get the beta on GitHub</a>
@@ -132,28 +132,28 @@
   <h2 id="today-h">What works today, on the KB7</h2>
   <dl class="features">
     <div>
+      <dt>A window for everything</dt>
+      <dd>Open Commander from the tray icon and set up buttons, lighting, game profiles and the keyboard's own profiles. Changes stay a draft until you press Save; Commander checks them first and then puts them on the keyboard. The window needs the WebView2 runtime, which Windows 11 has.</dd>
+    </div>
+    <div>
       <dt>Touchscreen buttons</dt>
-      <dd>Twelve positions on the screen, per keyboard profile. Use your own PNG pictures or the built-in style: a coloured frame, an optional symbol and a title.</dd>
+      <dd>Buttons on the pages of the keyboard's touchscreen, up to twelve to a page, per keyboard profile. Use your own PNG pictures or the built-in style: a coloured frame, an optional symbol and a title.</dd>
     </div>
     <div>
       <dt>Actions on your PC</dt>
-      <dd>A button presses a key or a combination, plays a sequence with pauses, starts a program, or opens a website, file or folder. Buttons can tap, hold, or act only after a long press.</dd>
+      <dd>A button presses a key or a combination, plays a sequence with pauses, starts a program, or opens a website, file or folder. Record the keys instead of typing them. Buttons can tap, hold, or act only after a long press.</dd>
     </div>
     <div>
-      <dt>A profile per program</dt>
-      <dd>Each of the keyboard's five profiles can have its own layout. The keyboard switches to a profile while a program you name is running, for example a game.</dd>
+      <dt>A profile per game</dt>
+      <dd>Make a game profile, pick its program and choose which of the keyboard's five profiles it gets. The keyboard switches when the game starts and goes back to Desktop when it closes.</dd>
     </div>
     <div>
       <dt>Layered lighting</dt>
-      <dd>Stack effects on the 112 LEDs: <code>static</code>, <code>wave</code> and <code>breathing</code> as a base, a <code>ripple</code> from each key press, and <code>fixed</code> keys on top.</dd>
+      <dd>Pick one colour, a wave or breathing, add a ripple from each key press and highlight keys, with a live preview. An advanced view gives the whole stack of layers on the 112 LEDs.</dd>
     </div>
     <div>
-      <dt>Keys that show a state</dt>
-      <dd>A <code>state</code> layer lights keys while an on/off switch is on, such as landing gear. A key chord or a screen button flips it.</dd>
-    </div>
-    <div>
-      <dt>A tray icon, no terminal</dt>
-      <dd>Commander keeps it all running from the Windows notification area: reload the configuration, apply the buttons, start with Windows, and quit cleanly.</dd>
+      <dt>Plain files underneath</dt>
+      <dd>Everything the window saves is a readable text file in a folder you choose. Edit it by hand if you like. Commander saves files in its own form, without comments, so it first puts a copy of a file you wrote yourself in a backup folder.</dd>
     </div>
   </dl>
 </section>
