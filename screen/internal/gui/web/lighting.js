@@ -305,65 +305,6 @@
     return out;
   }
 
-  // simpleToLight is the stack the simple view writes, bottom first, as
-  // deviceLight gives stacks; it follows Commander's own translation, with
-  // settings at their default left out. effects is lightingInfo's list.
-  function simpleToLight(s, names, effects) {
-    var p = simplePayload(s, names || {});
-    var layers = [];
-    function push(effect, settings, item) {
-      var spec = (Array.isArray(effects) ? effects : []).filter(function (e) {
-        return e && e.name === effect;
-      })[0];
-      if (spec) {
-        A.logic.dropDefaults(settings, spec);
-      }
-      layers.push({
-        effect: effect, enabled: true, keys: item ? keysOf(item, names || {}) : [],
-        leds: item ? ledSet(item.leds) : [], settings: settings
-      });
-    }
-    if (p.base === "off") {
-      push("static", { color: "#000000" });
-    } else if (p.base === "static") {
-      push("static", p.colors.length > 0 ? { color: p.colors[0] } : {});
-    } else if (p.base === "wave") {
-      var wave = { colors: p.colors };
-      if (p.speed) {
-        wave.speed = p.speed;
-      }
-      if (p.direction) {
-        wave.direction = p.direction.toLowerCase();
-      }
-      push("wave", wave);
-    } else if (p.base === "breathing") {
-      var breath = {};
-      if (p.colors.length > 0) {
-        breath.colors = p.colors;
-      }
-      if (p.period) {
-        breath.period = A.logic.formatSeconds(p.period);
-      }
-      push("breathing", breath);
-    }
-    if (p.ripple) {
-      var cs = p.ripple.colors;
-      push("ripple", cs.length === 1 ? { color: cs[0] } : (cs.length > 1 ? { colors: cs } : {}));
-    }
-    if (p.highlight) {
-      push("fixed", { color: p.highlight.color }, s.highlight);
-    }
-    p.states.forEach(function (st, i) {
-      var m = { name: st.name };
-      if (st.toggle) {
-        m.toggle = st.toggle;
-      }
-      m.color = st.color;
-      push("state", m, s.states[i]);
-    });
-    return { fps: 0, layers: layers };
-  }
-
   // lightPayload is the lighting part of a call: exactly one of simple and
   // light, where a light of null is no lighting.
   function lightPayload(draft, names) {
@@ -540,7 +481,7 @@
     speedToSlider: speedToSlider, sliderToSpeed: sliderToSpeed,
     periodToSlider: periodToSlider, sliderToPeriod: sliderToPeriod,
     fromSaved: fromSaved, newSimple: newSimple, switchBase: switchBase, newState: newState,
-    keysOf: keysOf, simplePayload: simplePayload, simpleToLight: simpleToLight, lightPayload: lightPayload,
+    keysOf: keysOf, simplePayload: simplePayload, lightPayload: lightPayload,
     storedPayload: storedPayload, storedChanged: storedChanged, differs: differs,
     controlsOf: controlsOf, errorsByControl: errorsByControl, pageChecks: pageChecks,
     saveNotes: saveNotes, decodeFrame: decodeFrame, boardGeometry: boardGeometry, ledAt: ledAt
@@ -564,7 +505,9 @@
       errors: {}, // control -> [message], from the last save or the page's checks
       previewErrors: {}, // control -> [message], from the last lightFrames answer
       picking: "", // the control whose keys the picture picks, or ""
-      fit: null, // {key, simple}: the simple view of the draft lightFrames last showed
+      fit: null, // {key, simple, light}: lightFrames' last answer, for the draft key
+      toAdvanced: "", // the draft key waiting for its stack to open in Advanced
+      reloading: false, // a save went through and its reload has not answered yet
       gen: 0, // counts profile loads, so an overtaken answer is ignored
       wasDirty: false
     };
@@ -1411,11 +1354,20 @@
         previewNote.hidden = true;
         if (Array.isArray(res.errors) && res.errors.length > 0) {
           ed.fit = null;
+          ed.toAdvanced = ""; // the errors show in the simple view
           ed.previewErrors = forLight >= 0 ? A.logic.errorsByLayer(res.errors, forLight) : errorsByControl(res.errors, forSimple);
           draw();
           return;
         }
-        ed.fit = { key: sentKey, simple: res.simple && typeof res.simple === "object" ? res.simple : null };
+        ed.fit = {
+          key: sentKey,
+          simple: res.simple && typeof res.simple === "object" ? res.simple : null,
+          light: res.light && typeof res.light === "object" ? res.light : null
+        };
+        if (ed.toAdvanced && ed.toAdvanced === sentKey) {
+          ed.toAdvanced = "";
+          openAdvanced(res.light && typeof res.light === "object" ? copy(res.light) : null);
+        }
         ed.previewErrors = {};
         if (Array.isArray(res.frames)) {
           try {
@@ -1435,7 +1387,9 @@
         if (gen !== frameGen || profileGen !== ed.gen) {
           return;
         }
+        ed.toAdvanced = "";
         showErr(previewNote, [api.plainError("Cannot show the preview", err)]);
+        draw();
       });
     }
 
@@ -1634,6 +1588,7 @@
         notSet.hidden = !none;
         var advanced = d.kind === "light";
         viewRow.hidden = none || advanced;
+        advancedBtn.disabled = switching() || !!ed.toAdvanced;
         simpleBox.hidden = none || advanced;
         advBox.hidden = !advanced;
         if (d.kind === "simple") {
@@ -1647,7 +1602,7 @@
           advReason.hidden = !reason;
           adv.draw();
           var fit = currentFit();
-          simpleBtn.disabled = !fit;
+          simpleBtn.disabled = !fit || switching();
           noSimple.hidden = !!fit;
         }
         storedSec.hidden = none;
@@ -1677,6 +1632,7 @@
         return;
       }
       fn(ed.draft);
+      ed.toAdvanced = ""; // a stack asked for the draft before is no longer it
       delete ed.errors[control];
       // What the keyboard shows without Commander is not in the preview.
       changed(control !== "stored");
@@ -1709,18 +1665,49 @@
       return { kind: "light", simple: null, light: copy(ed.saved.light), stored: b.stored };
     }
 
+    // switching is whether the views cannot be switched now: while a save
+    // and its reload run, the saved stack is not the one on disk yet.
+    function switching() {
+      return !!ed.saving || ed.reloading;
+    }
+
+    // enterAdvanced opens the simple draft in the advanced view: unchanged,
+    // as the saved stack; else as the stack Commander writes for it, from
+    // the last lightFrames answer for the draft or from one asked for now.
     function enterAdvanced() {
       var d = ed.draft;
-      if (!d || d.kind !== "simple") {
+      if (!d || d.kind !== "simple" || switching()) {
         return;
       }
       stopPicking();
       stopRecording();
       var unchanged = ed.base && ed.base.kind === "simple" && ed.saved && ed.saved.light &&
         canonical(lightPayload(d, names)) === canonical(lightPayload(ed.base, names));
-      var stack = unchanged ? copy(ed.saved.light) : simpleToLight(d.simple, names, info ? info.effects : []);
+      if (unchanged) {
+        openAdvanced(copy(ed.saved.light));
+        return;
+      }
+      var fit = fitNow();
+      if (fit) {
+        openAdvanced(fit.light ? copy(fit.light) : null);
+        return;
+      }
+      if (!info) {
+        return; // lightFrames needs lightingInfo first
+      }
+      ed.toAdvanced = canonical(lightPayload(d, names));
+      draw();
+      askFrames();
+    }
+
+    // openAdvanced makes stack the draft; null is no lighting.
+    function openAdvanced(stack) {
+      var d = ed.draft;
+      if (!d || d.kind !== "simple" || switching()) {
+        return;
+      }
       ed.base = lightBase(ed.base);
-      d.kind = "light";
+      d.kind = stack ? "light" : "none";
       d.light = stack;
       d.simple = null;
       ed.errors = {};
@@ -1729,18 +1716,25 @@
       changed();
     }
 
+    // fitNow is lightFrames' last answer when it was for the draft as it is
+    // now; else null.
+    function fitNow() {
+      if (!ed.fit || !ed.draft) {
+        return null;
+      }
+      return ed.fit.key === canonical(lightPayload(ed.draft, names)) ? ed.fit : null;
+    }
+
     // currentFit is the simple view of the draft as it is now, when the
     // last lightFrames answer was for it and has one; else null.
     function currentFit() {
-      if (!ed.fit || !ed.fit.simple || !ed.draft) {
-        return null;
-      }
-      return ed.fit.key === canonical(lightPayload(ed.draft, names)) ? ed.fit.simple : null;
+      var fit = fitNow();
+      return fit ? fit.simple : null;
     }
 
     function backToSimple() {
       var fit = currentFit();
-      if (!fit || ed.draft.kind !== "light") {
+      if (!fit || ed.draft.kind !== "light" || switching()) {
         return;
       }
       stopPicking();
@@ -1833,6 +1827,8 @@
       ed.previewErrors = {};
       ed.picking = "";
       ed.fit = null;
+      ed.toAdvanced = "";
+      ed.reloading = false;
       adv.reset();
       frames = [];
       frameAt = 0;
@@ -1921,9 +1917,16 @@
           ed.saved.version = str(res.version);
           ed.base = copy(sent);
           ed.notes = saveNotes(res);
+          // The lighting as written. Until it is read, the views stay as
+          // they are: the saved stack is not the new one yet.
+          ed.reloading = true;
           draw();
-          // The lighting as written.
-          load();
+          load().then(function () {
+            if (gen === ed.gen) {
+              ed.reloading = false;
+              draw();
+            }
+          });
           return true;
         }
         if (res.changed) {

@@ -179,43 +179,6 @@
       settings[name] !== null && settings[name] !== undefined;
   }
 
-  // sameAsDefault tells whether v is the setting's default: numbers by
-  // value, durations by length, colours and the rest regardless of case.
-  function sameAsDefault(setting, v) {
-    var d = setting.default;
-    if (d === null || d === undefined) {
-      return false;
-    }
-    if (setting.kind === "number") {
-      return typeof v === "number" && typeof d === "number" && v === d;
-    }
-    if (setting.kind === "duration") {
-      var a = parseDuration(v);
-      var b = parseDuration(d);
-      return isFinite(a) && isFinite(b) && a >= 0 && Math.round(a * 1e9) === Math.round(b * 1e9);
-    }
-    if (setting.kind === "colors") {
-      if (!Array.isArray(v) || !Array.isArray(d) || v.length !== d.length) {
-        return false;
-      }
-      return v.every(function (c, i) {
-        return typeof c === "string" && c.toUpperCase() === str(d[i]).toUpperCase();
-      });
-    }
-    return typeof v === "string" && typeof d === "string" && v.trim().toLowerCase() === d.toLowerCase();
-  }
-
-  // dropDefaults takes the settings that equal their default out of a
-  // layer's settings, in place.
-  function dropDefaults(settings, spec) {
-    settingsOf(spec).forEach(function (st) {
-      if (given(settings, st.name) && sameAsDefault(st, settings[st.name])) {
-        delete settings[st.name];
-      }
-    });
-    return settings;
-  }
-
   // newLayer is a new layer of an effect, on and everywhere, with a colour
   // for each colour setting it must have.
   function newLayer(spec) {
@@ -371,7 +334,7 @@
   var logic = {
     effectName: effectName, settingLabel: settingLabel, displayOrder: displayOrder,
     moveLayer: moveLayer, parseDuration: parseDuration, formatSeconds: formatSeconds,
-    fieldOf: fieldOf, sameAsDefault: sameAsDefault, dropDefaults: dropDefaults,
+    fieldOf: fieldOf,
     newLayer: newLayer, pickLed: pickLed, showEverywhere: showEverywhere, payload: payload,
     layerKey: layerKey, settingKey: settingKey, parseKey: parseKey,
     errorsByLayer: errorsByLayer, layersWithErrors: layersWithErrors

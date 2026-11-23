@@ -415,7 +415,9 @@ func (s *Service) lightFrames(args json.RawMessage) (any, error) {
 			frames = append(frames, base64.StdEncoding.EncodeToString(buf.Bytes()))
 		}
 	}
-	return map[string]any{"frames": frames, "simple": simple}, nil
+	// The stack as deviceLight gives it, so the window's advanced view
+	// starts from Commander's own translation of a simple draft.
+	return map[string]any{"frames": frames, "simple": simple, "light": toLightJSON(f.Light)}, nil
 }
 
 // saveProfile is store.SaveProfile; tests replace it.

@@ -439,6 +439,19 @@ func TestLightFrames(t *testing.T) {
 	if len(b) != 336 || b[0] != 0 || b[1] != 0xFF || b[2] != 0 {
 		t.Errorf("simple green: % X", b[:3])
 	}
+	// The stack Commander writes for a simple draft, as deviceLight gives it.
+	m = call(t, s, "lightFrames", `{"simple":{"base":"breathing","colors":["#00FF00"],"period":1.2345,"highlight":{"keys":["W"],"color":"#FFFFFF"}}}`)
+	lj, _ := m["light"].(map[string]any)
+	layers, _ := lj["layers"].([]any)
+	if len(layers) != 2 {
+		t.Fatalf("light of a simple draft: %v", m["light"])
+	}
+	if st := layers[0].(map[string]any)["settings"].(map[string]any); st["period"] != "1.2345s" || st["colors"].([]any)[0] != "#00FF00" {
+		t.Errorf("breathing settings %v", st)
+	}
+	if hl := layers[1].(map[string]any); hl["effect"] != "fixed" || len(hl["leds"].([]any)) != 1 {
+		t.Errorf("highlight layer %v", hl)
+	}
 
 	// A broken draft is an answer with errors.
 	m = call(t, s, "lightFrames", `{"light":{"layers":[{"effect":"static","settings":{"color":"#FF0000"}},{"effect":"wave","settings":{"colors":["#FF0000"]}}]}}`)
