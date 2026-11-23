@@ -132,13 +132,14 @@ var pageFiles = []string{
 	"buttons.js",
 	"lightadv.js",
 	"lighting.js",
+	"games.js",
 	"BarlowCondensed-SemiBold.ttf",
 	"OFL.txt",
 	"helmet-256.png",
 }
 
 // textPages are the pages written by hand, checked for their content.
-var textPages = []string{"index.html", "app.css", "app.js", "keys.js", "buttons.js", "lightadv.js", "lighting.js"}
+var textPages = []string{"index.html", "app.css", "app.js", "keys.js", "buttons.js", "lightadv.js", "lighting.js", "games.js"}
 
 func page(t *testing.T, name string) string {
 	t.Helper()
@@ -186,7 +187,7 @@ func TestPagesHaveCSP(t *testing.T) {
 	if regexp.MustCompile(`\son[a-z]+=`).MatchString(html) {
 		t.Errorf("index.html has an inline event handler")
 	}
-	for _, want := range []string{`<link rel="stylesheet" href="app.css">`, `<script src="keys.js" defer>`, `<script src="buttons.js" defer>`, `<script src="lightadv.js" defer>`, `<script src="lighting.js" defer>`, `<script src="app.js" defer>`} {
+	for _, want := range []string{`<link rel="stylesheet" href="app.css">`, `<script src="keys.js" defer>`, `<script src="buttons.js" defer>`, `<script src="lightadv.js" defer>`, `<script src="lighting.js" defer>`, `<script src="games.js" defer>`, `<script src="app.js" defer>`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("index.html lacks %s", want)
 		}
@@ -214,6 +215,7 @@ func TestPagesHaveSPDX(t *testing.T) {
 		"buttons.js":  "/* SPDX-License-Identifier: GPL-2.0-or-later */",
 		"lightadv.js": "/* SPDX-License-Identifier: GPL-2.0-or-later */",
 		"lighting.js": "/* SPDX-License-Identifier: GPL-2.0-or-later */",
+		"games.js":    "/* SPDX-License-Identifier: GPL-2.0-or-later */",
 	}
 	for name, line := range want {
 		first, _, _ := strings.Cut(page(t, name), "\n")
@@ -224,7 +226,7 @@ func TestPagesHaveSPDX(t *testing.T) {
 }
 
 func TestPagesUseNoUnsafeDOM(t *testing.T) {
-	for _, name := range []string{"app.js", "keys.js", "buttons.js", "lightadv.js", "lighting.js"} {
+	for _, name := range []string{"app.js", "keys.js", "buttons.js", "lightadv.js", "lighting.js", "games.js"} {
 		js := page(t, name)
 		for _, bad := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "window.open", "eval(", "new Function", "_blank", "alert(", "confirm(", "prompt("} {
 			if strings.Contains(js, bad) {

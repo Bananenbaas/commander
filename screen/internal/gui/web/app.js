@@ -18,7 +18,7 @@
     settingsError: "",
     update: null,
     updateError: "",
-    page: "kb7", // "kb7", "desktop", "game:<index>", "settings", "updates"
+    page: "kb7", // "kb7", "desktop", "game:<id>", "new", "settings", "updates"
     tab: "buttons",
     kb7Profile: -1, // the KB7 profile the Buttons tab shows
     leaving: null, // what to do once the unsaved-changes question is answered
@@ -322,11 +322,7 @@
         }
         render();
       };
-      if (app.page === "kb7") {
-        whenSaved(go);
-      } else {
-        go();
-      }
+      whenSaved(go);
     });
     return b;
   }
@@ -339,8 +335,9 @@
     kids.push(navItem("desktop", str(desk.name) || "Desktop", "default"));
     var active = activeGame();
     games().forEach(function (g, i) {
-      kids.push(navItem("game:" + i, gameName(g), i === active ? "active" : ""));
+      kids.push(navItem("game:" + str(g.id), gameName(g), i === active ? "active" : ""));
     });
+    kids.push(navItem("new", "+ New", ""));
 
     kids.push(el("h2", "", "Devices"));
     var kb = keyboard();
@@ -375,15 +372,28 @@
   var buttonsPanel = el("div", "tabpanel");
   var lighting = null;
   var lightingPanel = el("div", "tabpanel");
+  // The game profile pages share one editor the same way.
+  var game = null;
 
-  // editors are the editors there are, with the tab each sits in.
-  function editors() {
+  // kb7Editors are the KB7 page's editors there are, with the tab each sits
+  // in.
+  function kb7Editors() {
     var out = [];
     if (editor) {
-      out.push({ ed: editor, tab: "buttons", panel: buttonsPanel });
+      out.push({ ed: editor, tab: "buttons", panel: buttonsPanel, label: "Buttons" });
     }
     if (lighting) {
-      out.push({ ed: lighting, tab: "lighting", panel: lightingPanel });
+      out.push({ ed: lighting, tab: "lighting", panel: lightingPanel, label: "Lighting" });
+    }
+    return out;
+  }
+
+  // editors are all the editors there are. Only the page shown can have
+  // changes: leaving a page asks first.
+  function editors() {
+    var out = kb7Editors();
+    if (game) {
+      out.push({ ed: game, tab: "", panel: null, label: "Game profile" });
     }
     return out;
   }
@@ -420,16 +430,11 @@
     }
   }
 
-  // unsavedText names the tabs with changes, so Discard says what it drops.
+  // unsavedText names the editors with changes, so Discard says what it
+  // drops.
   function unsavedText() {
     var names = dirtyEditors().map(function (e) {
-      var label = e.tab;
-      tabs.forEach(function (t) {
-        if (t.id === e.tab) {
-          label = t.label;
-        }
-      });
-      return label;
+      return e.label;
     });
     if (names.length === 0) {
       return "You have unsaved changes.";
@@ -453,9 +458,9 @@
       var go = app.leaving;
       app.busy["ask:save"] = true;
       render();
-      // Each tab with changes saves in turn; the first that does not go
+      // Each editor with changes saves in turn; the first that does not go
       // through stops the way out.
-      var failed = "";
+      var failed = null;
       dirtyEditors().reduce(function (p, e) {
         return p.then(function () {
           if (failed) {
@@ -463,7 +468,7 @@
           }
           return e.ed.save().then(function (ok) {
             if (!ok) {
-              failed = e.tab;
+              failed = e;
             }
           });
         });
@@ -474,9 +479,9 @@
           go();
           return;
         }
-        // That tab says why.
-        if (failed) {
-          app.tab = failed;
+        // That editor says why.
+        if (failed && failed.tab) {
+          app.tab = failed.tab;
         }
         render();
       });
@@ -552,7 +557,7 @@
       if (!(dirtyEditors().length > 0 && app.kb7Profile >= 0)) {
         app.kb7Profile = shown;
       }
-      editors().forEach(function (e) {
+      kb7Editors().forEach(function (e) {
         e.ed.show(app.kb7Profile);
       });
     }
@@ -578,7 +583,7 @@
         }
         whenSaved(function () {
           app.kb7Profile = p.number;
-          editors().forEach(function (e) {
+          kb7Editors().forEach(function (e) {
             e.ed.show(p.number);
           });
           render();
@@ -645,7 +650,7 @@
     out.push(bar);
     var panel;
     var shownEditor = null;
-    editors().forEach(function (e) {
+    kb7Editors().forEach(function (e) {
       if (e.tab === app.tab) {
         shownEditor = e;
       }
@@ -671,40 +676,74 @@
     return out;
   }
 
-  function kb7Line(n) {
-    if (typeof n !== "number" || n < 0) {
-      return "KB7: does not switch";
+  // pageOf is the page of the game with this id: "desktop", a game's id,
+  // or "" for a new one.
+  function pageOf(id) {
+    if (id === "desktop") {
+      return "desktop";
     }
-    return "KB7: " + profileLabel(n) + " (slot " + (n + 1) + ")";
+    return id === "" ? "new" : "game:" + id;
   }
 
-  function gamePage(name, when, kb7) {
-    var out = head(name, when);
-    var sec = el("section", "section");
-    sec.appendChild(el("h2", "", "What each device does"));
-    var card = el("div", "card");
-    if (app.state && str(app.state.loadError)) {
-      // The profiles are unknown: claim none.
-      card.appendChild(el("p", "note error", "The configuration could not be read, so what this profile does is not known."));
-    } else {
-      var list = el("ul", "devices");
-      list.appendChild(el("li", "", kb7Line(kb7)));
-      card.appendChild(list);
+  // gameIdOf is the id of the game a page shows, or null when it shows
+  // none. A game's page stays while the editor holds that game, so a save
+  // that gives it a new id, or a state event that has not caught up, does
+  // not close it.
+  function gameIdOf(page) {
+    if (page === "desktop") {
+      return "desktop";
     }
-    sec.appendChild(card);
-    out.push(sec);
+    if (page === "new") {
+      return "";
+    }
+    if (page.indexOf("game:") !== 0) {
+      return null;
+    }
+    var id = page.slice(5);
+    var known = games().some(function (g) {
+      return str(g.id) === id;
+    });
+    return known || (game && game.shows() === id) ? id : null;
+  }
+
+  function gamePage(id) {
+    if (!game) {
+      return [el("p", "note error", "The game profile pages could not be loaded.")];
+    }
+    game.show(id);
+    var out = [game.head];
+    if (app.leaving) {
+      out.push(unsavedQuestion());
+    }
+    out.push(game.node);
     return out;
   }
 
-  function desktopPage() {
-    var desk = (app.state && app.state.desktop) || {};
-    return gamePage(str(desk.name) || "Desktop", "Shown when no game runs", desk.kb7);
+  // openProfile opens the KB7 page on the Buttons tab of profile n, for
+  // the Edit link of a game profile.
+  function openProfile(n) {
+    whenSaved(function () {
+      app.page = "kb7";
+      app.tab = "buttons";
+      app.kb7Profile = n;
+      main.scrollTop = 0;
+      render();
+    });
   }
 
-  function gameProfilePage(i) {
-    var g = games()[i];
-    var when = str(g.program) ? "Switches when " + g.program + " is running" : "Has no program to switch on";
-    return gamePage(gameName(g), when, g.kb7);
+  // gameSaved follows a game whose save gave it another id.
+  function gameSaved(oldId, newId) {
+    if (app.page === pageOf(oldId)) {
+      app.page = pageOf(newId);
+    }
+    render();
+  }
+
+  function gameDeleted() {
+    app.leaving = null;
+    app.page = "desktop";
+    main.scrollTop = 0;
+    render();
   }
 
   // settingsGen and updateGen count the answers that set app.settings and
@@ -924,10 +963,8 @@
     var out;
     if (!app.state) {
       out = [el("p", "note error", app.stateError ? plainError("Commander did not answer", app.stateError) : "Connecting to Commander")];
-    } else if (page === "desktop") {
-      out = desktopPage();
-    } else if (page.indexOf("game:") === 0 && games()[Number(page.slice(5))]) {
-      out = gameProfilePage(Number(page.slice(5)));
+    } else if (gameIdOf(page) !== null) {
+      out = gamePage(gameIdOf(page));
     } else if (page === "settings") {
       out = settingsPage();
     } else if (page === "updates") {
@@ -940,7 +977,7 @@
     replaceKeeping(main, out);
     main.scrollTop = top;
     // Keys are recorded only while their tab is shown.
-    editors().forEach(function (e) {
+    kb7Editors().forEach(function (e) {
       if (out.indexOf(e.panel) < 0) {
         e.ed.stopRecording();
       }
@@ -1006,6 +1043,12 @@
   if (window.CommanderLighting) {
     lighting = window.CommanderLighting.create({
       call: call, el: el, str: str, plainError: plainError, onDirtyChange: onDirtyChange
+    });
+  }
+  if (window.CommanderGames) {
+    game = window.CommanderGames.create({
+      call: call, el: el, plainError: plainError, onDirtyChange: onDirtyChange,
+      onSaved: gameSaved, onDeleted: gameDeleted, openProfile: openProfile
     });
   }
   window.addEventListener("focus", function () {

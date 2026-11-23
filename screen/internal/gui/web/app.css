@@ -1227,6 +1227,30 @@ button.chip:hover { color: var(--text); }
 
 .offer p { margin: 0 0 12px; }
 
+/* Game profile pages */
+
+.gedit .bbar { margin-top: 18px; max-width: 640px; }
+
+.gname { width: 100%; max-width: 360px; }
+
+.gprogram { flex: 1 1 220px; min-width: 0; }
+
+.gdevice-name {
+  min-width: 48px;
+  font: 600 17px var(--display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.gline {
+  margin: 18px 0 0;
+  color: var(--text-muted);
+}
+
+.gacts { margin-top: 22px; }
+
+.gedit .banner.ask { max-width: 640px; }
+
 @media (prefers-reduced-motion: no-preference) {
   .nav-item, .tab, .seg button, .btn::before, .track, .knob {
     transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease, left 0.12s ease;
