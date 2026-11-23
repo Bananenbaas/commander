@@ -6,10 +6,6 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Changed
-- The project site describes Commander's window: its introduction and the
-  list of what works today.
-
 ## [0.1.0-beta.8] - 2026-11-23
 
 Commander now has a window ("Open Commander" in the tray menu) where
@@ -92,6 +88,17 @@ runtime that Windows 11 has.
 ### Changed
 - When two game programs run, the one started last now decides the profile
   (before: the lowest profile).
+- The project site describes Commander's window: its introduction and the
+  list of what works today.
+
+### Known limits
+- The window refuses more than 15 different pictures. Slots 1 to 15 were seen
+  taking pictures; whether the keyboard holds more has not been measured.
+- A save that changes buttons takes the keyboard 15 to 25 seconds, and the
+  keyboard visibly goes through its profiles while it is written.
+- A symbol is chosen as a PNG file; the window has no built-in set of symbols.
+- Saving two tabs at once and noticing files changed outside Commander were
+  checked with tests and in a browser, not yet on a keyboard.
 
 ## [0.1.0-beta.7] - 2026-11-22
 
