@@ -6,6 +6,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- The project site describes Commander's window: its introduction and the
+  list of what works today.
+
 ## [0.1.0-beta.8] - 2026-11-23
 
 Commander now has a window ("Open Commander" in the tray menu) where
