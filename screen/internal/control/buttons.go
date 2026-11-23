@@ -314,22 +314,13 @@ func (s *Service) saveAnswer(call, changed string, res store.Result, err error, 
 			return out
 		}
 		s.logf("control: %s: %v", call, err)
-		if res.Written && s.d.Reload != nil {
+		if res.Written {
 			// Some files changed: the running configuration is stale.
-			s.d.Reload()
+			s.changed(store.Reload)
 		}
 		return map[string]any{"ok": false, "error": err.Error()}
 	}
-	switch res.Change {
-	case store.Reload:
-		if s.d.Reload != nil {
-			s.d.Reload()
-		}
-	case store.Apply:
-		if s.d.Apply != nil {
-			s.d.Apply()
-		}
-	}
+	s.changed(res.Change)
 	backups := res.Backups
 	if backups == nil {
 		backups = []string{}

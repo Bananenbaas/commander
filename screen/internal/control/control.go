@@ -12,12 +12,14 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/Bananenbaas/commander/screen/internal/audio"
 	"github.com/Bananenbaas/commander/screen/internal/bridge"
 	"github.com/Bananenbaas/commander/screen/internal/layout"
 	"github.com/Bananenbaas/commander/screen/internal/procs"
 	"github.com/Bananenbaas/commander/screen/internal/run"
+	"github.com/Bananenbaas/commander/screen/internal/store"
 	"github.com/Bananenbaas/commander/screen/internal/supervisor"
 )
 
@@ -71,6 +73,14 @@ type Service struct {
 	done    chan struct{} // closed by Close
 	stopped chan struct{} // closed when the worker has returned
 
+	// bmu guards the batch of saves: between saveBegin and saveEnd the
+	// reloads and applies that saves ask for are kept and done once, the
+	// strongest of them, so saving several tabs is one apply.
+	bmu        sync.Mutex
+	batching   bool
+	batched    store.Change
+	batchTimer *time.Timer
+
 	// qmu serializes pushes to events. It cannot block: under it, a send
 	// is only tried without waiting, and a full queue is made room in
 	// by receiving without waiting.
@@ -111,6 +121,61 @@ func (s *Service) Close() {
 
 // Events is the channel Serve writes to the window.
 func (s *Service) Events() chan bridge.Message { return s.events }
+
+// batchLimit ends a batch of saves whose saveEnd never came (the window
+// went away in between), so what was written is not left unapplied.
+const batchLimit = time.Minute
+
+// saveBegin starts a batch of saves, see bmu. A batch still open is ended
+// first.
+func (s *Service) saveBegin() {
+	s.saveEnd()
+	s.bmu.Lock()
+	defer s.bmu.Unlock()
+	s.batching, s.batched = true, store.NoChange
+	s.batchTimer = time.AfterFunc(batchLimit, s.saveEnd)
+}
+
+// saveEnd ends the batch and does what its saves asked for.
+func (s *Service) saveEnd() {
+	s.bmu.Lock()
+	change, was := s.batched, s.batching
+	s.batching, s.batched = false, store.NoChange
+	if s.batchTimer != nil {
+		s.batchTimer.Stop()
+		s.batchTimer = nil
+	}
+	s.bmu.Unlock()
+	if was {
+		s.act(change)
+	}
+}
+
+// changed has Commander reload or apply after a save, now or, in a batch,
+// at its end.
+func (s *Service) changed(c store.Change) {
+	s.bmu.Lock()
+	if s.batching {
+		s.batched = max(s.batched, c)
+		s.bmu.Unlock()
+		return
+	}
+	s.bmu.Unlock()
+	s.act(c)
+}
+
+func (s *Service) act(c store.Change) {
+	switch c {
+	case store.Reload:
+		if s.d.Reload != nil {
+			s.d.Reload()
+		}
+	case store.Apply:
+		if s.d.Apply != nil {
+			s.d.Apply()
+		}
+	}
+}
 
 func (s *Service) logf(format string, args ...any) {
 	if s.d.Logf != nil {
@@ -448,6 +513,12 @@ func (s *Service) Handle(ctx context.Context, call string, args json.RawMessage)
 		return s.lightFrames(args)
 	case "gameProfile":
 		return s.gameProfile(args)
+	case "saveBegin":
+		s.saveBegin()
+		return map[string]any{"ok": true}, nil
+	case "saveEnd":
+		s.saveEnd()
+		return map[string]any{"ok": true}, nil
 	case "saveGameProfile":
 		return s.saveGameProfile(args)
 	case "deleteGameProfile":

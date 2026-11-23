@@ -253,23 +253,9 @@
     bar.hidden = true;
     var barText = el("p", "bbar-text");
     barText.setAttribute("aria-live", "polite");
-    var barActs = el("div", "bbar-acts");
-    var saveBtn = el("button", "btn primary", "Save");
-    saveBtn.type = "button";
-    saveBtn.addEventListener("click", function () {
-      save();
-    });
-    var discardBtn = el("button", "btn", "Discard");
-    discardBtn.type = "button";
-    discardBtn.addEventListener("click", function () {
-      if (!ed.saving) {
-        discard();
-      }
-    });
-    barActs.appendChild(saveBtn);
-    barActs.appendChild(discardBtn);
+    // Save and Discard are the window's own bar (app.js): one place for
+    // every page.
     bar.appendChild(barText);
-    bar.appendChild(barActs);
 
     var problem = el("p", "note error");
     problem.hidden = true;
@@ -524,9 +510,7 @@
       if (ed.changed) {
         lines.push("This profile was changed outside Commander since you opened it. Save again to replace that change, or Discard to load it.");
         cls += " warm";
-      } else if (dirty) {
-        lines.push("Unsaved changes");
-      } else {
+      } else if (!dirty) {
         lines = ed.notes.slice();
       }
       if (ed.barError) {
@@ -538,20 +522,8 @@
         barText.textContent = text;
       }
       barText.className = cls;
-      var acts = dirty || ed.changed;
-      barActs.hidden = !acts;
-      bar.hidden = lines.length === 0 && !acts;
-      bar.classList.toggle("dirty", acts);
-      saveBtn.textContent = ed.saving ? "Saving" : "Save";
-      if (ed.saving) {
-        saveBtn.setAttribute("aria-busy", "true");
-        saveBtn.setAttribute("aria-disabled", "true");
-        discardBtn.setAttribute("aria-disabled", "true");
-      } else {
-        saveBtn.removeAttribute("aria-busy");
-        saveBtn.removeAttribute("aria-disabled");
-        discardBtn.removeAttribute("aria-disabled");
-      }
+      bar.hidden = lines.length === 0;
+      bar.classList.toggle("dirty", !!ed.changed);
     }
 
     function draw() {
@@ -901,15 +873,11 @@
     add(stateWrap, stateLabel, stateIn, stateErr);
     add(optSec, hold.node, holdWhy, holdErr, confirmBox.node, confirmWhy, confirmRow, confirmErr, stateWrap);
 
-    // Save and Delete
+    // Delete (saving is the window's own bar)
     var panelActs = el("div", "row bacts");
-    var panelSave = bigBtn("Save", "primary");
-    panelSave.addEventListener("click", function () {
-      save();
-    });
     var panelDelete = bigBtn("Delete", "danger");
     panelDelete.addEventListener("click", deleteSelected);
-    add(panelActs, panelSave, panelDelete);
+    add(panelActs, panelDelete);
 
     add(form, otherErr, titleSec, lookSec, stepsSec, optSec, panelActs);
     add(panel, pnone, form);
@@ -1436,13 +1404,6 @@
       }).map(function (e) {
         return e.message;
       }).join("\n"));
-
-      panelSave.textContent = ed.saving ? "Saving" : "Save";
-      if (ed.saving) {
-        panelSave.setAttribute("aria-busy", "true");
-      } else {
-        panelSave.removeAttribute("aria-busy");
-      }
     }
 
     function panelOpen() {

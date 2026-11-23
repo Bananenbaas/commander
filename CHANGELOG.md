@@ -68,6 +68,10 @@ runtime that Windows 11 has.
   profile is refused ("The KB7 has five profiles and all five are in use.").
 - Commander's window: "+" after the profiles on the KB7 page adds an empty
   profile in the lowest free slot.
+- Commander's window: one Save for the whole window, in a bar at the bottom
+  that shows while anything is unsaved (also Ctrl+S). It saves every tab with
+  changes at once, and Commander writes to the keyboard once for all of them.
+- Commander's window: the KB7 profiles are listed by slot.
 - The first save moves `switch_when_running` from the layouts into `games/`
   (the program `StarCitizen.exe` becomes the game `StarCitizen`).
 

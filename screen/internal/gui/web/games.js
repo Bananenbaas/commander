@@ -231,17 +231,9 @@
     bar.hidden = true;
     var barText = el("p", "bbar-text");
     barText.setAttribute("aria-live", "polite");
-    var barActs = el("div", "bbar-acts");
-    var saveBtn = btn("Save", "btn primary", function () {
-      save();
-    });
-    var discardBtn = btn("Discard", "btn", function () {
-      if (!ed.saving) {
-        discard();
-      }
-    });
-    add(barActs, saveBtn, discardBtn);
-    add(bar, barText, barActs);
+    // Save and Discard are the window's own bar (app.js): one place for
+    // every page.
+    bar.appendChild(barText);
 
     var problem = el("p", "note error");
     problem.hidden = true;
@@ -312,15 +304,12 @@
 
     var endLine = el("p", "gline");
 
-    // Save and Delete
+    // Delete (saving is the window's own bar)
     var acts = el("div", "row gacts");
-    var formSave = btn("Save", "btn primary", function () {
-      save();
-    });
     var deleteBtn = btn("Delete", "btn danger", function () {
       askDelete();
     });
-    add(acts, formSave, deleteBtn);
+    add(acts, deleteBtn);
 
     var ask = el("div", "banner ask");
     ask.setAttribute("role", "group");
@@ -430,9 +419,7 @@
       if (ed.changed) {
         lines.push("This game profile was changed outside Commander since you opened it. Save again to replace that change, or Discard to load it.");
         cls += " warm";
-      } else if (dirty) {
-        lines.push("Unsaved changes");
-      } else {
+      } else if (!dirty) {
         lines = ed.notes.slice();
       }
       if (ed.barError) {
@@ -444,17 +431,8 @@
         barText.textContent = text;
       }
       barText.className = cls;
-      var open = dirty || ed.changed;
-      barActs.hidden = !open;
-      bar.hidden = lines.length === 0 && !open;
-      bar.classList.toggle("dirty", open);
-      busy(saveBtn, !!ed.saving, "Save", "Saving");
-      busy(formSave, !!ed.saving, "Save", "Saving");
-      if (ed.saving) {
-        discardBtn.setAttribute("aria-disabled", "true");
-      } else {
-        discardBtn.removeAttribute("aria-disabled");
-      }
+      bar.hidden = lines.length === 0;
+      bar.classList.toggle("dirty", !!ed.changed);
     }
 
     function draw() {

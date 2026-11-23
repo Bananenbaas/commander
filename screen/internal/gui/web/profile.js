@@ -324,17 +324,9 @@
     bar.hidden = true;
     var barText = el("p", "bbar-text");
     barText.setAttribute("aria-live", "polite");
-    var barActs = el("div", "bbar-acts");
-    var saveBtn = btn("Save", "btn primary", function () {
-      save();
-    });
-    var discardBtn = btn("Discard", "btn", function () {
-      if (!ed.saving) {
-        discard();
-      }
-    });
-    add(barActs, saveBtn, discardBtn);
-    add(bar, barText, barActs);
+    // Save and Discard are the window's own bar (app.js): one place for
+    // every page.
+    bar.appendChild(barText);
 
     var problem = el("p", "note error");
     problem.hidden = true;
@@ -356,10 +348,7 @@
         changed();
       }
     });
-    var formSave = btn("Save", "btn primary", function () {
-      save();
-    });
-    add(nameRow, nameIn, formSave);
+    add(nameRow, nameIn);
     var hint = el("p", "note", "Empty means: leave the keyboard's name as it is.");
     hint.id = "pf-name-hint";
     add(nameSec.card, nameRow, hint);
@@ -419,9 +408,7 @@
       if (ed.changed) {
         lines.push("This profile's name was changed outside Commander since you opened it. Save again to replace that change, or Discard to load it.");
         cls += " warm";
-      } else if (dirty) {
-        lines.push("Unsaved changes");
-      } else {
+      } else if (!dirty) {
         lines = ed.notes.slice();
       }
       if (ed.barError) {
@@ -433,17 +420,8 @@
         barText.textContent = text;
       }
       barText.className = cls;
-      var open = dirty || ed.changed;
-      barActs.hidden = !open;
-      bar.hidden = lines.length === 0 && !open;
-      bar.classList.toggle("dirty", open);
-      busy(saveBtn, !!ed.saving, "Save", "Saving");
-      busy(formSave, !!ed.saving, "Save", "Saving");
-      if (ed.saving) {
-        discardBtn.setAttribute("aria-disabled", "true");
-      } else {
-        discardBtn.removeAttribute("aria-disabled");
-      }
+      bar.hidden = lines.length === 0;
+      bar.classList.toggle("dirty", !!ed.changed);
     }
 
     function draw() {

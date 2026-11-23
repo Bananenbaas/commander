@@ -124,8 +124,13 @@ own pages. The top of the window shows the profile the keyboard is on. Today the
   folder and the log.
 - **Updates**: the version, Check now, and Update when a newer one is found.
 
-**Saving.** Edits stay a draft (the "Unsaved changes" bar) until you press
-Save. Commander checks that the whole folder still loads and that the pictures
+**Saving.** Edits stay a draft until you press Save. There is one Save, in
+a bar at the bottom of the window that shows while anything is unsaved, with
+Discard next to it; Ctrl+S does the same. It saves every tab with changes
+(Buttons, Lighting and Profile of the profile shown, or the game profile) in
+one go, and Commander then reloads or writes to the keyboard once. Leaving a
+page or profile with unsaved changes asks in that same bar (Save, Discard or
+Keep editing). Commander checks that the whole folder still loads and that the pictures
 fit the 15 different pictures the KB7 holds before it writes anything, and a file that does not load is
 never written. Files are written to a temporary file and renamed, so a crash
 does not leave half a file. Commander writes the files it saves in its own

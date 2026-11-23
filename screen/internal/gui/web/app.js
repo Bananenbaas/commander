@@ -436,10 +436,7 @@
     }
     app.leaving = go;
     render();
-    var b = document.querySelector('[data-key="ask:save"]');
-    if (b) {
-      b.focus();
-    }
+    saveAllBtn.focus();
   }
 
   // unsavedText names the editors with changes, so Discard says what it
@@ -456,24 +453,51 @@
     return "You have unsaved changes in " + list + ".";
   }
 
-  // The question asked before leaving unsaved changes. The way out is taken
-  // at the click: saving or discarding clears app.leaving on the way.
-  function unsavedQuestion() {
-    var box = el("div", "banner ask");
-    box.setAttribute("role", "group");
-    box.setAttribute("aria-label", "Unsaved changes");
-    var text = el("p", "", unsavedText());
-    text.setAttribute("role", "alert");
-    box.appendChild(text);
-    var row = el("div", "row");
-    row.appendChild(button("ask:save", "btn primary", "Save", "Saving", function () {
-      var go = app.leaving;
-      app.busy["ask:save"] = true;
+  // The save bar is the one place where changes are saved or dropped, for
+  // every page and tab. It shows while anything is unsaved, stays in view
+  // at the bottom, and is also the question asked before a page or profile
+  // with unsaved changes is left.
+  var saveBar = el("div", "savebar");
+  saveBar.hidden = true;
+  saveBar.setAttribute("role", "group");
+  saveBar.setAttribute("aria-label", "Unsaved changes");
+  var saveBarText = el("p", "savebar-text");
+  saveBarText.setAttribute("aria-live", "polite");
+  var saveBarActs = el("div", "savebar-acts");
+  function barButton(key, cls, label, onClick) {
+    var b = el("button", cls, label);
+    b.type = "button";
+    b.setAttribute("data-key", key);
+    b.addEventListener("click", onClick);
+    saveBarActs.appendChild(b);
+    return b;
+  }
+  var saveAllBtn = barButton("save:all", "btn primary", "Save", saveAll);
+  var discardAllBtn = barButton("save:discard", "btn", "Discard", discardAll);
+  var keepBtn = barButton("save:keep", "btn", "Keep editing", function () {
+    if (!app.savingAll) {
+      app.leaving = null;
       render();
-      // Each editor with changes saves in turn; the first that does not go
-      // through stops the way out.
-      var failed = null;
-      dirtyEditors().reduce(function (p, e) {
+    }
+  });
+  saveBar.appendChild(saveBarText);
+  saveBar.appendChild(saveBarActs);
+
+  // saveAll saves every editor with changes, in turn, as one batch: Commander
+  // reloads or writes to the keyboard once, after the last. The first editor
+  // that does not go through stops the way out, and says why in its tab.
+  function saveAll() {
+    var list = dirtyEditors();
+    if (app.savingAll || list.length === 0) {
+      return;
+    }
+    var go = app.leaving;
+    var failed = null;
+    var quiet = function () {};
+    app.savingAll = true;
+    render();
+    call("saveBegin", {}).then(quiet, quiet).then(function () {
+      return list.reduce(function (p, e) {
         return p.then(function () {
           if (failed) {
             return null;
@@ -482,43 +506,71 @@
             if (!ok) {
               failed = e;
             }
+          }, function () {
+            failed = e;
           });
         });
-      }, Promise.resolve()).then(function () {
-        app.busy["ask:save"] = false;
-        app.leaving = null;
-        if (!failed && go) {
-          go();
-          return;
-        }
-        // That editor says why.
-        if (failed && failed.tab) {
-          app.tab = failed.tab;
-        }
-        render();
-      });
-    }));
-    [["ask:discard", "Discard"], ["ask:keep", "Keep editing"]].forEach(function (o) {
-      row.appendChild(button(o[0], "btn", o[1], o[1], function () {
-        if (app.busy["ask:save"]) {
-          return;
-        }
-        var go = app.leaving;
-        app.leaving = null;
-        if (o[0] === "ask:discard") {
-          editors().forEach(function (e) {
-            e.ed.discard();
-          });
-          if (go) {
-            go();
-            return;
-          }
-        }
-        render();
-      }));
+      }, Promise.resolve());
+    }).then(function () {
+      return call("saveEnd", {}).then(quiet, quiet);
+    }).then(function () {
+      app.savingAll = false;
+      app.leaving = null;
+      if (!failed && go) {
+        go();
+        return;
+      }
+      if (failed && failed.tab) {
+        app.tab = failed.tab;
+      }
+      render();
     });
-    box.appendChild(row);
-    return box;
+  }
+
+  function discardAll() {
+    if (app.savingAll) {
+      return;
+    }
+    var go = app.leaving;
+    app.leaving = null;
+    editors().forEach(function (e) {
+      e.ed.discard();
+    });
+    if (go) {
+      go();
+      return;
+    }
+    render();
+  }
+
+  function drawSaveBar() {
+    var dirty = dirtyEditors().length > 0;
+    var asking = !!app.leaving && dirty;
+    saveBar.hidden = !dirty;
+    saveBar.classList.toggle("asking", asking);
+    var text = unsavedText() + (asking ? " Save or discard them to go on." : "");
+    if (saveBarText.textContent !== text) {
+      saveBarText.textContent = text;
+    }
+    if (asking) {
+      saveBarText.setAttribute("role", "alert");
+    } else {
+      saveBarText.removeAttribute("role");
+    }
+    keepBtn.hidden = !asking;
+    saveAllBtn.textContent = app.savingAll ? "Saving" : "Save";
+    [saveAllBtn, discardAllBtn, keepBtn].forEach(function (b) {
+      if (app.savingAll) {
+        b.setAttribute("aria-disabled", "true");
+      } else {
+        b.removeAttribute("aria-disabled");
+      }
+    });
+    if (app.savingAll) {
+      saveAllBtn.setAttribute("aria-busy", "true");
+    } else {
+      saveAllBtn.removeAttribute("aria-busy");
+    }
   }
 
   // shownProfile is the KB7 profile for the Buttons tab: one just made or
@@ -650,9 +702,6 @@
     } else if (!str(st.loadError)) {
       out.push(el("p", "lead", "There are no profiles in the configuration folder yet."));
     }
-    if (app.leaving) {
-      out.push(unsavedQuestion());
-    }
 
     var bar = el("div", "tabs");
     bar.setAttribute("role", "tablist");
@@ -778,9 +827,6 @@
     }
     game.show(id);
     var out = [game.head];
-    if (app.leaving) {
-      out.push(unsavedQuestion());
-    }
     out.push(game.node);
     return out;
   }
@@ -1072,6 +1118,9 @@
       app.page = "kb7";
       out = kb7Page();
     }
+    // The save bar comes last in every page and sticks to its bottom.
+    out.push(saveBar);
+    drawSaveBar();
     var top = main.scrollTop;
     replaceKeeping(main, out);
     main.scrollTop = top;
@@ -1144,6 +1193,13 @@
     return;
   }
   view.addEventListener("message", onMessage);
+  // Ctrl+S saves, as everywhere.
+  document.addEventListener("keydown", function (e) {
+    if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === "s" || e.key === "S") && !e.defaultPrevented) {
+      e.preventDefault();
+      saveAll();
+    }
+  });
   dark.addEventListener("change", function () {
     applyTheme();
   });

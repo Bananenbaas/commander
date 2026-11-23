@@ -599,19 +599,9 @@
     bar.hidden = true;
     var barText = el("p", "bbar-text");
     barText.setAttribute("aria-live", "polite");
-    var barActs = el("div", "bbar-acts");
-    var saveBtn = bigBtn("Save", "primary");
-    saveBtn.addEventListener("click", function () {
-      save();
-    });
-    var discardBtn = bigBtn("Discard");
-    discardBtn.addEventListener("click", function () {
-      if (!ed.saving) {
-        discard();
-      }
-    });
-    add(barActs, saveBtn, discardBtn);
-    add(bar, barText, barActs);
+    // Save and Discard are the window's own bar (app.js): one place for
+    // every page.
+    bar.appendChild(barText);
 
     var problem = el("p", "note error");
     problem.hidden = true;
@@ -1488,9 +1478,7 @@
       if (ed.changed) {
         lines.push("This profile's lighting was changed outside Commander since you opened it. Save again to replace that change, or Discard to load it.");
         cls += " warm";
-      } else if (dirty) {
-        lines.push("Unsaved changes");
-      } else {
+      } else if (!dirty) {
         lines = ed.notes.slice();
       }
       if (ed.barError) {
@@ -1499,20 +1487,8 @@
       }
       setText(barText, lines.join("\n"));
       barText.className = cls;
-      var acts = dirty || ed.changed;
-      barActs.hidden = !acts;
-      bar.hidden = lines.length === 0 && !acts;
-      bar.classList.toggle("dirty", acts);
-      setText(saveBtn, ed.saving ? "Saving" : "Save");
-      if (ed.saving) {
-        saveBtn.setAttribute("aria-busy", "true");
-        saveBtn.setAttribute("aria-disabled", "true");
-        discardBtn.setAttribute("aria-disabled", "true");
-      } else {
-        saveBtn.removeAttribute("aria-busy");
-        saveBtn.removeAttribute("aria-disabled");
-        discardBtn.removeAttribute("aria-disabled");
-      }
+      bar.hidden = lines.length === 0;
+      bar.classList.toggle("dirty", !!ed.changed);
     }
 
     function drawSimple(s) {

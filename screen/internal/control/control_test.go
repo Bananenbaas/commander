@@ -15,6 +15,7 @@ import (
 	"github.com/Bananenbaas/commander/screen/internal/bridge"
 	"github.com/Bananenbaas/commander/screen/internal/layout"
 	"github.com/Bananenbaas/commander/screen/internal/run"
+	"github.com/Bananenbaas/commander/screen/internal/store"
 	"github.com/Bananenbaas/commander/screen/internal/supervisor"
 )
 
@@ -471,4 +472,48 @@ func TestStateListsProfilesBySlot(t *testing.T) {
 	if len(got) != 3 || got[0] != 0 || got[1] != 1 || got[2] != 3 {
 		t.Errorf("profiles in order %v, want 0 1 3", got)
 	}
+}
+
+func TestSaveBatchActsOnce(t *testing.T) {
+	var reload, apply int
+	d := (&fake{}).deps(writeFolder(t))
+	d.Reload = func() { reload++ }
+	d.Apply = func() { apply++ }
+	s := newService(t, d)
+
+	// Outside a batch every change acts at once.
+	s.changed(store.Reload)
+	if reload != 1 || apply != 0 {
+		t.Fatalf("reload %d, apply %d", reload, apply)
+	}
+
+	// In a batch the strongest change acts once, at the end.
+	call(t, s, "saveBegin", "")
+	s.changed(store.Reload)
+	s.changed(store.Apply)
+	s.changed(store.Reload)
+	if reload != 1 || apply != 0 {
+		t.Fatalf("acted inside the batch: reload %d, apply %d", reload, apply)
+	}
+	call(t, s, "saveEnd", "")
+	if reload != 1 || apply != 1 {
+		t.Fatalf("after the batch: reload %d, apply %d", reload, apply)
+	}
+
+	// A batch without a change does nothing, and a second end neither.
+	call(t, s, "saveBegin", "")
+	call(t, s, "saveEnd", "")
+	call(t, s, "saveEnd", "")
+	if reload != 1 || apply != 1 {
+		t.Fatalf("empty batch acted: reload %d, apply %d", reload, apply)
+	}
+
+	// A new batch ends one left open.
+	call(t, s, "saveBegin", "")
+	s.changed(store.Reload)
+	call(t, s, "saveBegin", "")
+	if reload != 2 {
+		t.Fatalf("the open batch was dropped: reload %d", reload)
+	}
+	call(t, s, "saveEnd", "")
 }
