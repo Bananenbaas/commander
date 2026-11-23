@@ -289,19 +289,36 @@ func (s *Service) saveDeviceProfile(args json.RawMessage) (any, error) {
 	}
 
 	res, err := saveButtons(s.d.Dir, slot, a.Version, files)
-	var be *store.ButtonError
-	switch {
-	case errors.Is(err, store.ErrChanged):
-		return map[string]any{"ok": false, "changed": true, "error": "This profile was changed outside Commander since you opened it."}, nil
-	case errors.As(err, &be):
-		return map[string]any{"ok": false, "errors": []buttonErrorOut{{be.Page, be.Position, be.Err.Field, be.Err.Step, be.Err.Error()}}}, nil
-	case err != nil:
-		s.logf("control: saveDeviceProfile: %v", err)
+	return s.saveAnswer("saveDeviceProfile", "This profile was changed outside Commander since you opened it.", res, err,
+		func(err error) map[string]any {
+			var be *store.ButtonError
+			if errors.As(err, &be) {
+				return map[string]any{"ok": false, "errors": []buttonErrorOut{{be.Page, be.Position, be.Err.Field, be.Err.Step, be.Err.Error()}}}
+			}
+			return nil
+		}), nil
+}
+
+// saveAnswer turns the outcome of a save into the window's answer and has
+// Commander reload or apply as the save requires. changed is the sentence
+// for a section changed on disk; refused answers the refusals that concern
+// the saved section, or returns nil for an error it does not know. Any other
+// error is logged and answered as it is, with a reload when files were
+// written before it.
+func (s *Service) saveAnswer(call, changed string, res store.Result, err error, refused func(error) map[string]any) map[string]any {
+	if errors.Is(err, store.ErrChanged) {
+		return map[string]any{"ok": false, "changed": true, "error": changed}
+	}
+	if err != nil {
+		if out := refused(err); out != nil {
+			return out
+		}
+		s.logf("control: %s: %v", call, err)
 		if res.Written && s.d.Reload != nil {
 			// Some files changed: the running configuration is stale.
 			s.d.Reload()
 		}
-		return map[string]any{"ok": false, "error": err.Error()}, nil
+		return map[string]any{"ok": false, "error": err.Error()}
 	}
 	switch res.Change {
 	case store.Reload:
@@ -317,7 +334,7 @@ func (s *Service) saveDeviceProfile(args json.RawMessage) (any, error) {
 	if backups == nil {
 		backups = []string{}
 	}
-	return map[string]any{"ok": true, "version": res.Version, "change": res.Change.String(), "backups": backups, "migrated": res.Migrated}, nil
+	return map[string]any{"ok": true, "version": res.Version, "change": res.Change.String(), "backups": backups, "migrated": res.Migrated}
 }
 
 func (s *Service) renderButton(args json.RawMessage) (any, error) {

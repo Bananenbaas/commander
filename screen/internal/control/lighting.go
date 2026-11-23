@@ -347,39 +347,18 @@ func (s *Service) saveDeviceLight(args json.RawMessage) (any, error) {
 	}
 
 	res, err := saveProfile(s.d.Dir, slot, map[string]string{"light": a.Version}, edit)
-	var le *store.LightError
-	var be *store.ButtonError
-	switch {
-	case errors.Is(err, store.ErrChanged):
-		return map[string]any{"ok": false, "changed": true, "error": lightChangedText}, nil
-	case errors.As(err, &le):
-		return map[string]any{"ok": false, "errors": []lightErrorJSON{{le.Layer, le.Setting, le.Err.Error()}}}, nil
-	case errors.As(err, &be):
-		return map[string]any{"ok": false, "error": fmt.Sprintf(
-			"The button at page %d position %d does not work with this lighting: %v.", be.Page, be.Position, be.Err)}, nil
-	case err != nil:
-		s.logf("control: saveDeviceLight: %v", err)
-		if res.Written && s.d.Reload != nil {
-			// Some files changed: the running configuration is stale.
-			s.d.Reload()
+	return s.saveAnswer("saveDeviceLight", lightChangedText, res, err, func(err error) map[string]any {
+		var le *store.LightError
+		var be *store.ButtonError
+		switch {
+		case errors.As(err, &le):
+			return map[string]any{"ok": false, "errors": []lightErrorJSON{{le.Layer, le.Setting, le.Err.Error()}}}
+		case errors.As(err, &be):
+			return map[string]any{"ok": false, "error": fmt.Sprintf(
+				"The button at page %d position %d does not work with this lighting: %v.", be.Page, be.Position, be.Err)}
 		}
-		return map[string]any{"ok": false, "error": err.Error()}, nil
-	}
-	switch res.Change {
-	case store.Reload:
-		if s.d.Reload != nil {
-			s.d.Reload()
-		}
-	case store.Apply:
-		if s.d.Apply != nil {
-			s.d.Apply()
-		}
-	}
-	backups := res.Backups
-	if backups == nil {
-		backups = []string{}
-	}
-	return map[string]any{"ok": true, "version": res.Version, "change": res.Change.String(), "backups": backups, "migrated": res.Migrated}, nil
+		return nil
+	}), nil
 }
 
 // frameBytes is one preview frame: R, G, B per LED index, 0 for slots
