@@ -37,7 +37,7 @@ const (
 // and a saved game keeps its file. Nothing is written unless the folder with
 // every new file loads.
 func SaveGame(dir, id, base string, g GameEdit) (file string, r Result, err error) {
-	name, program, err := checkGame(id == desktopID, g)
+	name, program, err := checkGame(isDesktop(id), g)
 	if err != nil {
 		return "", Result{}, err
 	}
@@ -47,11 +47,6 @@ func SaveGame(dir, id, base string, g GameEdit) (file string, r Result, err erro
 	t, err := findGame(dir, id, base)
 	if err != nil {
 		return "", Result{}, err
-	}
-	if t.desktop && id != desktopID { // Desktop named by its file
-		if name, program, err = checkGame(true, g); err != nil {
-			return "", Result{}, err
-		}
 	}
 	rel := t.rel
 	if rel == "" {
@@ -88,6 +83,8 @@ func SaveGame(dir, id, base string, g GameEdit) (file string, r Result, err erro
 	if err != nil {
 		return "", Result{}, err
 	}
+	// A write of the same file (games/desktop.toml from the migration or the
+	// pin of Desktop) is replaced in place, so the order stays loadable.
 	writes := append([]Write(nil), t.writes...)
 	found := false
 	for i := range writes {
@@ -113,6 +110,9 @@ func SaveGame(dir, id, base string, g GameEdit) (file string, r Result, err erro
 	res.Version = Version(data)
 	return rel, res, nil
 }
+
+// isDesktop reports whether id names the Desktop game: "desktop" or its file.
+func isDesktop(id string) bool { return id == desktopID || strings.EqualFold(id, desktopRel) }
 
 // checkGame checks an edit before anything is loaded and returns its name
 // and program without surrounding spaces.
@@ -144,7 +144,7 @@ func checkGame(desktop bool, g GameEdit) (name, program string, err error) {
 // layout has switch_when_running; a game still built from a layout is then
 // left out of the migration. Desktop cannot be deleted.
 func DeleteGame(dir, id, base string) (Result, error) {
-	if id == desktopID {
+	if isDesktop(id) {
 		return Result{}, errors.New("Desktop cannot be deleted.")
 	}
 	if id == "" {
@@ -236,7 +236,7 @@ func findGame(dir, id, base string) (*gameTarget, error) {
 	inFile := true // the game has a file whose version base is
 	program := ""  // the program of a game built from a layout
 	switch {
-	case id == desktopID:
+	case isDesktop(id):
 		t.desktop = true
 		if cfg.Desktop != nil {
 			t.rel = relOf(cfg.Desktop.File)
@@ -257,16 +257,10 @@ func findGame(dir, id, base string) (*gameTarget, error) {
 	case id == "":
 		inFile = false
 	default:
-		if cfg.Desktop != nil && relOf(cfg.Desktop.File) == id {
-			t.desktop = true
-		}
 		for _, g := range cfg.Games {
 			if relOf(g.File) == id && strings.HasPrefix(id, "games/") {
 				t.rel = id
 			}
-		}
-		if t.desktop {
-			t.rel = id
 		}
 		if t.rel == "" {
 			if strings.HasPrefix(id, "games/") {
@@ -294,8 +288,23 @@ func findGame(dir, id, base string) (*gameTarget, error) {
 		t.migrated = t.migrated || p.SwitchWhenRunning != ""
 	}
 	if !t.migrated {
+		if cfg.Desktop != nil {
+			return t, nil
+		}
+		// Without games/desktop.toml, Desktop is the lowest free profile, and
+		// a game added, moved or removed could move it; pin it where it is.
+		data, err := (&layout.GameFile{Name: "Desktop", Devices: map[string]any{"kb7": int64(cfg.DesktopProfile())}}).Encode()
+		if err != nil {
+			return nil, err
+		}
+		t.writes = []Write{{Rel: desktopRel, Data: data}}
+		if t.before, err = layout.LoadWith(abs, map[string][]byte{desktopRel: data}); err != nil {
+			return nil, otherFile(err)
+		}
 		return t, nil
 	}
+	// The migration writes games/desktop.toml when there is none, which pins
+	// Desktop the same way.
 	layouts, err := readLayouts(abs)
 	if err != nil {
 		return nil, err

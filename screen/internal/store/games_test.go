@@ -88,6 +88,7 @@ func TestSaveGameNew(t *testing.T) {
 		t.Errorf("game without a profile = %+v", g)
 	}
 	// Never desktop.toml.
+	dir = gameFolder(t, map[string]string{"games/desktop.toml": "name = \"Home\"\n[devices]\nkb7 = 0\n"})
 	file, _, err = SaveGame(dir, "", "", GameEdit{Name: "DESKTOP", Program: "d.exe", KB7: kb7(0)})
 	if err != nil {
 		t.Fatal(err)
@@ -114,8 +115,8 @@ func TestSaveGameRenameKeepsFile(t *testing.T) {
 		t.Errorf("game = %+v", g)
 	}
 	entries, _ := os.ReadDir(filepath.Join(dir, "games"))
-	if len(entries) != 1 {
-		t.Errorf("games/ holds %d files, want 1", len(entries))
+	if len(entries) != 2 {
+		t.Errorf("games/ holds %d files, want sc.toml and the pinned desktop.toml", len(entries))
 	}
 }
 
@@ -329,5 +330,51 @@ func TestDeleteLayoutGame(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "games", "starcitizen.toml")); !os.IsNotExist(err) {
 		t.Errorf("games/starcitizen.toml was written (%v)", err)
+	}
+}
+
+func TestSaveDesktopByFile(t *testing.T) {
+	dir := gameFolder(t, map[string]string{"games/desktop.toml": "[devices]\nkb7 = 0\n"})
+	file, res, err := SaveGame(dir, "games/desktop.toml", fileVersion(t, dir, "games/desktop.toml"), GameEdit{Name: "Desktop", KB7: kb7(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file != "games/desktop.toml" || res.Change != Reload {
+		t.Fatalf("file %q, result %+v", file, res)
+	}
+	if p, _ := mustLoad(t, dir).Choose(nil); p != 1 {
+		t.Errorf("desktop profile = %d, want 1", p)
+	}
+	if _, _, err := SaveGame(dir, "games/desktop.toml", res.Version, GameEdit{Name: "Desktop"}); err == nil || err.Error() != "Desktop needs a KB7 profile." {
+		t.Errorf("Desktop without a profile by its file: %v", err)
+	}
+}
+
+func TestGameChangesKeepDesktop(t *testing.T) {
+	// Profile 0 is Desktop only because it is the lowest free one.
+	dir := gameFolder(t, nil)
+	if _, _, err := SaveGame(dir, "", "", GameEdit{Name: "Mail", Program: "mail.exe", KB7: kb7(0)}); err != nil {
+		t.Fatal(err)
+	}
+	if g := gameOf(t, dir, "games/desktop.toml"); g.Devices["kb7"] != int64(0) || g.Program != "" {
+		t.Errorf("desktop.toml = %+v, want kb7 0", g)
+	}
+	if p, _ := mustLoad(t, dir).Choose(nil); p != 0 {
+		t.Errorf("adding a game moved Desktop to %d", p)
+	}
+
+	// Profile 0 is a game's, so Desktop is 1 until the game goes.
+	dir = gameFolder(t, map[string]string{"games/sc.toml": "name = \"SC\"\nprogram = \"StarCitizen.exe\"\n[devices]\nkb7 = 0\n"})
+	if p, _ := mustLoad(t, dir).Choose(nil); p != 1 {
+		t.Fatalf("desktop profile before = %d, want 1", p)
+	}
+	if _, err := DeleteGame(dir, "games/sc.toml", fileVersion(t, dir, "games/sc.toml")); err != nil {
+		t.Fatal(err)
+	}
+	if g := gameOf(t, dir, "games/desktop.toml"); g.Devices["kb7"] != int64(1) {
+		t.Errorf("desktop.toml = %+v, want kb7 1", g)
+	}
+	if p, _ := mustLoad(t, dir).Choose(nil); p != 1 {
+		t.Errorf("deleting a game moved Desktop to %d", p)
 	}
 }
