@@ -21,6 +21,7 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
 | `screen/internal/` | `proto` (frames), `device` (HID on Windows and Linux), `keyboard` (one frame at a time, no retries), `picture`, `layout`, `ledger`, `apply`, `action` (keystrokes, programs), `procs`, `run` |
 | `screen/internal/audio/` | The computer's sound for the volume mixer: the system volume and the programs with sound sessions on every active output device (and which of them play), and a signal when they change (Windows audio session API through direct COM calls; other systems report an error); `run` shows it on the keyboard's mixer page |
 | `screen/internal/light/` | Lighting: the LED table (names, groups, positions), the effects (`fx_*.go`, each declaring its settings, listed by `light.Specs()`), the layer stack and the engine that `run` streams from |
+| `screen/internal/lightedit/` | The simple view's rules for the Lighting tab: which lighting fits it (the reason when not), and turning it to and from a `[light]` table |
 | `screen/internal/keys/` | The KB7's key presses, for the ripple and the states: Raw Input on Windows, `/dev/input/event*` on Linux; what `kb7screen keytest` prints |
 | `screen/internal/runlock/` | The lock file `.kb7screen-run.lock` that makes `apply` and `restore` refuse while `run` runs |
 | `screen/internal/supervisor/` | Starts, stops and restarts `run` inside Commander, and the apply pause |
@@ -88,6 +89,15 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
   each layout the layout without `switch_when_running`, then its game file,
   so an interruption leaves every file loadable, but a program's link can be
   missing until the layout is restored from `backup/`.
+- **One preview path**: the Lighting tab's preview and `kb7screen light-preview`
+  both draw frames with `light.Frames`; the window never reimplements an
+  effect. The advanced view draws its fields from `light.Spec`, so no effect or
+  setting name is hard-coded there (the simple view may name its six effects).
+- **Section versions**: a profile's buttons and its lighting (`[light]` plus
+  `[stored_light]`) have separate versions in `store`; a save checks only its
+  own section, so saving one never makes a draft of the other "changed".
+  `store.Decide` turns a changed `[light]` into an apply when the profile has
+  no `[stored_light]` colour, else a reload; a changed `[stored_light]` is an apply.
 - **Tests** use the fake VID:PID 1234:5678 and must not encode guesses about
   the real protocol.
 

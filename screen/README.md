@@ -114,9 +114,9 @@ own pages. The top of the window shows the profile the keyboard is on. Today the
 - **KB7**: the profiles on the keyboard as chips; the one it is on is
   highlighted. The Buttons tab shows the profile's buttons and edits them:
   title, look (colour, symbol or your own picture), steps (press keys, wait,
-  start a program, open a website, file or folder) and options. Lighting,
-  Mixer and Profile say "Comes in a later version."; keep editing the TOML
-  files for those until then.
+  start a program, open a website, file or folder) and options. The Lighting
+  tab edits the profile's lighting (below). Mixer and Profile say "Comes in a
+  later version."; keep editing the TOML files for those until then.
 - **Desktop and each game**: when the profile switches and which KB7 profile
   it uses (only the KB7 is listed today), read-only.
 - **Settings**: Start with Windows, Check for updates automatically, the theme
@@ -140,6 +140,44 @@ a second Save overwrites it. After a save Commander reloads the configuration
 (steps, modes, confirmation, states) or applies it to the keyboard (buttons
 added, removed or moved, or a title, label, colour, symbol or picture
 changed).
+
+**The Lighting tab.** It shows the profile's lighting on a picture of the
+keyboard, drawn by the same lighting engine that lights the keyboard, with
+the same simulated key presses as `kb7screen light-preview` (W, then Space,
+then every state flipped), looped. A profile without `[light]` says "Not set:
+the keyboard shows its own lighting"; **Set lighting** starts one and **Remove
+lighting** goes back to that.
+
+The simple view covers a base effect (One colour, Wave or Breathing, or Off), an
+optional ripple when a key is pressed, keys in one colour (Highlight keys,
+picked on the picture) and Key states: a name, the key or keys that flip it
+(recorded like a button's keys), the keys it lights and a colour. Wave and
+Breathing have a speed slider (Breathing from slow, 10 s a breath, to fast,
+1 s). Lighting the simple view cannot show (another order, other effects, an
+effect twice, settings it has no control for, a layer switched off) opens in
+**Advanced**, with the reason. Advanced edits the whole layer stack: add,
+remove, reorder (drag, or Up and Down), switch a layer off and set every
+setting of every effect; its fields come from the lighting engine, so a new
+effect needs no change in the window. Back to the simple view is offered when the
+stack fits it.
+
+**When Commander is not running** sets what the keyboard shows then: "A still of
+this lighting" (the lighting frozen as it is, written to `[stored_light]`) or
+"One colour", with a brightness from 0 to 100 %, or "Keep the keyboard's
+brightness".
+
+A lighting save is checked and written like a buttons save, and it only
+looks at the lighting: buttons and lighting of one profile are saved
+separately, and an unsaved draft of the one never makes the other "changed".
+After it, Commander applies the keyboard when the profile has no stored
+colour (the stored still must follow the new lighting) or when `[stored_light]`
+changed, and otherwise reloads the configuration.
+
+A layer can be switched off with `enabled = false` in the layer: Commander keeps it
+in the file but leaves it out of the lighting. A `kb7screen` older than this
+version refuses that key ("unknown setting"). A stack whose layers are all off
+is an error ("every lighting layer is off; turn one on or remove the
+lighting").
 
 Windows keeps some keys for itself (Windows key combinations, Print Screen),
 so they cannot be recorded in a key step; add them with Add step.

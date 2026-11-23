@@ -23,6 +23,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
   `games/desktop.toml` sets the desktop profile. `switch_when_running` in a
   layout keeps working for programs that have no game file.
 
+- Commander's window: the Lighting tab edits a KB7 profile's lighting in a
+  simple view (One colour, Wave, Breathing or Off, ripple when a key is
+  pressed, Highlight keys, Key states) or an advanced view with the whole
+  layer stack, shows it on a live preview drawn by the lighting engine, and
+  sets what the keyboard shows when Commander is not running.
+- A lighting layer can be switched off with `enabled = false`. Older versions
+  of `kb7screen` refuse that key.
 - Commander's window can edit and save: the Buttons tab of a KB7 profile edits
   each button's title, look (colour, symbol or picture), steps (press keys,
   wait, start a program, open a website, file or folder) and options, and
