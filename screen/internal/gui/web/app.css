@@ -1251,6 +1251,68 @@ button.chip:hover { color: var(--text); }
 
 .gedit .banner.ask { max-width: 640px; }
 
+/* Mixer tab */
+
+.mixer { color: var(--text); }
+
+.mixer-lead { margin: 0 0 14px; }
+
+.msec + .msec { margin-top: 18px; }
+
+.msec h3 { margin: 0 0 8px; }
+
+.mrow {
+  display: grid;
+  grid-template-columns: minmax(120px, 220px) minmax(120px, 1fr) 48px 64px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.mname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mbar {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-sunk);
+  overflow: hidden;
+}
+
+.mfill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+}
+
+.mbar.muted .mfill { background: var(--text-muted); }
+
+.mlevel { text-align: right; font-variant-numeric: tabular-nums; }
+
+.mstate { color: var(--text-muted); font-size: 13px; }
+
+/* Profile tab */
+
+.pedit { color: var(--text); }
+
+.pedit .bbar { max-width: 640px; }
+
+.pname { flex: 1 1 220px; min-width: 0; max-width: 360px; }
+
+.pline { margin: 0 0 6px; }
+.pline:last-child { margin-bottom: 0; }
+
+.pacts { margin-top: 22px; }
+
+.pedit .banner.ask { margin-top: 14px; max-width: 640px; }
+
+.pedit .btn[aria-disabled="true"]:not([aria-busy="true"]) { opacity: 0.5; }
+.pedit .btn[aria-disabled="true"]:not([aria-busy="true"]):hover::before { background: var(--line); }
+
 @media (prefers-reduced-motion: no-preference) {
   .nav-item, .tab, .seg button, .btn::before, .track, .knob {
     transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease, left 0.12s ease;

@@ -21,6 +21,7 @@
     page: "kb7", // "kb7", "desktop", "game:<id>", "new", "settings", "updates"
     tab: "buttons",
     kb7Profile: -1, // the KB7 profile the Buttons tab shows
+    kb7Want: -1, // a profile just made, shown before the state lists it
     leaving: null, // what to do once the unsaved-changes question is answered
     busy: {}, // control key: true while its call runs
     notes: {}, // control key: {text, error}
@@ -372,6 +373,10 @@
   var buttonsPanel = el("div", "tabpanel");
   var lighting = null;
   var lightingPanel = el("div", "tabpanel");
+  var profileEd = null;
+  var profilePanel = el("div", "tabpanel");
+  var mixer = null;
+  var mixerPanel = el("div", "tabpanel");
   // The game profile pages share one editor the same way.
   var game = null;
 
@@ -384,6 +389,9 @@
     }
     if (lighting) {
       out.push({ ed: lighting, tab: "lighting", panel: lightingPanel, label: "Lighting" });
+    }
+    if (profileEd) {
+      out.push({ ed: profileEd, tab: "profile", panel: profilePanel, label: "Profile" });
     }
     return out;
   }
@@ -509,8 +517,9 @@
     return box;
   }
 
-  // shownProfile is the KB7 profile for the Buttons tab: the one picked,
-  // else the one on the keyboard, else the lowest.
+  // shownProfile is the KB7 profile for the Buttons tab: one just made or
+  // gone to (until the state lists it), else the one picked, else the one on
+  // the keyboard, else the lowest.
   function shownProfile() {
     var list = profiles();
     var has = function (n) {
@@ -518,6 +527,12 @@
         return p.number === n;
       });
     };
+    if (app.kb7Want >= 0) {
+      if (!has(app.kb7Want)) {
+        return app.kb7Want;
+      }
+      app.kb7Want = -1;
+    }
     if (has(app.kb7Profile)) {
       return app.kb7Profile;
     }
@@ -582,6 +597,7 @@
           return;
         }
         whenSaved(function () {
+          app.kb7Want = -1;
           app.kb7Profile = p.number;
           kb7Editors().forEach(function (e) {
             e.ed.show(p.number);
@@ -608,6 +624,11 @@
     // One tab stop for the row; the arrow keys move between the tabs.
     function selectTab(id, focus) {
       app.tab = id;
+      // The Profile tab shows the file as it is now: a save on another tab
+      // changes it.
+      if (id === "profile" && profileEd) {
+        profileEd.refresh();
+      }
       render();
       if (focus) {
         var b = document.getElementById("tab-" + id);
@@ -655,9 +676,18 @@
         shownEditor = e;
       }
     });
-    var what = app.tab === "lighting" ? "The lighting" : "The buttons";
-    if (app.tab !== "buttons" && app.tab !== "lighting") {
-      panel = el("div", "tabpanel", "Comes in a later version.");
+    var what = { buttons: "The buttons", lighting: "The lighting", profile: "The profile" }[app.tab];
+    if (app.tab === "mixer") {
+      // The mixer follows Windows, not the configuration folder.
+      if (mixer) {
+        panel = mixerPanel;
+        if (panel.firstChild !== mixer.node) {
+          panel.replaceChildren(mixer.node);
+        }
+      } else {
+        panel = el("div", "tabpanel");
+        panel.appendChild(el("p", "note error", "The Mixer tab could not be loaded."));
+      }
     } else if (str(st.loadError)) {
       panel = el("div", "tabpanel");
       panel.appendChild(el("p", "note error", what + " cannot be shown while the configuration cannot be read: " + st.loadError));
@@ -725,6 +755,7 @@
     whenSaved(function () {
       app.page = "kb7";
       app.tab = "buttons";
+      app.kb7Want = -1;
       app.kb7Profile = n;
       main.scrollTop = 0;
       render();
@@ -736,6 +767,38 @@
     if (app.page === pageOf(oldId)) {
       app.page = pageOf(newId);
     }
+    render();
+  }
+
+  // profileMade shows the profile a duplicate made, on the Profile tab.
+  function profileMade(n) {
+    app.kb7Want = n;
+    app.kb7Profile = n;
+    app.tab = "profile";
+    kb7Editors().forEach(function (e) {
+      e.ed.show(n);
+    });
+    render();
+  }
+
+  // profileGone goes to the lowest profile left after profile n was
+  // deleted; what was unsaved in n went with it.
+  function profileGone(n) {
+    var low = -1;
+    profiles().forEach(function (p) {
+      if (typeof p.number === "number" && p.number !== n && (low < 0 || p.number < low)) {
+        low = p.number;
+      }
+    });
+    app.leaving = null;
+    kb7Editors().forEach(function (e) {
+      e.ed.discard();
+    });
+    app.kb7Want = low;
+    app.kb7Profile = low;
+    kb7Editors().forEach(function (e) {
+      e.ed.show(low);
+    });
     render();
   }
 
@@ -982,6 +1045,20 @@
         e.ed.stopRecording();
       }
     });
+    pollMixer(out.indexOf(mixerPanel) >= 0);
+  }
+
+  // pollMixer lets the Mixer tab ask for the volumes while it shows and the
+  // window can be seen.
+  function pollMixer(shown) {
+    if (!mixer) {
+      return;
+    }
+    if (shown && document.visibilityState === "visible") {
+      mixer.start();
+    } else {
+      mixer.stop();
+    }
   }
 
   // replaceKeeping makes nodes the children of parent. A node already in
@@ -1051,6 +1128,18 @@
       onSaved: gameSaved, onDeleted: gameDeleted, openProfile: openProfile
     });
   }
+  if (window.CommanderProfile) {
+    mixer = window.CommanderProfile.createMixer({ call: call, el: el, plainError: plainError });
+    profileEd = window.CommanderProfile.create({
+      call: call, el: el, plainError: plainError, onDirtyChange: onDirtyChange,
+      whenSaved: whenSaved, onDuplicated: profileMade, onDeleted: profileGone
+    });
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (app.started) {
+      pollMixer(app.page === "kb7" && app.tab === "mixer" && mixerPanel.isConnected);
+    }
+  });
   window.addEventListener("focus", function () {
     if (app.started) {
       editors().forEach(function (e) {
