@@ -183,13 +183,13 @@ lighting").
 **Game profile pages.** Each game has a page with **Switch to this when** (the
 program: pick one of the running programs, with Refresh, or choose its file;
 Windows' own programs are left out of the list) and **What each device does**
-(the KB7 profile to show, or "(don't switch)"). **New game profile** in the
-sidebar makes one, and **Delete game profile** removes it. Desktop is the
+(the KB7 profile to show, or "(don't switch)"). **+ New** in the
+sidebar makes one, and **Delete** on its page removes it. Desktop is the
 profile shown when no game runs ("When the program ends: back to Desktop"): it
 always has a KB7 profile, has no program and cannot be deleted. When
 `games/desktop.toml` does not exist yet, the Desktop page shows the profile
-Commander uses now, and the first game save, delete or duplicate writes that
-file so that Desktop stays where it is. A new game's file is
+Commander uses now, and the first game profile or Desktop save, game profile delete, or KB7
+profile duplicate or delete writes that file so that Desktop stays where it is. A new game's file is
 `games/<name>.toml` (lower case; `-2`, `-3` on a clash); renaming keeps the
 file. A game profile is saved like the buttons (checked first, backup of a
 hand-written file), and Commander then reloads the configuration.
@@ -202,7 +202,7 @@ running, it says "The volume mixer is not available right now."
 **The Profile tab** sets the name shown on the keyboard (empty leaves the
 keyboard's name as it is), **Duplicate** copies the profile into the lowest free
 slot as `kb7-<slot>.toml` named "... copy" (refused when all five slots are in use:
-"The KB7 has five profiles and all five are in use."), and **Delete profile**
+"The KB7 has five profiles and all five are in use."), and **Delete**
 removes it. A profile a game profile uses (Desktop included) cannot be deleted:
 "Desktop and Star Citizen use this profile; choose another profile there
 first." Neither can the last one: "The last profile cannot be deleted." A

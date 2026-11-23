@@ -5,6 +5,7 @@ package store
 import (
 	"errors"
 	"os"
+	"reflect"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -51,8 +52,8 @@ func TestSaveProfileNameRefuses(t *testing.T) {
 	base := fileVersion(t, dir, "kb7-0.toml")
 	before := snapshot(t, dir)
 	for name, want := range map[string]string{
-		strings.Repeat("x", 20): "a profile name is 1 to 19 characters, got 20",
-		"Café":                  "a profile name is printable ASCII, got byte 0xc3",
+		strings.Repeat("x", 20): "A name on the keyboard is at most 19 characters.",
+		"Café":                  "The keyboard can only show plain letters, digits and symbols (no accents or emoji).",
 	} {
 		if _, err := SaveProfileName(dir, 0, base, name); err == nil || err.Error() != want {
 			t.Errorf("SaveProfileName(%q) = %v, want %q", name, err, want)
@@ -64,7 +65,7 @@ func TestSaveProfileNameRefuses(t *testing.T) {
 	if _, err := SaveProfileName(dir, 3, base, "Ok"); err == nil || err.Error() != "There is no layout for profile 4." {
 		t.Errorf("missing slot: %v", err)
 	}
-	if after := snapshot(t, dir); len(after) != len(before) || after["kb7-0.toml"] != before["kb7-0.toml"] {
+	if after := snapshot(t, dir); !reflect.DeepEqual(after, before) {
 		t.Errorf("a refused save changed the folder")
 	}
 }
@@ -132,7 +133,7 @@ func TestDuplicateProfile(t *testing.T) {
 	if err != nil || n != 2 {
 		t.Fatalf("n = %d, err = %v", n, err)
 	}
-	if p := profileOf(mustLoad(t, dir), 2); p.Name != "Nineteen chars long" {
+	if p := profileOf(mustLoad(t, dir), 2); p.Name != "Nineteen chars copy" {
 		t.Errorf("long name = %q", p.Name)
 	}
 }
@@ -193,15 +194,18 @@ func TestDuplicateProfileDropsProgramAndPinsDesktop(t *testing.T) {
 
 func TestDuplicateProfileRefuses(t *testing.T) {
 	files := map[string]string{}
-	for _, n := range []string{"0", "1", "2", "3", "4"} {
+	for _, n := range []string{"0", "1", "2", "3"} {
 		files["kb7-"+n+".toml"] = "profile = " + n + "\n"
 	}
 	dir := folder(t, files)
+	if n, _, err := DuplicateProfile(dir, 0); err != nil || n != 4 {
+		t.Fatalf("last free slot: n = %d, err = %v", n, err)
+	}
 	before := snapshot(t, dir)
 	if _, _, err := DuplicateProfile(dir, 0); err == nil || err.Error() != noRoom {
 		t.Fatalf("err = %v", err)
 	}
-	if after := snapshot(t, dir); len(after) != len(before) {
+	if after := snapshot(t, dir); !reflect.DeepEqual(after, before) {
 		t.Error("a refused duplicate changed the folder")
 	}
 	dir = folder(t, map[string]string{"kb7-0.toml": "profile = 0\n"})
@@ -291,7 +295,7 @@ func TestDeleteProfileInUse(t *testing.T) {
 		if err == nil || err.Error() != c.want {
 			t.Errorf("err = %v, want %q", err, c.want)
 		}
-		if after := snapshot(t, dir); len(after) != len(before) {
+		if after := snapshot(t, dir); !reflect.DeepEqual(after, before) {
 			t.Error("a refused delete changed the folder")
 		}
 	}
@@ -310,7 +314,7 @@ func TestDeleteProfileUsedByLayoutGame(t *testing.T) {
 	if _, err = DeleteProfile(dir, 0, Version(data)); err == nil || err.Error() != "Desktop uses this profile; choose another profile there first." {
 		t.Errorf("err = %v", err)
 	}
-	if after := snapshot(t, dir); len(after) != len(before) {
+	if after := snapshot(t, dir); !reflect.DeepEqual(after, before) {
 		t.Error("a refused delete changed the folder")
 	}
 }

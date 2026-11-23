@@ -21,8 +21,11 @@ import (
 func SaveProfileName(dir string, slot byte, base, name string) (Result, error) {
 	name = strings.TrimSpace(name)
 	if name != "" {
-		if err := proto.CheckName(name); err != nil {
-			return Result{}, err
+		if len(name) > proto.MaxNameLen {
+			return Result{}, fmt.Errorf("A name on the keyboard is at most %d characters.", proto.MaxNameLen)
+		}
+		if proto.CheckName(name) != nil {
+			return Result{}, errors.New("The keyboard can only show plain letters, digits and symbols (no accents or emoji).")
 		}
 	}
 
@@ -64,8 +67,8 @@ func SaveProfileName(dir string, slot byte, base, name string) (Result, error) {
 // DuplicateProfile copies the layout of KB7 profile slot (0-4) into the
 // lowest slot that has no layout and returns that slot. The copy is the file
 // kb7-<slot+1>.toml (-2, -3 on a clash), without switch_when_running (games
-// own programs), named like the original with " copy" added when that fits
-// the name limit, else like the original cut to fit. Desktop stays on its
+// own programs), named like the original with " copy" added, the original cut
+// to make room when the name would be too long. Desktop stays on its
 // profile. The change is an Apply.
 func DuplicateProfile(dir string, slot byte) (newSlot byte, r Result, err error) {
 	saveMu.Lock()
@@ -99,7 +102,7 @@ func DuplicateProfile(dir string, slot byte) (newSlot byte, r Result, err error)
 	if orig := t.saved.file.Name; orig != nil && *orig != "" {
 		n := *orig + " copy"
 		if len(n) > proto.MaxNameLen {
-			n = strings.TrimRight((*orig)[:min(len(*orig), proto.MaxNameLen)], " ")
+			n = strings.TrimRight((*orig)[:min(len(*orig), proto.MaxNameLen-len(" copy"))], " ") + " copy"
 		}
 		cp.Name = &n
 	}

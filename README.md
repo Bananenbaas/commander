@@ -56,7 +56,7 @@ On `main`, for the next release:
   while it runs.
 - Commander's window. Everything is set up there: a KB7 profile's buttons and
   lighting, its name and copies, the volume mixer it shows, and game profiles
-  that switch every device together. It also holds the settings and updates.
+  that switch the KB7 when a game starts. It also holds the settings and updates.
   Saving checks the files first and keeps a backup of hand-written ones. The
   design is in
   [`docs/design/commander-gui.md`](docs/design/commander-gui.md).
