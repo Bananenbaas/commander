@@ -169,6 +169,8 @@ func fromLightJSON(lj *lightJSON, old *layout.FileLight) (*layout.FileLight, []l
 		m := map[string]any{"effect": layer.Effect}
 		if layer.Enabled != nil && !*layer.Enabled {
 			m["enabled"] = false
+		} else if before["enabled"] == true {
+			m["enabled"] = true // an explicit on stays as written
 		}
 		keys, err := pickedKeys(layer)
 		if err != nil {
@@ -329,18 +331,23 @@ func (s *Service) saveDeviceLight(args json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("saveDeviceLight: %w", err)
 	}
-	var old *layout.FileLight
-	if _, f, err := layoutOf(s.d.Dir, slot); err == nil {
-		old = f.Light
+	var edit store.Edit
+	// Only [stored_light] given: [light] stays as it is in the file.
+	storedOnly := a.Simple == nil && a.Light == nil && a.Stored != nil
+	if !storedOnly {
+		var old *layout.FileLight
+		if _, f, err := layoutOf(s.d.Dir, slot); err == nil {
+			old = f.Light
+		}
+		fl, bad, err := a.fileLight(old)
+		if err != nil {
+			return nil, fmt.Errorf("saveDeviceLight: %w", err)
+		}
+		if len(bad) > 0 {
+			return map[string]any{"ok": false, "errors": bad}, nil
+		}
+		edit.Light = &fl
 	}
-	fl, bad, err := a.fileLight(old)
-	if err != nil {
-		return nil, fmt.Errorf("saveDeviceLight: %w", err)
-	}
-	if len(bad) > 0 {
-		return map[string]any{"ok": false, "errors": bad}, nil
-	}
-	edit := store.Edit{Light: &fl}
 	if a.Stored != nil {
 		st := lightedit.StoredToFile(*a.Stored)
 		edit.StoredLight = &st

@@ -913,12 +913,13 @@ button.chip:hover { color: var(--text); }
 .ledit { color: var(--text); }
 .ledit .note { white-space: pre-line; }
 
-/* The board is dark in both themes, like the keyboard. */
+/* The board is in the theme's raised colour; the picture reads the same
+   colours (lighting.js themeColor). */
 .lboard {
   padding: 6px;
-  border: 1px solid #222c47;
+  border: 1px solid var(--line);
   border-radius: 10px;
-  background: #10172a;
+  background: var(--bg-raised);
 }
 
 .lcanvas {

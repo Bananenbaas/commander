@@ -3,6 +3,7 @@
 package control
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -466,5 +467,83 @@ func TestLightFrames(t *testing.T) {
 	errs, _ = m["errors"].([]any)
 	if len(errs) != 1 || errs[0].(map[string]any)["layer"] != float64(0) {
 		t.Errorf("all off: %v", m)
+	}
+}
+
+// lightHandSimple fits the simple view but is written by hand: a whole
+// speed and a setting given at its default, which the simple view's own
+// [light] would not write that way.
+const lightHandSimple = `
+profile = 0
+
+[light]
+
+[[light.layer]]
+effect = "wave"
+colors = ["#0040FF", "#00C0FF"]
+speed = 1
+direction = "right"
+
+[[light.layer]]
+effect = "fixed"
+enabled = true
+keys = ["wrist"]
+color = "#00FF00"
+`
+
+func TestSaveDeviceLightStoredOnly(t *testing.T) {
+	s, dir, c := lightDeps(t, lightHandSimple)
+	before := savedFile(t, dir).Light
+	m := lightCall(t, s)
+	if m["simple"] == nil {
+		t.Fatalf("the fixture does not fit the simple view: %v", m["reason"])
+	}
+	var edits []store.Edit
+	orig := saveProfile
+	t.Cleanup(func() { saveProfile = orig })
+	saveProfile = func(dir string, slot byte, bases map[string]string, e store.Edit) (store.Result, error) {
+		edits = append(edits, e)
+		return orig(dir, slot, bases, e)
+	}
+	stored := map[string]any{"mode": "color", "color": "#123456", "brightness": 40}
+	out := call(t, s, "saveDeviceLight", jsonOf(t, map[string]any{"device": "kb7", "profile": 0, "version": m["version"], "stored": stored}))
+	// A changed [stored_light] is an apply.
+	if out["ok"] != true || out["change"] != "apply" || c.apply != 1 || c.reload != 0 {
+		t.Fatalf("answer %v %+v", out, *c)
+	}
+	if len(edits) != 1 || edits[0].Light != nil || edits[0].StoredLight == nil {
+		t.Fatalf("edits %+v, want [stored_light] only", edits)
+	}
+	f := savedFile(t, dir)
+	if !reflect.DeepEqual(f.Light, before) {
+		t.Errorf("[light] %+v, was %+v", f.Light, before)
+	}
+	if f.StoredLight == nil || f.StoredLight.Color != "#123456" {
+		t.Errorf("stored %+v", f.StoredLight)
+	}
+	if again := lightCall(t, s); again["version"] != out["version"] {
+		t.Errorf("version %v, answered %v", again["version"], out["version"])
+	}
+
+	// Neither the lighting nor the stored lighting is still an error.
+	if _, err := s.Handle(context.Background(), "saveDeviceLight", json.RawMessage(jsonOf(t, map[string]any{"device": "kb7", "profile": 0, "version": out["version"]}))); err == nil {
+		t.Error("a save of nothing went through")
+	}
+}
+
+func TestSaveDeviceLightKeepsEnabledTrue(t *testing.T) {
+	s, dir, _ := lightDeps(t, lightHandSimple)
+	m := lightCall(t, s)
+	args := map[string]any{"device": "kb7", "profile": 0, "version": m["version"], "light": m["light"]}
+	out := call(t, s, "saveDeviceLight", jsonOf(t, args))
+	if out["ok"] != true || out["change"] != "none" {
+		t.Fatalf("answer %v", out)
+	}
+	f := savedFile(t, dir)
+	if v, ok := f.Light.Layers[1]["enabled"]; !ok || v != true {
+		t.Errorf("enabled %#v (given: %v), want an explicit true", v, ok)
+	}
+	if _, ok := f.Light.Layers[0]["enabled"]; ok {
+		t.Errorf("enabled written for a layer that had none")
 	}
 }

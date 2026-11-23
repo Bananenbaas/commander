@@ -420,13 +420,32 @@
     }
   }
 
+  // unsavedText names the tabs with changes, so Discard says what it drops.
+  function unsavedText() {
+    var names = dirtyEditors().map(function (e) {
+      var label = e.tab;
+      tabs.forEach(function (t) {
+        if (t.id === e.tab) {
+          label = t.label;
+        }
+      });
+      return label;
+    });
+    if (names.length === 0) {
+      return "You have unsaved changes.";
+    }
+    var list = names.length === 1 ? names[0] :
+      names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+    return "You have unsaved changes in " + list + ".";
+  }
+
   // The question asked before leaving unsaved changes. The way out is taken
   // at the click: saving or discarding clears app.leaving on the way.
   function unsavedQuestion() {
     var box = el("div", "banner ask");
     box.setAttribute("role", "group");
     box.setAttribute("aria-label", "Unsaved changes");
-    var text = el("p", "", "You have unsaved changes.");
+    var text = el("p", "", unsavedText());
     text.setAttribute("role", "alert");
     box.appendChild(text);
     var row = el("div", "row");

@@ -1250,6 +1250,19 @@
     var frameGen = 0;
     var geom = null;
     var drawnWidth = 0;
+    // playingKey is the canonical payload whose frames play ("" for none);
+    // framesWanted says frames were asked for while the tab was not shown.
+    var playingKey = "";
+    var framesWanted = false;
+
+    // themeColor reads a colour of the current theme from the page's CSS,
+    // so the picture follows the theme; fallback when there is none.
+    function themeColor(name, fallback) {
+      var cs = window.getComputedStyle && document.documentElement ?
+        window.getComputedStyle(document.documentElement) : null;
+      var v = cs && cs.getPropertyValue ? String(cs.getPropertyValue(name) || "").trim() : "";
+      return v || fallback;
+    }
 
     function ledList() {
       return info && Array.isArray(info.leds) ? info.leds : [];
@@ -1284,6 +1297,8 @@
       ctx.clearRect(0, 0, drawnWidth, geom.height);
       var frame = frames.length > 0 ? frames[frameAt % frames.length] : null;
       var pickedSet = pickedLeds();
+      var pickedColor = themeColor("--accent", "#00aaff");
+      var edgeColor = themeColor("--line", "#222c47");
       var size = geom.unit * 0.82;
       var radius = geom.unit * 0.16;
       ledList().forEach(function (l) {
@@ -1307,7 +1322,7 @@
         ctx.fill();
         var on = pickedSet.indexOf(l.index) >= 0;
         ctx.lineWidth = on ? 3 : 1;
-        ctx.strokeStyle = on ? "#00aaff" : "#222c47";
+        ctx.strokeStyle = on ? pickedColor : edgeColor;
         ctx.stroke();
       });
     }
@@ -1338,6 +1353,12 @@
       if (!ed.draft || !info) {
         return;
       }
+      if (!canvas.isConnected) {
+        // The tab is not shown: show() asks once it is.
+        framesWanted = true;
+        return;
+      }
+      framesWanted = false;
       frameGen += 1;
       var gen = frameGen;
       var profileGen = ed.gen;
@@ -1377,11 +1398,15 @@
           } catch (err) {
             frames = [];
           }
-          frameAt = 0;
+          // The same lighting keeps playing where it is.
+          if (sentKey !== playingKey) {
+            frameAt = 0;
+            clearTimeout(animTimer);
+            animTimer = null;
+          }
+          playingKey = frames.length > 0 ? sentKey : "";
         }
         draw();
-        clearTimeout(animTimer);
-        animTimer = null;
         startAnimation();
       }, function (err) {
         if (gen !== frameGen || profileGen !== ed.gen) {
@@ -1791,7 +1816,11 @@
             ed.picking = "";
             adv.reset();
           }
-          askFrames();
+          // A refresh that finds the same lighting leaves the preview as
+          // it plays.
+          if (fresh || canonical(lightPayload(ed.draft, names)) !== playingKey) {
+            askFrames();
+          }
         }
         draw();
       }, function (err) {
@@ -1806,7 +1835,12 @@
     function show(profile) {
       // The panel is put in the page after this call: the preview starts
       // playing once it is there.
-      Promise.resolve().then(startAnimation);
+      Promise.resolve().then(function () {
+        if (framesWanted && canvas.isConnected) {
+          askFrames();
+        }
+        startAnimation();
+      });
       if (!info) {
         loadInfo();
       }
@@ -1832,6 +1866,8 @@
       adv.reset();
       frames = [];
       frameAt = 0;
+      playingKey = "";
+      framesWanted = false;
       draw();
       if (profile >= 0) {
         load();
@@ -1903,6 +1939,11 @@
       args.version = ed.saved.version;
       if (storedChanged(sent, ed.base)) {
         args.stored = storedPayload(sent.stored);
+        // Only the not-running choice changed: [light] stays as written.
+        if (canonical(lightPayload(sent, names)) === canonical(lightPayload(ed.base, names))) {
+          delete args.simple;
+          delete args.light;
+        }
       }
       ed.barError = "";
       ed.saving = api.call("saveDeviceLight", args).then(function (res) {
@@ -1961,6 +2002,13 @@
       geom = null;
       paint();
     });
+
+    // A theme change redraws the picture in the new theme's colours.
+    if (typeof window.MutationObserver === "function" && document.documentElement) {
+      new window.MutationObserver(function () {
+        paint();
+      }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    }
 
     draw();
 

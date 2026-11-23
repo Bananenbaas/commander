@@ -148,7 +148,9 @@ func LightVersion(f *layout.File) string {
 func sectionVersion(f *layout.File) string {
 	data, err := f.Encode()
 	if err != nil {
-		// Not a version any file has, so a save based on it is refused.
+		// Not the version of any section that encodes. Two sections that
+		// fail the same way share it, so the version check passes there;
+		// such a save fails later, when the edited file is encoded.
 		return Version([]byte("unencodable: " + err.Error()))
 	}
 	return Version(data)
