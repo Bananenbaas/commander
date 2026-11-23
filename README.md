@@ -57,8 +57,8 @@ On `main`, for the next release:
 - Commander's window. It shows the keyboard's profiles and the game profiles,
   holds the settings and updates, and its Buttons and Lighting tabs edit a KB7
   profile's buttons and lighting and save them. The mixer and game profiles in
-  the window come in later parts; until then that is done in the configuration files. The
-  design is in
+  the window come in later parts; until then that is done in the
+  configuration files. The design is in
   [`docs/design/commander-gui.md`](docs/design/commander-gui.md).
 
 Not there yet: dashboards and widgets on the touchscreen, animations, the

@@ -162,9 +162,10 @@ effect needs no change in the window. Back to the simple view is offered when th
 stack fits it.
 
 **When Commander is not running** sets what the keyboard shows then: "A still of
-this lighting" (the lighting frozen as it is, written to `[stored_light]`) or
-"One colour", with a brightness from 0 to 100 %, or "Keep the keyboard's
-brightness".
+this lighting" (the lighting frozen as it is, which Commander writes to the
+keyboard's stored lighting when it applies the profile; `[stored_light]` then
+holds at most a brightness) or "One colour" (the `[stored_light]` colour),
+with a brightness from 0 to 100 %, or "Keep the keyboard's brightness".
 
 A lighting save is checked and written like a buttons save, and it only
 looks at the lighting: buttons and lighting of one profile are saved

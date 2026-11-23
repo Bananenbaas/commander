@@ -9,8 +9,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ### Added
 - Commander's window: "Open Commander", first in the tray menu, and
   a left click on the icon open it. It shows the KB7 (profiles on the
-  keyboard; the Buttons, Lighting, Mixer and Profile tabs only say "Comes in
-  a later version." for now), the desktop and game profiles (read-only),
+  keyboard; the Mixer and Profile tabs only say "Comes in a later version."
+  for now), the desktop and game profiles (read-only),
   Settings (Start with Windows, check for updates, theme, open the folder and
   the log) and Updates (check now, install). It needs the Microsoft Edge
   WebView2 Runtime, which Windows 11 has; without it Commander says so. It
@@ -22,7 +22,6 @@ and the project uses [Semantic Versioning](https://semver.org/).
   per game with its program and the KB7 profile to show while it runs, and
   `games/desktop.toml` sets the desktop profile. `switch_when_running` in a
   layout keeps working for programs that have no game file.
-
 - Commander's window: the Lighting tab edits a KB7 profile's lighting in a
   simple view (One colour, Wave, Breathing or Off, ripple when a key is
   pressed, Highlight keys, Key states) or an advanced view with the whole
@@ -34,8 +33,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
   each button's title, look (colour, symbol or picture), steps (press keys,
   wait, start a program, open a website, file or folder) and options, and
   Save writes them. A save is checked first (the folder must load, the
-  pictures must fit the 15 different pictures the KB7 holds), files are written atomically, and a file
-  that holds comments or other formatting is copied to `backup/` first; the
+  pictures must fit the 15 different pictures the KB7 holds), files are
+  written atomically, and a file that holds comments or other formatting is copied to `backup/` first; the
   files Commander saves start with a note that comments are not kept. Picked
   pictures and symbols are copied into `pictures/` and `symbols/`.
 - The first save moves `switch_when_running` from the layouts into `games/`
