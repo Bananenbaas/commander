@@ -10,6 +10,8 @@
   var PLACES = 12; // three columns, four rows, counted row by row from 0
   var PAGES = [1, 2, 3];
   var NEW_COLOR = "#00AAFF";
+  var K = window.CommanderKeys; // key names, key caps and the recorder (keys.js)
+  var WAIT_MAX = K.WAIT_MAX;
 
   // Draft logic: plain functions over lists of buttons, no page involved.
 
@@ -105,177 +107,6 @@
       lines.push("Programs that switch profiles are now game profiles in the sidebar.");
     }
     return lines;
-  }
-
-  // Keys
-
-  // KEY_CODES maps KeyboardEvent.code to Commander's key name. A code that
-  // is not here is a key Commander cannot press; recording skips it.
-  var KEY_CODES = (function () {
-    var t = {};
-    var i;
-    for (i = 0; i < 26; i++) {
-      t["Key" + String.fromCharCode(65 + i)] = String.fromCharCode(65 + i);
-    }
-    for (i = 0; i <= 9; i++) {
-      t["Digit" + i] = String(i);
-      t["Numpad" + i] = "Num" + i;
-    }
-    for (i = 1; i <= 24; i++) {
-      t["F" + i] = "F" + i;
-    }
-    var named = {
-      NumpadAdd: "NumPlus", NumpadSubtract: "NumMinus", NumpadMultiply: "NumMultiply",
-      NumpadDivide: "NumDivide", NumpadDecimal: "NumDecimal", NumpadEnter: "NumEnter",
-      ControlLeft: "LCtrl", ShiftLeft: "LShift", AltLeft: "LAlt", MetaLeft: "LWin",
-      ControlRight: "RCtrl", ShiftRight: "RShift", AltRight: "RAlt", MetaRight: "RWin",
-      Equal: "Equals", BracketLeft: "LeftBracket", BracketRight: "RightBracket",
-      Backquote: "Grave", ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left",
-      ArrowRight: "Right", IntlBackslash: "NonUSBackslash",
-      AudioVolumeUp: "VolumeUp", AudioVolumeDown: "VolumeDown", AudioVolumeMute: "Mute",
-      MediaPlayPause: "PlayPause", MediaTrackNext: "NextTrack",
-      MediaTrackPrevious: "PrevTrack", MediaStop: "StopMedia"
-    };
-    Object.keys(named).forEach(function (k) {
-      t[k] = named[k];
-    });
-    ["Enter", "Escape", "Backspace", "Tab", "Space", "Minus", "Backslash", "Semicolon",
-      "Quote", "Comma", "Period", "Slash", "CapsLock", "ScrollLock", "Pause", "Insert",
-      "Home", "PageUp", "Delete", "End", "PageDown", "NumLock"].forEach(function (n) {
-      t[n] = n;
-    });
-    return t;
-  })();
-
-  // KEY_LIST is every key Commander can press, in the order the key picker
-  // lists them.
-  var KEY_LIST = (function () {
-    var out = ["LCtrl", "LShift", "LAlt", "LWin", "RCtrl", "RShift", "RAlt", "RWin"];
-    var i;
-    for (i = 0; i < 26; i++) {
-      out.push(String.fromCharCode(65 + i));
-    }
-    for (i = 1; i <= 10; i++) {
-      out.push(String(i % 10));
-    }
-    for (i = 1; i <= 24; i++) {
-      out.push("F" + i);
-    }
-    out = out.concat(["Enter", "Escape", "Backspace", "Tab", "Space", "Minus", "Equals",
-      "LeftBracket", "RightBracket", "Backslash", "NonUSBackslash", "Semicolon", "Quote",
-      "Grave", "Comma", "Period", "Slash", "CapsLock", "PrintScreen", "ScrollLock", "Pause",
-      "Insert", "Delete", "Home", "End", "PageUp", "PageDown", "Up", "Down", "Left", "Right",
-      "NumLock"]);
-    for (i = 0; i <= 9; i++) {
-      out.push("Num" + i);
-    }
-    return out.concat(["NumPlus", "NumMinus", "NumMultiply", "NumDivide", "NumDecimal",
-      "NumEnter", "VolumeUp", "VolumeDown", "Mute", "PlayPause", "NextTrack", "PrevTrack",
-      "StopMedia"]);
-  })();
-
-  // CAPS are the key caps that do not read as their name: [text, tooltip].
-  var CAPS = {
-    NumPlus: ["Num +"], NumMinus: ["Num -"], NumMultiply: ["Num *"], NumDivide: ["Num /"],
-    NumDecimal: ["Num ."], NumEnter: ["Num Enter"], NumLock: ["Num Lock"],
-    PageUp: ["Page Up"], PageDown: ["Page Down"], CapsLock: ["Caps Lock"],
-    ScrollLock: ["Scroll Lock"], PrintScreen: ["Print Screen"], Escape: ["Esc", "Escape"],
-    Minus: ["-", "Minus"], Equals: ["=", "Equals"], LeftBracket: ["[", "Left bracket"],
-    RightBracket: ["]", "Right bracket"], Backslash: ["\\", "Backslash"],
-    NonUSBackslash: ["\\", "Extra backslash key next to Shift"], Semicolon: [";", "Semicolon"],
-    Quote: ["'", "Quote"], Grave: ["`", "Grave accent"], Comma: [",", "Comma"],
-    Period: [".", "Period"], Slash: ["/", "Slash"], VolumeUp: ["Volume Up"],
-    VolumeDown: ["Volume Down"], PlayPause: ["Play/Pause"], NextTrack: ["Next Track"],
-    PrevTrack: ["Previous Track"], StopMedia: ["Stop", "Stop media"]
-  };
-
-  // keyCap is how a key name is shown: the text on the cap and a tooltip.
-  function keyCap(name) {
-    var m = /^([LR])(Ctrl|Shift|Alt|Win)$/.exec(name);
-    if (m) {
-      return { text: m[2], title: m[1] === "R" ? "Right " + m[2] : "" };
-    }
-    m = /^Num(\d)$/.exec(name);
-    if (m) {
-      return { text: "Num " + m[1], title: "" };
-    }
-    if (CAPS[name]) {
-      return { text: CAPS[name][0], title: CAPS[name][1] || "" };
-    }
-    return { text: name, title: "" };
-  }
-
-  // keyWords names a key in a list, where the side of a modifier counts.
-  function keyWords(name) {
-    var m = /^L(Ctrl|Shift|Alt|Win)$/.exec(name);
-    if (m) {
-      return "Left " + m[1];
-    }
-    var cap = keyCap(name);
-    return cap.title && cap.title.indexOf(" ") > 0 ? cap.title : cap.text;
-  }
-
-  // Recording keys: a chord is the keys held together, ending when all are
-  // released; a pause of PAUSE_MIN or more before the next key is a wait.
-
-  var PAUSE_MIN = 100;
-  var WAIT_MAX = 60000;
-
-  function newRecording() {
-    return { held: [], chord: [], lastUp: null, skipped: [] };
-  }
-
-  // recordDown takes a key going down at time t (ms) and returns the steps
-  // it finishes: a wait for the pause before it, if any.
-  function recordDown(rec, code, t) {
-    var name = KEY_CODES[code];
-    if (!name) {
-      var what = code || "a key without a name";
-      if (rec.skipped.indexOf(what) < 0) {
-        rec.skipped.push(what);
-      }
-      return [];
-    }
-    if (rec.held.indexOf(code) >= 0) {
-      return []; // held down: the key repeats
-    }
-    var out = [];
-    if (rec.held.length === 0 && rec.lastUp !== null) {
-      var pause = t - rec.lastUp;
-      if (pause >= PAUSE_MIN) {
-        out.push({ waitMs: Math.min(WAIT_MAX, Math.round(pause / 10) * 10) });
-      }
-    }
-    rec.held.push(code);
-    if (rec.chord.indexOf(name) < 0) {
-      rec.chord.push(name);
-    }
-    return out;
-  }
-
-  // recordUp takes a key going up and returns the chord it finishes, if it
-  // was the last key held.
-  function recordUp(rec, code, t) {
-    var i = rec.held.indexOf(code);
-    if (i < 0) {
-      return [];
-    }
-    rec.held.splice(i, 1);
-    if (rec.held.length > 0) {
-      return [];
-    }
-    var out = [{ keys: rec.chord }];
-    rec.chord = [];
-    rec.lastUp = t;
-    return out;
-  }
-
-  // recordEnd returns the chord still held when recording stops.
-  function recordEnd(rec) {
-    var out = rec.chord.length > 0 ? [{ keys: rec.chord }] : [];
-    rec.chord = [];
-    rec.held = [];
-    return out;
   }
 
   // Steps
@@ -378,15 +209,14 @@
   var logic = {
     hasPlace: hasPlace, find: find, newButton: newButton, move: move,
     same: same, sorted: sorted, saveNotes: saveNotes,
-    KEY_CODES: KEY_CODES, KEY_LIST: KEY_LIST, keyCap: keyCap, keyWords: keyWords,
-    newRecording: newRecording, recordDown: recordDown, recordUp: recordUp, recordEnd: recordEnd,
+    KEY_CODES: K.KEY_CODES, KEY_LIST: K.KEY_LIST, keyCap: K.keyCap, keyWords: K.keyWords,
+    newRecording: K.newRecording, recordDown: K.recordDown, recordUp: K.recordUp, recordEnd: K.recordEnd,
     stepKind: stepKind, splitArgs: splitArgs, joinArgs: joinArgs, holdAllowed: holdAllowed,
     tidy: tidy, pageChecks: pageChecks
   };
 
   var PALETTE = ["#00AAFF", "#FF9A3D", "#3DDC84", "#FF4D6D", "#B388FF", "#FFD23F", "#E8EDF7", "#10172A"];
   var LOOK_PAUSE = 150; // ms after typing stops before the grid draws again
-  var RECORD_IDLE = 10000; // ms without a key that ends a recording
 
   // The editor
 
@@ -764,7 +594,7 @@
     var lookMode = "style"; // "style" (Commander style) or "picture" (own picture)
     var pickBusy = ""; // "symbol" or "picture" while the file dialog is open
     var pickError = { symbol: "", picture: "" };
-    var rec = null; // the recording that runs: {mode, target, data, picked, timer}
+    var rec = null; // the recording that runs: {mode, target}
     var recNoteText = "";
     var stepShape = null;
     var stepRows = [];
@@ -989,30 +819,28 @@
     recPick.addEventListener("change", function () {
       var name = recPick.value;
       recPick.value = "";
-      if (rec && rec.mode === "chord" && name && rec.picked.indexOf(name) < 0) {
-        rec.picked.push(name);
-        armRecording();
+      if (rec && rec.mode === "chord" && chordRec.pick(name)) {
         drawRecording();
       }
     });
     var pickFirst = el("option", "", "Add a key from the list");
     pickFirst.value = "";
     recPick.appendChild(pickFirst);
-    KEY_LIST.forEach(function (name) {
-      var o = el("option", "", keyWords(name));
+    K.KEY_LIST.forEach(function (name) {
+      var o = el("option", "", K.keyWords(name));
       o.value = name;
       recPick.appendChild(o);
     });
     var recRow = el("div", "row");
-    var recDone = smallBtn("Done");
-    recDone.addEventListener("click", function () {
+    var recDoneBtn = smallBtn("Done");
+    recDoneBtn.addEventListener("click", function () {
       stopRecording(true);
     });
     var recCancel = smallBtn("Cancel");
     recCancel.addEventListener("click", function () {
       stopRecording(false);
     });
-    add(recRow, recPick, recDone, recCancel);
+    add(recRow, recPick, recDoneBtn, recCancel);
     add(recBox, recText, recCaps, recRow);
     var recNote = el("p", "note");
     recNote.hidden = true;
@@ -1263,122 +1091,70 @@
       places[position].node.focus();
     }
 
-    // Recording keys. The page listens on the document only while a
-    // recording runs, before anything else hears the keys.
+    // Recording keys: the recorders of keys.js listen on the document only
+    // while a recording runs. stepsRec records a sequence of steps into the
+    // button; chordRec records the keys of one step.
 
-    function startRecording(mode, target) {
-      stopRecording(true);
-      setMenu(false);
-      rec = { mode: mode, target: target, data: newRecording(), picked: [], timer: null };
-      recNoteText = "";
-      document.addEventListener("keydown", onRecordKey, true);
-      document.addEventListener("keyup", onRecordKey, true);
-      window.addEventListener("blur", onRecordBlur);
-      armRecording();
-      drawRecording();
-      (mode === "chord" ? recDone : recordBtn).focus();
+    function noteSkipped() {
+      var skipped = rec && rec.mode === "chord" ? chordRec.skipped() : stepsRec.skipped();
+      if (skipped.length > 0) {
+        recNoteText = "Skipped, Commander cannot press it: " + skipped.join(", ") + ".";
+      }
     }
 
-    function armRecording() {
-      if (rec.timer) {
-        clearTimeout(rec.timer);
-      }
-      rec.timer = setTimeout(function () {
-        stopRecording(true);
-      }, RECORD_IDLE);
-    }
-
-    function onRecordBlur() {
-      stopRecording(true);
-    }
-
-    function onRecordKey(e) {
-      if (!rec) {
-        return;
-      }
-      // The key list works with the keyboard while picking a chord.
-      if (rec.mode === "chord" && e.target === recPick) {
-        return;
-      }
-      e.preventDefault();
-      e.stopPropagation();
-      var t = typeof e.timeStamp === "number" ? e.timeStamp : Date.now();
-      var out = e.type === "keydown" ? recordDown(rec.data, e.code, t) : recordUp(rec.data, e.code, t);
-      armRecording();
-      if (rec.mode === "chord") {
-        var chord = out.filter(function (s) {
-          return s.keys;
-        });
-        if (chord.length > 0) {
-          stopRecording(true, chord[0].keys);
+    function makeDone(mode) {
+      return function (steps) {
+        noteSkipped();
+        if (!selectedButton()) {
+          drawRecording();
           return;
         }
-      } else if (out.length > 0) {
+        var target = rec ? rec.target : -1;
         edit("action", function (b) {
-          out.forEach(function (s) {
-            b.steps.push(s);
-          });
-        });
-        return;
-      }
-      drawRecording();
-    }
-
-    // stopRecording ends the recording. With keep, what it caught goes into
-    // the button: a chord still held, or the picked chord.
-    function stopRecording(keep, chord) {
-      if (!rec) {
-        return;
-      }
-      var r = rec;
-      rec = null;
-      clearTimeout(r.timer);
-      document.removeEventListener("keydown", onRecordKey, true);
-      document.removeEventListener("keyup", onRecordKey, true);
-      window.removeEventListener("blur", onRecordBlur);
-      var left = recordEnd(r.data);
-      if (r.data.skipped.length > 0) {
-        recNoteText = "Skipped, Commander cannot press it: " + r.data.skipped.join(", ") + ".";
-      }
-      var steps = [];
-      if (keep && r.mode === "steps") {
-        steps = left;
-      } else if (keep) {
-        var keys = r.picked.slice();
-        (chord || (left[0] ? left[0].keys : [])).forEach(function (k) {
-          if (keys.indexOf(k) < 0) {
-            keys.push(k);
-          }
-        });
-        if (keys.length > 0) {
-          steps = [{ keys: keys }];
-        }
-      }
-      if (steps.length > 0 && selectedButton()) {
-        edit("action", function (b) {
-          if (r.mode === "chord" && r.target >= 0 && b.steps[r.target] && stepKind(b.steps[r.target]) === "keys") {
-            b.steps[r.target] = steps[0];
+          if (mode === "chord" && target >= 0 && b.steps[target] && stepKind(b.steps[target]) === "keys") {
+            b.steps[target] = steps[0];
           } else {
             steps.forEach(function (s) {
               b.steps.push(s);
             });
           }
         });
-      } else {
-        drawRecording();
-      }
+      };
     }
 
-    function capsInto(box, keys) {
-      var kids = keys.map(function (k) {
-        var cap = keyCap(k);
-        var n = el("kbd", "bcap", cap.text);
-        if (cap.title) {
-          n.title = cap.title;
-        }
-        return n;
-      });
-      box.replaceChildren.apply(box, kids);
+    function recStop() {
+      noteSkipped();
+      rec = null;
+      drawRecording();
+    }
+
+    var stepsRec = K.recorder({ onDone: makeDone("steps"), onStop: recStop, onChange: drawRecording });
+    var chordRec = K.recorder({
+      oneChord: true,
+      onDone: makeDone("chord"),
+      onStop: recStop,
+      onChange: drawRecording,
+      // The key list works with the keyboard while picking a chord.
+      ignore: function (e) {
+        return e.target === recPick;
+      }
+    });
+
+    function startRecording(mode, target) {
+      stopRecording(true);
+      setMenu(false);
+      recNoteText = "";
+      rec = { mode: mode, target: target };
+      (mode === "chord" ? chordRec : stepsRec).start();
+      drawRecording();
+      (mode === "chord" ? recDoneBtn : recordBtn).focus();
+    }
+
+    // stopRecording ends the recording. With keep, what it caught goes into
+    // the button: a chord still held, or the picked chord.
+    function stopRecording(keep) {
+      stepsRec.stop(keep);
+      chordRec.stop(keep);
     }
 
     function drawRecording() {
@@ -1394,18 +1170,14 @@
       setText(recText, chord ?
         "Press the keys for this step together, or add them from the list." :
         "Recording: press keys; a pause between them becomes a Wait step. Stop, or 10 seconds without a key, ends it.");
-      var keys = rec.picked.slice();
-      rec.data.chord.forEach(function (k) {
-        if (keys.indexOf(k) < 0) {
-          keys.push(k);
-        }
-      });
-      capsInto(recCaps, keys);
+      var keys = chord ? chordRec.chord() : stepsRec.chord();
+      K.caps(keys, recCaps);
       recCaps.hidden = keys.length === 0;
       // Recording steps ends with Record keys, which reads Stop meanwhile.
       recRow.hidden = !chord;
-      if (rec.data.skipped.length > 0) {
-        showErr(recNote, "Skipped, Commander cannot press it: " + rec.data.skipped.join(", ") + ".");
+      var skipped = chord ? chordRec.skipped() : stepsRec.skipped();
+      if (skipped.length > 0) {
+        showErr(recNote, "Skipped, Commander cannot press it: " + skipped.join(", ") + ".");
       }
     }
 
@@ -1443,7 +1215,7 @@
       if (kind === "keys") {
         body.appendChild(el("span", "bstep-what", "Press keys"));
         var caps = el("span", "bcaps");
-        capsInto(caps, s.keys);
+        K.caps(s.keys, caps);
         body.appendChild(caps);
         var change = smallBtn("Change");
         change.setAttribute("aria-label", "Change the keys of step " + (i + 1));

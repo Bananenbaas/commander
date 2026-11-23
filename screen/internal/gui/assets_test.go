@@ -128,6 +128,7 @@ var pageFiles = []string{
 	"index.html",
 	"app.css",
 	"app.js",
+	"keys.js",
 	"buttons.js",
 	"BarlowCondensed-SemiBold.ttf",
 	"OFL.txt",
@@ -135,7 +136,7 @@ var pageFiles = []string{
 }
 
 // textPages are the pages written by hand, checked for their content.
-var textPages = []string{"index.html", "app.css", "app.js", "buttons.js"}
+var textPages = []string{"index.html", "app.css", "app.js", "keys.js", "buttons.js"}
 
 func page(t *testing.T, name string) string {
 	t.Helper()
@@ -183,7 +184,7 @@ func TestPagesHaveCSP(t *testing.T) {
 	if regexp.MustCompile(`\son[a-z]+=`).MatchString(html) {
 		t.Errorf("index.html has an inline event handler")
 	}
-	for _, want := range []string{`<link rel="stylesheet" href="app.css">`, `<script src="buttons.js" defer>`, `<script src="app.js" defer>`} {
+	for _, want := range []string{`<link rel="stylesheet" href="app.css">`, `<script src="keys.js" defer>`, `<script src="buttons.js" defer>`, `<script src="app.js" defer>`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("index.html lacks %s", want)
 		}
@@ -203,6 +204,7 @@ func TestPagesHaveSPDX(t *testing.T) {
 		"index.html": "<!-- SPDX-License-Identifier: GPL-2.0-or-later -->",
 		"app.css":    "/* SPDX-License-Identifier: GPL-2.0-or-later */",
 		"app.js":     "/* SPDX-License-Identifier: GPL-2.0-or-later */",
+		"keys.js":    "/* SPDX-License-Identifier: GPL-2.0-or-later */",
 		"buttons.js": "/* SPDX-License-Identifier: GPL-2.0-or-later */",
 	}
 	for name, line := range want {
@@ -214,7 +216,7 @@ func TestPagesHaveSPDX(t *testing.T) {
 }
 
 func TestPagesUseNoUnsafeDOM(t *testing.T) {
-	for _, name := range []string{"app.js", "buttons.js"} {
+	for _, name := range []string{"app.js", "keys.js", "buttons.js"} {
 		js := page(t, name)
 		for _, bad := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "window.open", "eval(", "new Function", "_blank", "alert(", "confirm(", "prompt("} {
 			if strings.Contains(js, bad) {
