@@ -89,6 +89,9 @@ protocol, [`PROTOCOL.md`](PROTOCOL.md). For how to contribute, see
   each layout the layout without `switch_when_running`, then its game file,
   so an interruption leaves every file loadable, but a program's link can be
   missing until the layout is restored from `backup/`.
+  Game saves, deletes and profile duplicates and deletes pin Desktop in
+  `games/desktop.toml` first when there is none; a deleted profile's layout is
+  moved to `backup/`, never removed.
 - **One preview path**: the Lighting tab's preview and `kb7screen light-preview`
   both draw frames with `light.Frames`; the window never reimplements an
   effect. The advanced view draws its fields from `light.Spec`, so no effect or

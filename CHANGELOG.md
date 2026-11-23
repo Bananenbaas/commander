@@ -6,11 +6,18 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0-beta.8] - 2026-11-23
+
+Commander now has a window ("Open Commander" in the tray menu) where
+everything is set up: the buttons, the lighting, game profiles that switch
+every device together, and the profiles. Saving checks the files first and
+keeps a backup of any file you wrote by hand. The window needs the WebView2
+runtime that Windows 11 has.
+
 ### Added
 - Commander's window: "Open Commander", first in the tray menu, and
   a left click on the icon open it. It shows the KB7 (profiles on the
-  keyboard; the Mixer and Profile tabs only say "Comes in a later version."
-  for now), the desktop and game profiles (read-only),
+  keyboard), the desktop and game profiles,
   Settings (Start with Windows, check for updates, theme, open the folder and
   the log) and Updates (check now, install). It needs the Microsoft Edge
   WebView2 Runtime, which Windows 11 has; without it Commander says so. It
@@ -37,6 +44,25 @@ and the project uses [Semantic Versioning](https://semver.org/).
   written atomically, and a file that holds comments or other formatting is copied to `backup/` first; the
   files Commander saves start with a note that comments are not kept. Picked
   pictures and symbols are copied into `pictures/` and `symbols/`.
+- Commander's window: game profiles are edited in the window. Each game page
+  has "Switch to this when" (the program, picked from the running programs or
+  a file dialog) and "What each device does" (the KB7 profile, or "(don't
+  switch)"); a new game profile is made with "New game profile", and one can
+  be deleted. Saving or deleting a game reloads the configuration. Desktop
+  always has a KB7 profile, has no program and cannot be deleted; when no
+  `games/desktop.toml` exists it is written (pinning Desktop to the profile it
+  has now) on the first game save, delete or duplicate.
+- Commander's window: the KB7's Mixer tab shows the system volume and the
+  programs with sound, as the keyboard's mixer page does, updated every second
+  (nothing is set from the window); without Windows audio it says "The volume
+  mixer is not available right now."
+- Commander's window: the KB7's Profile tab sets the name shown on the
+  keyboard, duplicates the profile into the lowest free slot (named "... copy")
+  and deletes it. A profile a game profile uses cannot be deleted ("Desktop
+  and Star Citizen use this profile; choose another profile there first."),
+  nor the last one ("The last profile cannot be deleted."); a deleted
+  profile's layout is moved to `backup/`, so it can be restored. A sixth
+  profile is refused ("The KB7 has five profiles and all five are in use.").
 - The first save moves `switch_when_running` from the layouts into `games/`
   (the program `StarCitizen.exe` becomes the game `StarCitizen`).
 

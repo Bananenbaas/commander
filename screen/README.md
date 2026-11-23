@@ -115,10 +115,10 @@ own pages. The top of the window shows the profile the keyboard is on. Today the
   highlighted. The Buttons tab shows the profile's buttons and edits them:
   title, look (colour, symbol or your own picture), steps (press keys, wait,
   start a program, open a website, file or folder) and options. The Lighting
-  tab edits the profile's lighting (below). Mixer and Profile say "Comes in a
-  later version."; keep editing the TOML files for those until then.
-- **Desktop and each game**: when the profile switches and which KB7 profile
-  it uses (only the KB7 is listed today), read-only.
+  tab edits the profile's lighting (below). The Mixer and Profile tabs are
+  described below.
+- **Desktop and each game**: a game profile page, edited and saved like the
+  others (below).
 - **Settings**: Start with Windows, Check for updates automatically, the theme
   (Follow Windows, Light or Dark) and buttons that open the configuration
   folder and the log.
@@ -179,6 +179,36 @@ in the file but leaves it out of the lighting. A `kb7screen` older than this
 version refuses that key ("unknown setting"). A stack whose layers are all off
 is an error ("every lighting layer is off; turn one on or remove the
 lighting").
+
+**Game profile pages.** Each game has a page with **Switch to this when** (the
+program: pick one of the running programs, with Refresh, or choose its file;
+Windows' own programs are left out of the list) and **What each device does**
+(the KB7 profile to show, or "(don't switch)"). **New game profile** in the
+sidebar makes one, and **Delete game profile** removes it. Desktop is the
+profile shown when no game runs ("When the program ends: back to Desktop"): it
+always has a KB7 profile, has no program and cannot be deleted. When
+`games/desktop.toml` does not exist yet, the Desktop page shows the profile
+Commander uses now, and the first game save, delete or duplicate writes that
+file so that Desktop stays where it is. A new game's file is
+`games/<name>.toml` (lower case; `-2`, `-3` on a clash); renaming keeps the
+file. A game profile is saved like the buttons (checked first, backup of a
+hand-written file), and Commander then reloads the configuration.
+
+**The Mixer tab** shows the system volume and the programs with sound that the
+keyboard's mixer page shows, and asks Commander every second while it is open.
+Nothing is set from the window. Without Windows audio, or when Commander is not
+running, it says "The volume mixer is not available right now."
+
+**The Profile tab** sets the name shown on the keyboard (empty leaves the
+keyboard's name as it is), **Duplicate** copies the profile into the lowest free
+slot as `kb7-<slot>.toml` named "... copy" (refused when all five slots are in use:
+"The KB7 has five profiles and all five are in use."), and **Delete profile**
+removes it. A profile a game profile uses (Desktop included) cannot be deleted:
+"Desktop and Star Citizen use this profile; choose another profile there
+first." Neither can the last one: "The last profile cannot be deleted." A
+deleted profile's layout is moved to `backup/`, so it can be restored. A name
+change, a duplicate and a delete apply the keyboard; a duplicate and a delete
+pin Desktop in `games/desktop.toml` first when it is not there yet.
 
 Windows keeps some keys for itself (Windows key combinations, Print Screen),
 so they cannot be recorded in a key step; add them with Add step.
